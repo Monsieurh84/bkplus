@@ -222,3 +222,13 @@ html,body{height:100%}body{background:var(--bg);overscroll-behavior:none}
 .top{padding-top:calc(14px + env(safe-area-inset-top))!important;padding-left:max(22px,env(safe-area-inset-left));padding-right:max(22px,env(safe-area-inset-right))}
 .scroll{padding-bottom:calc(28px + env(safe-area-inset-bottom))}
 @media (min-width:861px){body{background:#DDE2EE}}
+/* Icônes au trait */
+.i{width:1.15em;height:1.15em;vertical-align:-.18em;flex:none}
+.sun{display:grid;place-items:center}.sun .i{width:22px;height:22px}
+.apps i .i{width:22px;height:22px;color:#fff}
+.docs .m .i{width:34px;height:34px;color:#5E6680;stroke-width:1.6}
+.primary-step .i,.bigbtn .i{width:24px;height:24px;vertical-align:-5px;margin-right:4px}
+.panel h3 .i{width:18px;height:18px;vertical-align:-3px;margin-right:2px}
+.pins h2 .i{width:20px;height:20px;vertical-align:-3px}
+.remind>.i{width:26px;height:26px;flex:none}
+.done-box .i{width:22px;height:22px;vertical-align:-5px;margin-right:4px}

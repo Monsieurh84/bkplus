@@ -41,7 +41,7 @@ const fullAddr = i => [i.adresse, [i.cp, i.ville].filter(Boolean).join(' ')].fil
 
 /* ---------- Connexion ---------- */
 function loginView() {
-  document.body.innerHTML = `<div class="login"><form id="lf"><img src="../logo-bk.png" alt="BK+"><h1>Bonjour 👋</h1><p>Connectez-vous pour voir vos interventions.</p>
+  document.body.innerHTML = `<div class="login"><form id="lf"><img src="../logo-bk.png" alt="BK+"><h1>Bonjour </h1><p>Connectez-vous pour voir vos interventions.</p>
   <label for="em">E-mail</label><input id="em" type="email" autocomplete="username" required><label for="pw">Mot de passe</label><input id="pw" type="password" autocomplete="current-password" required>
   <button class="go" type="submit">Se connecter</button><div class="msg" id="m"></div></form></div><div class="toast" id="toast"></div>`;
   $('#lf').onsubmit = async e => { e.preventDefault(); const { error } = await sb.auth.signInWithPassword({ email: $('#em').value.trim(), password: $('#pw').value }); if (error) { const m = $('#m'); m.className = 'msg err on'; m.textContent = online ? 'E-mail ou mot de passe incorrect.' : 'Pas de réseau : connectez-vous une première fois avec du réseau.'; } };
@@ -116,13 +116,13 @@ function syncHtml() {
   if (pending) return `<button class="sync busy" id="sync"><i></i>Envoi…</button>`;
   return `<button class="sync" id="sync" aria-label="Synchronisé"><i></i>Synchronisé</button>`;
 }
-function topBar(title, sub, back) { return `<div class="top">${back ? '<button class="back" id="back" aria-label="Retour">‹</button>' : ''}<div class="ttl"><h1>${title}</h1><small>${sub}</small></div><button class="sun" id="sun" aria-label="Mode plein soleil">${sun ? '☀️' : '🌤'}</button>${syncHtml()}</div>`; }
+function topBar(title, sub, back) { return `<div class="top">${back ? '<button class="back" id="back" aria-label="Retour">‹</button>' : ''}<div class="ttl"><h1>${title}</h1><small>${sub}</small></div><button class="sun" id="sun" aria-label="Mode plein soleil">${sun ? ic('contrast') : ic('sun')}</button>${syncHtml()}</div>`; }
 function bindTop() {
   const s = $('#sync'); if (s) s.onclick = () => toast(!online ? 'Pas de réseau : tout est gardé sur l’appareil et partira tout seul' : pending ? 'Envoi en cours…' : 'Tout est envoyé au bureau');
-  $('#sun').onclick = () => { sun = !sun; try { localStorage.setItem('bk-sun', sun ? '1' : '0'); } catch (e) { } scr().classList.toggle('sunmode', sun); $('#sun').textContent = sun ? '☀️' : '🌤'; };
+  $('#sun').onclick = () => { sun = !sun; try { localStorage.setItem('bk-sun', sun ? '1' : '0'); } catch (e) { } scr().classList.toggle('sunmode', sun); $('#sun').innerHTML = sun ? ic('contrast') : ic('sun'); };
   const b = $('#back'); if (b) b.onclick = () => { openId = null; render(); };
 }
-function previewBar() { return preview ? `<div class="preview">👁 Accès bureau · planning de <select id="pv">${team.map(t => `<option value="${t.id}" ${t.id === tech.id ? 'selected' : ''}>${E(t.nom)}</option>`).join('')}</select></div>` : ''; }
+function previewBar() { return preview ? `<div class="preview">${ic('eye')} Accès bureau · planning de <select id="pv">${team.map(t => `<option value="${t.id}" ${t.id === tech.id ? 'selected' : ''}>${E(t.nom)}</option>`).join('')}</select></div>` : ''; }
 function bindPreview() { const s = $('#pv'); if (s) s.onchange = async () => { tech = team.find(t => t.id === s.value); try { sessionStorage.setItem('bk-preview', tech.id); } catch (e) { } openId = null; await load(); subscribe(); render(); }; }
 
 /* ---------- Liste ---------- */
@@ -136,21 +136,21 @@ function list() {
   const days = tab === 'jour' ? [today] : [...Array(6)].map((_, k) => iso(addDays(monday(new Date()), k)));
   const job = i => `<button class="job ${i.type !== 'intervention' ? 'int' : ''} ${i.statut === 'controle' ? 'done' : ''}" data-id="${i.id}" style="--sc:${stripe(i.techs)}">
       <div class="h">${hh(i.heure)}<small>${fin(i.heure, i.duree)}</small></div>
-      <div class="b"><div class="ad">${E(i.type === 'intervention' ? (i.adresse || i.ville) : i.travaux)}</div><div class="vi">${E(i.type === 'intervention' ? i.ville : (i.type === 'interne' ? 'Interne' : 'Tâche'))}${i.pieces.length ? ' · 📎' : ''}${i.statut === 'controle' ? ' · ✓ Terminée' : ''}</div>${i.techs.length > 1 ? `<div class="teamline"><span class="avs">${avatars(i.techs)}</span>${E(i.techs.map(x => T(x).nom).join(' + '))}</div>` : ''}</div>
+      <div class="b"><div class="ad">${E(i.type === 'intervention' ? (i.adresse || i.ville) : i.travaux)}</div><div class="vi">${E(i.type === 'intervention' ? i.ville : (i.type === 'interne' ? 'Interne' : 'Tâche'))}${i.pieces.length ? ' · ' + ic('paperclip') : ''}${i.statut === 'controle' ? ' · ✓ Terminée' : ''}</div>${i.techs.length > 1 ? `<div class="teamline"><span class="avs">${avatars(i.techs)}</span>${E(i.techs.map(x => T(x).nom).join(' + '))}</div>` : ''}</div>
       ${i.type === 'intervention' ? `<span class="st ${i.statut}">${i.statut === 'controle' ? 'Terminée' : { planifiee: 'Planifiée', enroute: 'En route', encours: 'En cours' }[i.statut] || ''}</span>` : ''}<span class="chev">›</span></button>`;
   const pin = i => { const ok = i.statut === 'controle', others = i.techs.filter(x => x !== tech.id);
     return `<div class="pin ${ok ? 'ok' : ''}"><div class="pt">${ok ? '✓ ' : ''}${E(i.travaux)}</div><div class="pm">${E(fullAddr(i))}${others.length ? ` · avec <span class="avs">${avatars(others)}</span> ${E(others.map(x => T(x).nom).join(', '))}` : ''}</div>
       ${ok ? '<div class="pm" style="color:var(--ok);font-weight:800">Fait ✓</div>' : `<div class="pa">${i.adresse ? `<button data-nav="${i.id}">${ICON.route}Itinéraire</button>` : ''}<button class="pdone" data-pin="${i.id}">✓ C’est fait</button></div>`}</div>`; };
   const block = d => { const it = timed.filter(i => i.date === d).sort((a, b) => (a.heure || '').localeCompare(b.heure || '')), pd = mine.filter(i => i.date === d && i.epingle);
-    return (tab === 'semaine' ? `<div class="daytitle">${lbl(d)}${d === today ? ' · aujourd’hui' : ''}</div>` : '') + (tab === 'semaine' && pd.length ? pd.map(i => `<div class="pin mini"><div class="pt">📌 ${E(i.travaux)}</div></div>`).join('') : '') +
+    return (tab === 'semaine' ? `<div class="daytitle">${lbl(d)}${d === today ? ' · aujourd’hui' : ''}</div>` : '') + (tab === 'semaine' && pd.length ? pd.map(i => `<div class="pin mini"><div class="pt">${ic('pin')} ${E(i.travaux)}</div></div>`).join('') : '') +
       (it.length ? it.map(job).join('') : (pd.length && tab === 'semaine' ? '' : `<div class="panel"><p style="color:var(--mute)">Rien de prévu.</p></div>`)); };
-  scr().innerHTML = topBar(`Bonjour ${E(tech.nom)} 👋`, lbl(today), false) + previewBar() + `<div class="scroll">
-    ${tab === 'jour' && reminderOn && pinsLeft.length ? `<div class="remind" role="alert">⏰ <div><b>Avant la fin de journée</b>Il reste ${pinsLeft.length} tâche${pinsLeft.length > 1 ? 's' : ''} à faire aujourd’hui.</div></div>` : ''}
+  scr().innerHTML = topBar(`Bonjour ${E(tech.nom)} `, lbl(today), false) + previewBar() + `<div class="scroll">
+    ${tab === 'jour' && reminderOn && pinsLeft.length ? `<div class="remind" role="alert">${ic('alarm')} <div><b>Avant la fin de journée</b>Il reste ${pinsLeft.length} tâche${pinsLeft.length > 1 ? 's' : ''} à faire aujourd’hui.</div></div>` : ''}
     ${tab === 'jour' && next ? `<div class="next"><div class="lbl">${next.statut === 'planifiee' ? 'Prochaine intervention' : 'En ce moment'} · ${hh(next.heure)}</div><div class="ad">${E(next.adresse || next.ville)}</div><div class="vi">${E(next.ville)}${next.occupant ? ' · ' + E(next.occupant) : ''}</div>
       <div class="row2">${next.tel ? `<a href="${telUrl(next.tel)}">${ICON.phone}Appeler</a>` : '<span></span>'}<button data-nav="${next.id}">${ICON.route}Itinéraire</button><button class="go" data-id="${next.id}">${ICON.open}Ouvrir</button></div></div>` : ''}
-    ${tab === 'jour' && pins.length ? `<div class="pins"><h2>📌 À faire aujourd’hui <span>${pins.length - pinsLeft.length}/${pins.length}</span></h2><p>Pas d’heure précise : quand vous avez un moment dans la journée.</p>${pins.map(pin).join('')}</div>` : ''}
+    ${tab === 'jour' && pins.length ? `<div class="pins"><h2>${ic('pin')} À faire aujourd’hui <span>${pins.length - pinsLeft.length}/${pins.length}</span></h2><p>Pas d’heure précise : quand vous avez un moment dans la journée.</p>${pins.map(pin).join('')}</div>` : ''}
     ${tab === 'jour' && todayJobs.length ? `<div class="prog"><span>${done} / ${todayJobs.length} interventions</span><div class="bar"><i style="width:${done / todayJobs.length * 100}%"></i></div></div>` : ''}
-    ${tab === 'jour' && todayJobs.length && !next && !pinsLeft.length ? `<div class="done-box">🎉 Journée terminée, tout est envoyé au bureau.</div>` : ''}
+    ${tab === 'jour' && todayJobs.length && !next && !pinsLeft.length ? `<div class="done-box">${ic('check-circle')} Journée terminée, tout est envoyé au bureau.</div>` : ''}
     <div class="tabs"><button data-tab="jour" class="${tab === 'jour' ? 'on' : ''}">Aujourd’hui</button><button data-tab="semaine" class="${tab === 'semaine' ? 'on' : ''}">Ma semaine</button></div>
     ${days.map(block).join('')}
     <div style="text-align:center;margin-top:24px"><button class="btn" id="out">Se déconnecter</button></div>
@@ -174,23 +174,23 @@ async function fiche() {
   const smsBody = encodeURIComponent(`Bonjour, c’est ${tech.nom} de BK+ Plomberie. Je suis en route pour votre intervention, j’arrive dans une vingtaine de minutes.`);
   const docs = [...i.pieces.map(p => ({ kind: p.type, name: p.nom, bucket: 'pieces', path: p.path })), ...((i.demande?.photos) || []).map(p => ({ kind: 'photo', name: p.label, bucket: 'demandes', path: p.path }))];
   const isJob = i.type === 'intervention';
-  scr().innerHTML = topBar(`${i.epingle ? '📌' : hh(i.heure)} · ${E(i.ville || 'Tâche')}`, lbl(i.date), true) + previewBar() + `<div class="scroll">
+  scr().innerHTML = topBar(`${i.epingle ? ic('pin') : hh(i.heure)} · ${E(i.ville || 'Tâche')}`, lbl(i.date), true) + previewBar() + `<div class="scroll">
     ${done ? '<div class="done-box">✓ Terminée et envoyée au bureau</div>' : ''}
     ${isJob ? `<div class="step"><div class="${step >= 0 ? 'on' : ''}">Prévue</div><div class="${step >= 1 ? 'on' : ''}">En route</div><div class="${step >= 2 ? 'on' : ''}">Sur place</div><div class="${step >= 3 ? 'on' : ''}">Terminée</div></div>` : ''}
     <div class="addr"><div class="a">${E(isJob ? (i.adresse || i.ville) : i.travaux)}</div><div class="v">${E(isJob ? [i.cp, i.ville].filter(Boolean).join(' ') : fullAddr(i))}</div></div>
     ${others.length ? `<div class="binome"><span class="avs">${avatars(i.techs)}</span> En équipe avec ${E(others.map(x => T(x).nom).join(', '))}</div>` : ''}
     ${isJob ? `<div class="big-actions">${i.tel ? `<a class="bigbtn call" href="${telUrl(i.tel)}">${ICON.phone}Appeler</a>` : '<span></span>'}<button class="bigbtn route" data-nav="${i.id}">${ICON.route}Itinéraire</button></div>` : ''}
-    ${isJob && i.statut === 'planifiee' ? `<button class="primary-step" id="go">🚐 Je pars</button>` : ''}
-    ${isJob && i.statut === 'enroute' ? `${i.tel ? `<a class="sms" href="sms:${String(i.tel).replace(/\s/g, '')}${iOS ? '&' : '?'}body=${smsBody}">💬 Prévenir l’occupant par SMS</a>` : ''}<button class="primary-step here" id="here">📍 Je suis sur place</button>` : ''}
-    ${isJob && i.statut === 'encours' && i.debut_at ? `<div class="since">⏱ Sur place depuis ${new Date(i.debut_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }).replace(':', 'h')}</div>` : ''}
+    ${isJob && i.statut === 'planifiee' ? `<button class="primary-step" id="go">${ic('truck')} Je pars</button>` : ''}
+    ${isJob && i.statut === 'enroute' ? `${i.tel ? `<a class="sms" href="sms:${String(i.tel).replace(/\s/g, '')}${iOS ? '&' : '?'}body=${smsBody}">${ic('message')} Prévenir l’occupant par SMS</a>` : ''}<button class="primary-step here" id="here">${ic('map-pin')} Je suis sur place</button>` : ''}
+    ${isJob && i.statut === 'encours' && i.debut_at ? `<div class="since">${ic('timer')} Sur place depuis ${new Date(i.debut_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }).replace(':', 'h')}</div>` : ''}
     ${isJob ? `<div class="panel"><dl class="facts">${i.occupant ? `<dt>Occupant</dt><dd>${E(i.occupant)}</dd>` : ''}${i.tel ? `<dt>Téléphone</dt><dd><a href="${telUrl(i.tel)}">${E(i.tel)}</a></dd>` : ''}${i.client ? `<dt>Client</dt><dd>${E(i.client)}</dd>` : ''}<dt>Horaires</dt><dd>${hh(i.heure)} – ${fin(i.heure, i.duree)}</dd></dl></div>` : ''}
-    ${isJob ? `<div class="panel"><h3>🔧 Travaux à faire</h3><p>${E(i.travaux)}</p></div>` : ''}
-    ${i.materiel.length ? `<div class="panel"><h3>🧰 Matériel à prendre</h3><ul class="mat">${i.materiel.map((m, k) => `<li><label><input type="checkbox" data-mat="${k}" ${(matChk[i.id] || {})[k] ? 'checked' : ''}>${E(m)}</label></li>`).join('')}</ul></div>` : ''}
-    ${docs.length ? `<div class="panel"><h3>📎 Documents${i.demande ? ' · photos du client' : ''}</h3><div class="docs">${docs.map((p, k) => `<button data-doc="${k}"><div class="m ${p.kind === 'video' ? 'v' : ''}" data-dm="${k}">${p.kind === 'pdf' ? '📄' : p.kind === 'video' ? '' : ''}</div><span>${E(p.name)}</span></button>`).join('')}</div>${i.demande?.message ? `<p style="font-size:16px;margin-top:10px;color:var(--mute)">« ${E(i.demande.message)} »</p>` : ''}</div>` : ''}
-    ${isJob ? `<div class="panel"><h3>📷 Photos</h3>
+    ${isJob ? `<div class="panel"><h3>${ic('wrench')} Travaux à faire</h3><p>${E(i.travaux)}</p></div>` : ''}
+    ${i.materiel.length ? `<div class="panel"><h3>${ic('package')} Matériel à prendre</h3><ul class="mat">${i.materiel.map((m, k) => `<li><label><input type="checkbox" data-mat="${k}" ${(matChk[i.id] || {})[k] ? 'checked' : ''}>${E(m)}</label></li>`).join('')}</ul></div>` : ''}
+    ${docs.length ? `<div class="panel"><h3>${ic('paperclip')} Documents${i.demande ? ' · photos du client' : ''}</h3><div class="docs">${docs.map((p, k) => `<button data-doc="${k}"><div class="m ${p.kind === 'video' ? 'v' : ''}" data-dm="${k}">${p.kind === 'pdf' ? ic('file') : p.kind === 'video' ? '' : ''}</div><span>${E(p.name)}</span></button>`).join('')}</div>${i.demande?.message ? `<p style="font-size:16px;margin-top:10px;color:var(--mute)">« ${E(i.demande.message)} »</p>` : ''}</div>` : ''}
+    ${isJob ? `<div class="panel"><h3>${ic('camera')} Photos</h3>
       ${done ? '' : `<label class="photo-btn">${ICON.cam}Prendre une photo<input type="file" accept="image/*" capture="environment" class="sr" id="cam"></label>`}
       <div class="thumbs">${d.photos.map((p, k) => `<figure><img src="${URL.createObjectURL(p.blob)}" alt="Photo ${k + 1}" data-lb>${done ? '' : `<button class="tg" data-tag="${k}">${p.tag || 'Avant / Après ?'}</button><button class="rm" data-rm="${k}" aria-label="Supprimer">×</button>`}</figure>`).join('')}</div></div>
-    <div class="panel"><h3>✍️ Commentaire</h3>${done ? `<p>${E(i.commentaire || '')}</p>` : `<div class="chips">${PHRASES.map(p => `<button data-ph="${E(p)}">+ ${E(p)}</button>`).join('')}</div><div class="cmt"><textarea id="cmt" placeholder="Ce qui a été fait, ce qui reste à prévoir…">${E(d.commentaire)}</textarea><button class="mic" id="mic">${ICON.mic}Dicter</button></div>`}</div>` : ''}
+    <div class="panel"><h3>${ic('pencil')} Commentaire</h3>${done ? `<p>${E(i.commentaire || '')}</p>` : `<div class="chips">${PHRASES.map(p => `<button data-ph="${E(p)}">+ ${E(p)}</button>`).join('')}</div><div class="cmt"><textarea id="cmt" placeholder="Ce qui a été fait, ce qui reste à prévoir…">${E(d.commentaire)}</textarea><button class="mic" id="mic">${ICON.mic}Dicter</button></div>`}</div>` : ''}
     ${!isJob && !done ? `<button class="primary-step" style="background:var(--ok)" id="pindone">✓ C’est fait</button>` : ''}
   </div>
   ${done || !isJob ? '' : `<div class="validate"><div class="alert" id="alert" role="alert"></div><div class="need"><span id="n1">○ 1 photo minimum</span><span id="n2">○ Un commentaire</span></div><button id="ok">Valider l’intervention</button></div>`}
@@ -234,17 +234,17 @@ function shrink(file) { return new Promise((res, rej) => { const img = new Image
 let rec = null;
 function dictate() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition, b = $('#mic'), ta = $('#cmt');
-  if (!SR) { ta.focus(); toast('Touchez le micro 🎤 du clavier pour dicter'); return; }
+  if (!SR) { ta.focus(); toast('Touchez le micro du clavier pour dicter'); return; }
   if (rec) { rec.stop(); return; }
   rec = new SR(); rec.lang = 'fr-FR'; rec.interimResults = false; b.classList.add('rec');
   rec.onresult = e => { const t = [...e.results].map(r => r[0].transcript).join(' '); ta.value = (ta.value.trim() ? ta.value.trim() + ' ' : '') + t.charAt(0).toUpperCase() + t.slice(1); ta.dispatchEvent(new Event('input')); };
   rec.onend = () => { rec = null; const m = $('#mic'); if (m) m.classList.remove('rec'); };
-  rec.onerror = () => { ta.focus(); toast('Utilisez le micro 🎤 du clavier'); };
+  rec.onerror = () => { ta.focus(); toast('Utilisez le micro du clavier'); };
   try { rec.start(); } catch (e) { rec = null; b.classList.remove('rec'); }
 }
 
 /* ---------- GPS : Waze, Plans, Google Maps ---------- */
-const NAV = { waze: { n: 'Waze', c: '#33CCFF', e: '🚙', u: q => 'https://waze.com/ul?q=' + q + '&navigate=yes' }, plans: { n: 'Plans (Apple)', c: '#34C759', e: '🗺', u: q => 'https://maps.apple.com/?daddr=' + q }, google: { n: 'Google Maps', c: '#4285F4', e: '📍', u: q => 'https://www.google.com/maps/dir/?api=1&destination=' + q } };
+const NAV = { waze: { n: 'Waze', c: '#33CCFF', e: ic('navigation'), u: q => 'https://waze.com/ul?q=' + q + '&navigate=yes' }, plans: { n: 'Plans (Apple)', c: '#34C759', e: ic('map'), u: q => 'https://maps.apple.com/?daddr=' + q }, google: { n: 'Google Maps', c: '#4285F4', e: ic('map-pin'), u: q => 'https://www.google.com/maps/dir/?api=1&destination=' + q } };
 function navTo(i) {
   if (!i) return; const q = encodeURIComponent(fullAddr(i) || i.ville || '');
   if (navPref && NAV[navPref]) { window.open(NAV[navPref].u(q), '_blank'); return; }
@@ -258,7 +258,7 @@ function navTo(i) {
 function checkReminder() {
   const d = new Date(), today = iso(d); if (reminderOn || !(d.getHours() > 16 || (d.getHours() === 16 && d.getMinutes() >= 30)) || d.getDay() === 5 && d.getHours() < 12) return;
   const left = items.filter(i => i.epingle && i.date === today && i.statut !== 'controle' && i.statut !== 'cloturee'); if (!left.length) return;
-  reminderOn = true; if (!openId) render(); toast('⏰ ' + left.length + ' tâche' + (left.length > 1 ? 's' : '') + ' à faire avant ce soir');
+  reminderOn = true; if (!openId) render(); toast('' + left.length + ' tâche' + (left.length > 1 ? 's' : '') + ' à faire avant ce soir');
   try { navigator.vibrate && navigator.vibrate([200, 100, 200]); } catch (e) { }
   try { if ('Notification' in window && Notification.permission === 'granted') new Notification('BK+ · Tâches du jour', { body: left.map(x => '• ' + x.travaux).join('\n'), icon: '../icon-180.png' }); } catch (e) { }
 }

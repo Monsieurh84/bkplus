@@ -59,10 +59,10 @@ async function start() {
 }
 function shell() {
   root.innerHTML = `<div class="app"><aside class="side"><div class="brand"><img src="../logo-bk.png" alt=""><div><b>BK+</b><small>Application</small></div></div>
-  <button class="nav" data-v="planning">🗓 Planning</button>
-  <button class="nav" data-v="demandes">📥 Demandes du site<span class="c" id="cn"></span></button>
-  <button class="nav" data-v="affaires">💼 Affaires<span class="c" id="ca"></span></button><button class="nav" data-v="chantiers">🏗 Chantiers</button><button class="nav" data-v="controle">✅ À contrôler<span class="c" id="cc"></span></button>
-  <a class="nav" href="tech.html" target="_blank" rel="noopener" style="text-decoration:none">📱 App technicien<small>aperçu</small></a>
+  <button class="nav" data-v="planning">${ic('calendar')} Planning</button>
+  <button class="nav" data-v="demandes">${ic('inbox')} Demandes du site<span class="c" id="cn"></span></button>
+  <button class="nav" data-v="affaires">${ic('briefcase')} Affaires<span class="c" id="ca"></span></button><button class="nav" data-v="chantiers">${ic('helmet')} Chantiers</button><button class="nav" data-v="controle">${ic('check-circle')} À contrôler<span class="c" id="cc"></span></button>
+  <a class="nav" href="tech.html" target="_blank" rel="noopener" style="text-decoration:none">${ic('smartphone')} App technicien<small>aperçu</small></a>
   <div class="who"><b>${E(me.nom)}</b>Accès bureau<br><button id="out">Se déconnecter</button></div></aside><main class="main" id="main"><div class="loading">Chargement…</div></main></div>`;
   $('#out').onclick = () => sb.auth.signOut();
   document.querySelectorAll('[data-v]').forEach(b => b.onclick = () => go(b.dataset.v));
@@ -76,7 +76,7 @@ function listen() {
   if (chan) sb.removeChannel(chan);
   let tm = null; const refresh = () => { clearTimeout(tm); tm = setTimeout(async () => { badgeC(); if (view === 'planning') { await loadPlanning(); planning(); } else if (view === 'controle') await listControle(); else if (view === 'chantiers') { await loadChantiers(); listChantiers(); } }, 400); };
   chan = sb.channel('bk').on('postgres_changes', { event: '*', schema: 'public', table: 'demandes' }, p => {
-    if (p.eventType === 'INSERT') { demandes.unshift(p.new); toast('📥 Nouvelle demande : ' + p.new.service + ' · ' + p.new.ville); }
+    if (p.eventType === 'INSERT') { demandes.unshift(p.new); toast('Nouvelle demande : ' + p.new.service + ' · ' + p.new.ville); }
     else if (p.eventType === 'UPDATE') { const i = demandes.findIndex(x => x.id === p.new.id); if (i > -1) demandes[i] = p.new; }
     badge(); if (view === 'demandes') listDemandes();
   }).on('postgres_changes', { event: '*', schema: 'public', table: 'interventions' }, refresh)
@@ -100,9 +100,9 @@ async function loadPlanning() {
 const sortI = (a, b) => (b.epingle - a.epingle) || (a.heure || '').localeCompare(b.heure || '');
 function card(i, techId) {
   const team = i.techs.length > 1;
-  const ico = (i.demande_id ? '<span title="Demande du site (photos)">📷</span>' : '') + (i.nbPieces ? '<span title="Pièces jointes">📎</span>' : '') + (i.materiel.length ? '<span title="Matériel">🧰</span>' : '') + (i.recurrent ? '<span title="Récurrente">↻</span>' : '') + (i.chantier_id ? '<span title="Chantier">🏗</span>' : '') + (i.affaire_id && !i.chantier_id ? '<span title="Affaire">💼</span>' : '');
+  const ico = (i.demande_id ? '<span title="Demande du site (photos)">' + ic('camera') + '</span>' : '') + (i.nbPieces ? '<span title="Pièces jointes">' + ic('paperclip') + '</span>' : '') + (i.materiel.length ? '<span title="Matériel">' + ic('package') + '</span>' : '') + (i.recurrent ? '<span title="Récurrente">↻</span>' : '') + (i.chantier_id ? '<span title="Chantier">' + ic('helmet') + '</span>' : '') + (i.affaire_id && !i.chantier_id ? '<span title="Affaire">' + ic('briefcase') + '</span>' : '');
   return `<button class="card ${i.epingle ? 'pin' : ''} ${i.type === 'interne' ? 'interne' : ''} ${i.statut === 'cloturee' ? 'cl' : ''}" draggable="true" data-id="${i.id}" data-tech="${techId}" style="--stripe:${stripe(i.techs)};--sc:${SC[i.statut]}">
-    <div class="t"><span class="dot" title="${STAT_I[i.statut]}"></span>${i.epingle ? '📌 Dans la journée' : hh(i.heure) + '–' + fin(i.heure, i.duree)}<span class="ico">${ico}</span></div>
+    <div class="t"><span class="dot" title="${STAT_I[i.statut]}"></span>${i.epingle ? ic('pin') + ' Dans la journée' : hh(i.heure) + '–' + fin(i.heure, i.duree)}<span class="ico">${ico}</span></div>
     <div class="a">${E(i.epingle || i.type !== 'intervention' ? i.travaux : i.ville)}</div>${!i.epingle && i.type === 'intervention' ? `<div class="g">${E(i.client || i.occupant || '')}</div>` : ''}
     ${team ? `<div class="team"><span class="avs">${avatars(i.techs)}</span>${i.techs.length > 2 ? i.techs.length + ' techniciens' : E(names(i.techs))}</div>` : ''}</button>`;
 }
@@ -113,8 +113,8 @@ function planning() {
   let h = `<div class="head"><h1>Planning</h1><span class="live"><i></i>En direct</span>
    <div class="weeknav"><button id="prev" aria-label="Précédent">‹</button><span>${E(title)}</span><button id="next" aria-label="Suivant">›</button><button class="today" id="tod">Aujourd’hui</button></div>
    <div class="seg"><button data-m="jour" class="${mode === 'jour' ? 'on' : ''}">Jour</button><button data-m="semaine" class="${mode === 'semaine' ? 'on' : ''}">Semaine</button></div>
-   <button class="btn btn-line" id="npin">📌 Tâche du jour</button><button class="btn btn-grad" id="nnew">+ Intervention</button></div>
-   <div class="legend">${techs.map(t => `<span><i style="background:${t.couleur}"></i>${E(t.nom)}</span>`).join('')}<span>▌▌ équipe = une bande par technicien</span><span>📷 demande du site</span><span>📎 pièces jointes</span><span>🧰 matériel</span></div>`;
+   <button class="btn btn-line" id="npin">${ic('pin')} Tâche du jour</button><button class="btn btn-grad" id="nnew">+ Intervention</button></div>
+   <div class="legend">${techs.map(t => `<span><i style="background:${t.couleur}"></i>${E(t.nom)}</span>`).join('')}<span>▌▌ équipe = une bande par technicien</span><span>${ic('camera')} demande du site</span><span>${ic('paperclip')} pièces jointes</span><span>${ic('package')} matériel</span></div>`;
   if (!techs.length) h += `<div class="empty">Aucun technicien enregistré.</div>`;
   else if (mode === 'semaine') {
     h += `<div class="grid"><div class="gh"></div>${days.map(d => `<div class="gh ${d === today ? 'today' : ''}">${d === today ? '<span>' + lbl(d) + '</span>' : lbl(d)}</div>`).join('')}`;
@@ -123,13 +123,13 @@ function planning() {
       days.forEach(d => {
         const ab = absences.find(a => a.tech_id === t.id && a.date === d);
         const it = inter.filter(i => i.date === d && i.techs.includes(t.id)).sort(sortI);
-        h += `<div class="cell ${d === today ? 'today' : ''} ${ab ? 'abs' : ''}" data-date="${d}" data-tech="${t.id}">${ab ? `<div class="abs-l">🌴 ${E(ab.motif)}<button data-delabs="${ab.id}" aria-label="Retirer l’absence">×</button></div>` : ''}${it.map(i => card(i, t.id)).join('')}</div>`;
+        h += `<div class="cell ${d === today ? 'today' : ''} ${ab ? 'abs' : ''}" data-date="${d}" data-tech="${t.id}">${ab ? `<div class="abs-l">${ic('calendar-x')} ${E(ab.motif)}<button data-delabs="${ab.id}" aria-label="Retirer l’absence">×</button></div>` : ''}${it.map(i => card(i, t.id)).join('')}</div>`;
       });
     });
     h += `</div>`;
   } else {
     h += `<div class="dayv">${techs.map(t => { const ab = absences.find(a => a.tech_id === t.id && a.date === day); const it = inter.filter(i => i.date === day && i.techs.includes(t.id)).sort(sortI);
-      return `<div class="dcol cell" data-date="${day}" data-tech="${t.id}"><h3><i style="background:${t.couleur}"></i>${E(t.nom)}</h3>${ab ? `<div class="abs-l">🌴 ${E(ab.motif)}</div>` : ''}${it.map(i => card(i, t.id)).join('') || (ab ? '' : '<div style="color:var(--mute);font-size:13px;padding:6px">Disponible</div>')}</div>`; }).join('')}</div>`;
+      return `<div class="dcol cell" data-date="${day}" data-tech="${t.id}"><h3><i style="background:${t.couleur}"></i>${E(t.nom)}</h3>${ab ? `<div class="abs-l">${ic('calendar-x')} ${E(ab.motif)}</div>` : ''}${it.map(i => card(i, t.id)).join('') || (ab ? '' : '<div style="color:var(--mute);font-size:13px;padding:6px">Disponible</div>')}</div>`; }).join('')}</div>`;
   }
   $('#main').innerHTML = h;
   const nav = async n => { if (mode === 'semaine') week = addDays(week, 7 * n); else day = iso(addDays(new Date(day + 'T12:00'), n)); await loadPlanning(); planning(); };
@@ -175,16 +175,16 @@ async function detail(id, given) {
   const i = given || inter.find(x => x.id === id); if (!i) return;
   const [{ data: pieces }, dem] = await Promise.all([sb.from('pieces').select('*').eq('intervention_id', id).order('created_at'), i.demande_id ? sb.from('demandes').select('*').eq('id', i.demande_id).maybeSingle() : Promise.resolve({ data: null })]);
   const d = dem.data;
-  openPanel(`<header><div><span class="tag s-${i.statut}" style="margin:0">${STAT_I[i.statut]}</span>${i.epingle ? '<span class="tag t-aff">📌 Dans la journée</span>' : ''}<h2 style="margin-top:8px">${E(i.type === 'intervention' ? (i.adresse || i.ville || 'Intervention') : i.travaux)}</h2>
+  openPanel(`<header><div><span class="tag s-${i.statut}" style="margin:0">${STAT_I[i.statut]}</span>${i.epingle ? '<span class="tag t-aff">' + ic('pin') + ' Dans la journée</span>' : ''}<h2 style="margin-top:8px">${E(i.type === 'intervention' ? (i.adresse || i.ville || 'Intervention') : i.travaux)}</h2>
     <div style="color:var(--mute);font-size:13.5px">${E(i.ville || '')} · ${lbl(i.date, true)}${i.epingle ? '' : ' · ' + hh(i.heure) + '–' + fin(i.heure, i.duree)}</div></div><button class="x" aria-label="Fermer">×</button></header>
   <div class="body">
     <div class="chips">${i.techs.map(t => `<span><i style="background:${T(t).couleur}"></i>${E(T(t).nom)}</span>`).join('')}${i.recurrent ? '<span>↻ Récurrente</span>' : ''}</div>
     ${i.type === 'intervention' ? `<dl class="kv"><dt>Client</dt><dd>${E(i.client || '—')}</dd><dt>Occupant</dt><dd>${E(i.occupant || '—')}</dd><dt>Téléphone</dt><dd>${i.tel ? `<a href="tel:${E(i.tel.replace(/\s/g, ''))}">${E(i.tel)}</a>` : '—'}</dd><dt>Adresse</dt><dd>${E([i.adresse, [i.cp, i.ville].filter(Boolean).join(' ')].filter(Boolean).join(', ') || '—')}</dd></dl>` : ''}
     <div class="box"><h4>Travaux à effectuer</h4>${E(i.travaux || '—')}</div>
-    ${i.materiel.length ? `<div class="box"><h4>🧰 Matériel nécessaire</h4><ul class="mat">${i.materiel.map(m => `<li>${E(m)}</li>`).join('')}</ul></div>` : ''}
-    ${(pieces || []).length ? `<div class="box"><h4>📎 Pièces jointes pour le technicien</h4><div class="ph" id="pj">${pieces.map(p => `<a target="_blank" rel="noopener" data-p="${E(p.path)}">${p.type === 'photo' ? '<img alt="">' : `<span class="ic">${p.type === 'video' ? '🎬' : '📄'}</span>`}${E(p.nom)}</a>`).join('')}</div></div>` : ''}
-    ${d ? `<div class="box"><h4>📷 Demande du site ${E(d.ref)}</h4><div style="margin-bottom:8px">${E(d.message || '')}</div><div class="ph" id="dph">${d.photos.map(p => `<a target="_blank" rel="noopener" data-dp="${E(p.path)}"><img alt="">${E(p.label)}</a>`).join('')}</div></div>` : ''}
-    ${i.commentaire || (i.photos || []).length ? `<div class="box" style="border-color:#BFE8D6;background:#F3FBF7"><h4>✅ Retour du technicien${i.fin_at ? ' · ' + fdate(i.fin_at) : ''}</h4>${E(i.commentaire || '')}${(i.photos || []).length ? `<div class="ph" id="rph" style="margin-top:10px">${i.photos.map(p => `<a target="_blank" rel="noopener" data-rp="${E(p.path)}"><img alt="">${E(p.tag || 'Photo')}</a>`).join('')}</div>` : ''}</div>` : ''}
+    ${i.materiel.length ? `<div class="box"><h4>${ic('package')} Matériel nécessaire</h4><ul class="mat">${i.materiel.map(m => `<li>${E(m)}</li>`).join('')}</ul></div>` : ''}
+    ${(pieces || []).length ? `<div class="box"><h4>${ic('paperclip')} Pièces jointes pour le technicien</h4><div class="ph" id="pj">${pieces.map(p => `<a target="_blank" rel="noopener" data-p="${E(p.path)}">${p.type === 'photo' ? '<img alt="">' : `<span class="ic">${p.type === 'video' ? ic('film') : ic('file')}</span>`}${E(p.nom)}</a>`).join('')}</div></div>` : ''}
+    ${d ? `<div class="box"><h4>${ic('camera')} Demande du site ${E(d.ref)}</h4><div style="margin-bottom:8px">${E(d.message || '')}</div><div class="ph" id="dph">${d.photos.map(p => `<a target="_blank" rel="noopener" data-dp="${E(p.path)}"><img alt="">${E(p.label)}</a>`).join('')}</div></div>` : ''}
+    ${i.commentaire || (i.photos || []).length ? `<div class="box" style="border-color:#BFE8D6;background:#F3FBF7"><h4>${ic('check-circle')} Retour du technicien${i.fin_at ? ' · ' + fdate(i.fin_at) : ''}</h4>${E(i.commentaire || '')}${(i.photos || []).length ? `<div class="ph" id="rph" style="margin-top:10px">${i.photos.map(p => `<a target="_blank" rel="noopener" data-rp="${E(p.path)}"><img alt="">${E(p.tag || 'Photo')}</a>`).join('')}</div>` : ''}</div>` : ''}
     <label style="font-size:13px;font-weight:800;color:var(--mute)">Statut<select id="st" style="display:block;width:100%;margin-top:6px;border:2px solid var(--line);border-radius:10px;padding:10px">${Object.entries(STAT_I).map(([k, v]) => `<option value="${k}" ${k === i.statut ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
   </div>
   <footer>${i.statut === 'controle' ? '<button class="btn btn-grad" id="clo" style="background:var(--ok,#0E9F6E)">✓ Clôturer</button>' : ''}<button class="btn ${i.statut === 'controle' ? 'btn-line' : 'btn-grad'}" id="ed">Modifier</button><button class="btn btn-line" id="p7">+7 jours</button><button class="btn btn-red" id="del" style="margin-left:auto">Supprimer</button></footer>`);
@@ -205,13 +205,13 @@ async function form(i, opts) {
   i = i || { type: opts.epingle ? 'tache' : 'intervention', date: mode === 'jour' ? day : iso(new Date()), heure: '09:00', duree: 2, epingle: !!opts.epingle, statut: 'planifiee', client: '', occupant: '', tel: '', adresse: '', cp: '', ville: 'Istres', travaux: '', materiel: [], recurrent: false, techs: [], demande_id: null, ...(opts.pre || {}) };
   let existing = []; if (!isNew) { const { data } = await sb.from('pieces').select('*').eq('intervention_id', i.id); existing = data || []; }
   let added = [], removed = [];
-  openPanel(`<header><h2>${isNew ? (i.epingle ? '📌 Tâche à faire dans la journée' : 'Nouvelle intervention') : 'Modifier'}</h2><button class="x" aria-label="Fermer">×</button></header>
+  openPanel(`<header><h2>${isNew ? (i.epingle ? ic('pin') + ' Tâche à faire dans la journée' : 'Nouvelle intervention') : 'Modifier'}</h2><button class="x" aria-label="Fermer">×</button></header>
   <form class="body" id="f"><div class="form">
     ${opts.ctx ? `<div class="full box" style="background:var(--soft);border:0"><b>${E(opts.ctx)}</b> · cette journée y sera rattachée.</div>` : ''}
-    ${opts.demande ? `<div class="full box" style="background:var(--soft);border:0"><b>📷 Depuis la demande ${E(opts.demande.ref)}</b> · ${E(opts.demande.service)}. Ses photos seront visibles par le technicien.</div>` : ''}
+    ${opts.demande ? `<div class="full box" style="background:var(--soft);border:0"><b>${ic('camera')} Depuis la demande ${E(opts.demande.ref)}</b> · ${E(opts.demande.service)}. Ses photos seront visibles par le technicien.</div>` : ''}
     <label>Type<select name="type"><option value="intervention">Intervention</option><option value="tache" ${i.type === 'tache' ? 'selected' : ''}>Tâche (matériel, déchetterie…)</option><option value="interne" ${i.type === 'interne' ? 'selected' : ''}>Interne (réunion…)</option></select></label>
     <label>Date<input type="date" name="date" value="${i.date}" required></label>
-    <label class="full inline pinbox"><input type="checkbox" name="epingle" ${i.epingle ? 'checked' : ''}> 📌 À faire dans la journée, sans heure précise (rappel au technicien avant la fin de journée)</label>
+    <label class="full inline pinbox"><input type="checkbox" name="epingle" ${i.epingle ? 'checked' : ''}> ${ic('pin')} À faire dans la journée, sans heure précise (rappel au technicien avant la fin de journée)</label>
     <label class="hr">Heure<input type="time" name="heure" value="${(i.heure || '09:00').slice(0, 5)}" step="900"></label>
     <label class="hr">Durée (heures)<input type="number" name="duree" value="${i.duree}" min="0.5" step="0.5"></label>
     <div class="full"><div style="font-size:13px;font-weight:800;color:var(--mute);margin-bottom:6px">Technicien(s) · plusieurs = équipe</div><div class="checks">${techs.map(t => `<label><input type="checkbox" name="techs" value="${t.id}" ${i.techs.includes(t.id) ? 'checked' : ''}><i style="width:10px;height:10px;border-radius:50%;background:${t.couleur};display:inline-block"></i>${E(t.nom)}</label>`).join('')}</div></div>
@@ -222,14 +222,14 @@ async function form(i, opts) {
     <label>Client (agence, syndic, particulier)<input name="client" value="${E(i.client)}"></label>
     <label>Occupant<input name="occupant" value="${E(i.occupant)}"></label>
     <label class="full">Téléphone de l’occupant<input name="tel" type="tel" value="${E(i.tel)}"></label>
-    <label class="full">🧰 Matériel nécessaire <span style="font-weight:600">(une ligne par élément)</span><textarea name="materiel" placeholder="Ex. : Siphon PVC Ø40&#10;Flexible inox 50 cm">${E(i.materiel.join('\n'))}</textarea></label>
-    <div class="full"><div style="font-size:13px;font-weight:800;color:var(--mute);margin-bottom:6px">📎 Pièces jointes pour le technicien <span style="font-weight:600">(photos, vidéos, PDF · facultatif)</span></div><div class="ph" id="pjl"></div><label class="btn btn-line" style="margin-top:8px;width:max-content">+ Ajouter des fichiers<input type="file" id="pjin" multiple accept="image/*,video/*,application/pdf" class="sr"></label></div>
+    <label class="full">${ic('package')} Matériel nécessaire <span style="font-weight:600">(une ligne par élément)</span><textarea name="materiel" placeholder="Ex. : Siphon PVC Ø40&#10;Flexible inox 50 cm">${E(i.materiel.join('\n'))}</textarea></label>
+    <div class="full"><div style="font-size:13px;font-weight:800;color:var(--mute);margin-bottom:6px">${ic('paperclip')} Pièces jointes pour le technicien <span style="font-weight:600">(photos, vidéos, PDF · facultatif)</span></div><div class="ph" id="pjl"></div><label class="btn btn-line" style="margin-top:8px;width:max-content">+ Ajouter des fichiers<input type="file" id="pjin" multiple accept="image/*,video/*,application/pdf" class="sr"></label></div>
     <label class="full inline"><input type="checkbox" name="recurrent" ${i.recurrent ? 'checked' : ''}> Intervention récurrente (contrat d’entretien)</label>
   </div><datalist id="villes">${['Istres', 'Miramas', 'Martigues', 'Fos-sur-Mer', 'Port-de-Bouc', 'Saint-Chamas', 'Cornillon-Confoux', 'Grans', 'Salon-de-Provence', 'Vitrolles', 'Marignane', 'Sausset-les-Pins', 'Port-Saint-Louis-du-Rhône', 'Aix-en-Provence', 'Marseille'].map(v => `<option value="${v}">`).join('')}</datalist></form>
   <footer><button class="btn btn-grad" form="f" type="submit" id="sv">${isNew ? 'Planifier' : 'Enregistrer'}</button><button class="btn btn-line" type="button" id="cc">Annuler</button></footer>`);
   const f = $('#f');
   const syncPin = () => f.querySelectorAll('.hr').forEach(l => l.style.display = f.epingle.checked ? 'none' : ''); f.epingle.onchange = syncPin; syncPin();
-  const drawPj = () => { $('#pjl').innerHTML = existing.filter(p => !removed.includes(p.id)).map(p => `<a>${p.type === 'photo' ? '<span class="ic">🖼</span>' : `<span class="ic">${p.type === 'video' ? '🎬' : '📄'}</span>`}${E(p.nom)}<button type="button" class="rm" data-rme="${p.id}">×</button></a>`).join('') + added.map((f, k) => `<a>${kindOf(f) === 'photo' ? `<img src="${URL.createObjectURL(f)}" alt="">` : `<span class="ic">${kindOf(f) === 'video' ? '🎬' : '📄'}</span>`}${E(f.name)}<button type="button" class="rm" data-rma="${k}">×</button></a>`).join('') || '<span style="font-size:13px;color:var(--mute)">Aucune.</span>';
+  const drawPj = () => { $('#pjl').innerHTML = existing.filter(p => !removed.includes(p.id)).map(p => `<a>${p.type === 'photo' ? '<span class="ic">' + ic('image') + '</span>' : `<span class="ic">${p.type === 'video' ? ic('film') : ic('file')}</span>`}${E(p.nom)}<button type="button" class="rm" data-rme="${p.id}">×</button></a>`).join('') + added.map((f, k) => `<a>${kindOf(f) === 'photo' ? `<img src="${URL.createObjectURL(f)}" alt="">` : `<span class="ic">${kindOf(f) === 'video' ? ic('film') : ic('file')}</span>`}${E(f.name)}<button type="button" class="rm" data-rma="${k}">×</button></a>`).join('') || '<span style="font-size:13px;color:var(--mute)">Aucune.</span>';
     $('#pjl').querySelectorAll('[data-rme]').forEach(b => b.onclick = () => { removed.push(b.dataset.rme); drawPj(); });
     $('#pjl').querySelectorAll('[data-rma]').forEach(b => b.onclick = () => { added.splice(+b.dataset.rma, 1); drawPj(); }); };
   drawPj();
@@ -295,7 +295,7 @@ async function detailDemande(id) {
     ${d.photos.length ? `<div class="box"><h4>Photos (${d.photos.length})</h4><div class="ph" id="ph">${d.photos.map(p => `<a target="_blank" rel="noopener" data-p="${E(p.path)}"><img alt="">${E(p.label)}</a>`).join('')}</div></div>` : ''}
     ${d.manquantes.length ? `<div class="box" style="border-color:#FDE68A;background:#FFFBEB"><h4>Photos impossibles à prendre</h4>${d.manquantes.map(E).join(' · ')}</div>` : ''}
   </div>
-  <footer><button class="btn btn-grad" id="plan">🗓 Planifier</button>${d.statut !== 'affaire' ? `<button class="btn btn-line" id="toaff">💼 Créer l’affaire (devis)</button>` : `<button class="btn btn-line" id="toaff">💼 Voir l’affaire</button>`}${d.statut !== 'archivee' ? `<button class="btn btn-line" data-s="archivee">Archiver</button>` : `<button class="btn btn-line" data-s="nouvelle">Remettre en nouvelle</button>`}</footer>`);
+  <footer><button class="btn btn-grad" id="plan">${ic('calendar')} Planifier</button>${d.statut !== 'affaire' ? `<button class="btn btn-line" id="toaff">${ic('briefcase')} Créer l’affaire (devis)</button>` : `<button class="btn btn-line" id="toaff">${ic('briefcase')} Voir l’affaire</button>`}${d.statut !== 'archivee' ? `<button class="btn btn-line" data-s="archivee">Archiver</button>` : `<button class="btn btn-line" data-s="nouvelle">Remettre en nouvelle</button>`}</footer>`);
   $('#plan').onclick = () => form(null, { demande: d, pre: { client: d.profil === 'Particulier' ? 'Particulier' : '', occupant: d.nom, tel: d.tel, adresse: d.adresse || '', cp: d.cp || '', ville: d.ville || '', travaux: d.service + (d.message ? ' : ' + d.message : ''), demande_id: d.id } });
   document.querySelectorAll('[data-s]').forEach(b => b.onclick = async () => { b.disabled = true; const s = b.dataset.s;
     const { error } = await sb.from('demandes').update({ statut: s, traitee_par: me.id, traitee_le: new Date().toISOString() }).eq('id', d.id);
@@ -326,9 +326,9 @@ async function listControle() {
   ctrl = (data || []).map(i => ({ ...i, techs: i.intervention_techs.map(x => x.tech_id), nbPieces: i.pieces.length }));
   $('#main').innerHTML = `<div class="head"><h1>À contrôler</h1><span class="live"><i></i>En direct</span></div>
    <p style="color:var(--mute);margin:-6px 0 16px">Interventions validées par les techniciens (photos + commentaire). Vérifiez puis clôturez.</p>
-   ${ctrl.length ? `<div class="list">${ctrl.map(i => `<button class="d" data-c="${i.id}"><span class="th" data-th="${E((i.photos || [])[0]?.path || '')}">${(i.photos || []).length ? '' : '📌'}</span>
-     <span><h3>${E(i.type === 'intervention' ? (i.adresse || i.ville || 'Intervention') : i.travaux)}${i.epingle ? '<span class="tag t-aff">📌 Tâche</span>' : ''}</h3><p>${i.techs.map(t => `<i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${T(t).couleur};margin-right:4px"></i>${E(T(t).nom)}`).join(' · ')} · ${(i.photos || []).length} photo${(i.photos || []).length > 1 ? 's' : ''}${i.commentaire ? ' · « ' + E(i.commentaire.slice(0, 70)) + (i.commentaire.length > 70 ? '…' : '') + ' »' : ''}</p></span>
-     <span class="r" style="color:var(--mute);font-size:13px;font-weight:700">${i.fin_at ? fdate(i.fin_at) : lbl(i.date, true)}</span></button>`).join('')}</div>` : `<div class="empty">Rien à contrôler : tout est à jour 👍</div>`}`;
+   ${ctrl.length ? `<div class="list">${ctrl.map(i => `<button class="d" data-c="${i.id}"><span class="th" data-th="${E((i.photos || [])[0]?.path || '')}">${(i.photos || []).length ? '' : ic('pin')}</span>
+     <span><h3>${E(i.type === 'intervention' ? (i.adresse || i.ville || 'Intervention') : i.travaux)}${i.epingle ? '<span class="tag t-aff">' + ic('pin') + ' Tâche</span>' : ''}</h3><p>${i.techs.map(t => `<i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${T(t).couleur};margin-right:4px"></i>${E(T(t).nom)}`).join(' · ')} · ${(i.photos || []).length} photo${(i.photos || []).length > 1 ? 's' : ''}${i.commentaire ? ' · « ' + E(i.commentaire.slice(0, 70)) + (i.commentaire.length > 70 ? '…' : '') + ' »' : ''}</p></span>
+     <span class="r" style="color:var(--mute);font-size:13px;font-weight:700">${i.fin_at ? fdate(i.fin_at) : lbl(i.date, true)}</span></button>`).join('')}</div>` : `<div class="empty">Rien à contrôler : tout est à jour ${ic('check-circle')}</div>`}`;
   document.querySelectorAll('[data-c]').forEach(b => b.onclick = () => detail(b.dataset.c, ctrl.find(x => x.id === b.dataset.c)));
   const paths = [...document.querySelectorAll('[data-th]')].map(e => e.dataset.th).filter(Boolean);
   signed('retours', paths).then(u => document.querySelectorAll('[data-th]').forEach(el => { if (u[el.dataset.th]) el.style.backgroundImage = `url('${u[el.dataset.th]}')`; }));

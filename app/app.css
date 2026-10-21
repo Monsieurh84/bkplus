@@ -128,3 +128,13 @@ h1,h2,h3{font-family:Sora,Manrope,sans-serif;letter-spacing:-.01em;margin:0}
 input[type=range]{accent-color:var(--electric)}
 @media (max-width:900px){.kpis{grid-template-columns:1fr}.search{min-width:0;flex:1}}
 @media (max-width:900px){.app{grid-template-columns:1fr}.side{flex-direction:row;overflow:auto;padding:8px;gap:6px;border-right:0;border-bottom:1px solid var(--line);position:static;height:auto}.brand,.who{display:none}.nav{width:auto;white-space:nowrap}.main{padding:14px}.d{grid-template-columns:56px 1fr}.d .th{width:56px;height:46px}.d>.r{display:none}.form{grid-template-columns:1fr}}
+/* Icônes au trait */
+.i{width:1.15em;height:1.15em;vertical-align:-.2em;flex:none;stroke-width:2}
+.nav .i{width:18px;height:18px;opacity:.85}.nav.on .i{opacity:1}
+.btn .i{width:17px;height:17px}
+.box h4 .i{width:14px;height:14px;vertical-align:-2px;margin-right:2px}
+.card .ico .i{width:13px;height:13px}
+.ph .ic .i{width:30px;height:30px;color:var(--mute);stroke-width:1.6}
+.abs-l .i{width:14px;height:14px}
+.ka small .i{width:13px;height:13px;vertical-align:-2px}
+.ka em .i{width:13px;height:13px;vertical-align:-2px}
