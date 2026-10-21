@@ -81,6 +81,7 @@
       <label>Code postal *<input name="cp" inputmode="numeric" autocomplete="postal-code" maxlength="5" required value="${E(i.cp||'')}"></label>
       <label>Ville *<input name="ville" autocomplete="address-level2" required value="${E(i.ville||'')}" list="villes"></label>
       <datalist id="villes">${['Istres','Miramas','Martigues','Fos-sur-Mer','Port-de-Bouc','Saint-Chamas','Cornillon-Confoux','Grans','Salon-de-Provence','Vitrolles','Marignane','Sausset-les-Pins','Port-Saint-Louis-du-Rhône','Aix-en-Provence','Marseille'].map(v=>`<option value="${v}">`).join('')}</datalist>
+      <input name="site" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px">
       <label class="full consent"><input type="checkbox" name="ok" ${i.ok?'checked':''} required>J’accepte que BK+ utilise ces informations et mes photos uniquement pour traiter ma demande. Elles ne sont ni vendues ni transmises.</label>
     </form>
     <div class="err" id="err"></div>
@@ -91,7 +92,7 @@
     return `<div class="okbox"><div class="big">✓</div><h2>Demande envoyée</h2><p class="sub" style="margin:8px 0 0">Merci ! Le bureau l’a reçue avec vos photos et vous rappelle rapidement.</p><div class="ref">N° ${E(ref)}</div>
     <p style="color:var(--mute);margin:0 0 20px">Une question en attendant ? <a href="tel:+33484489551" style="font-weight:800">04 84 48 95 51</a></p>
     <a class="btn btn-line" href="index.html">Retour à l’accueil</a>
-    <div class="demo-note">Version de travail : la demande est enregistrée sur cet appareil et apparaît dans la démo de l’application (onglet « Demandes du site »). La connexion au vrai serveur arrive à l’étape suivante.</div></div>`;
+    </div>`;
   }
 
   function render(){
@@ -142,16 +143,34 @@
     if(!i.ville) return err('Indiquez la ville.');
     if(i.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(i.email)) return err('L’adresse e-mail semble incorrecte.');
     if(!i.ok) return err('Merci d’accepter l’utilisation de vos informations pour traiter la demande.');
-    const s=S(st.svc), ref='BK-'+Date.now().toString(36).toUpperCase().slice(-6);
+    const s=S(st.svc), id=(crypto.randomUUID?crypto.randomUUID():'10000000-1000-4000-8000-100000000000'.replace(/[018]/g,c=>(c^crypto.getRandomValues(new Uint8Array(1))[0]&15>>c/4).toString(16)));
     const photos = s.photos.map((p,k)=>st.shots[k]?{label:p[0],src:st.shots[k]}:null).filter(Boolean).concat(st.extra.map((src,k)=>({label:'Photo complémentaire '+(k+1),src})));
     const manquantes = s.photos.map((p,k)=>st.skipped[k]?p[0]:null).filter(Boolean);
-    const d=new Date(), iso=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-    const demande = { id:ref, ref, date:iso, source:'Site', nom:i.nom, tel:i.tel, email:i.email||'', adresse:i.adresse||'', cp:i.cp, ville:i.ville, service:s.nom, serviceId:s.id, message:i.msg, urgence:i.urgence, profil:i.profil, photos, manquantes, traitee:false };
-    // Version de travail : enregistrement local (même adresse que la démo de l’application). Étape suivante : envoi au serveur.
-    try{ const k='bkplus-demandes', a=JSON.parse(localStorage.getItem(k)||'[]'); a.push(demande); localStorage.setItem(k, JSON.stringify(a)); }
-    catch(e){ try{ demande.photos=demande.photos.map(p=>({label:p.label,src:''})); const k='bkplus-demandes', a=JSON.parse(localStorage.getItem(k)||'[]'); a.push(demande); localStorage.setItem(k, JSON.stringify(a)); }catch(_){} }
-    st.step=4; window.onbeforeunload=null;
-    root.innerHTML = done(ref); root.scrollIntoView({behavior:'smooth'});
+    const hp = document.querySelector('[name=site]');
+    const btn=$('#send'); btn.disabled=true; btn.textContent='Envoi des photos… 0/'+photos.length;
+    const C=window.BK_CONFIG, H={apikey:C.key};
+    const toBlob = d => fetch(d).then(r=>r.blob());
+    (async()=>{
+      try{
+        const saved=[];
+        for(let n=0;n<photos.length;n++){
+          const path=`${id}/${n+1}.jpg`, body=await toBlob(photos[n].src);
+          const r=await fetch(`${C.url}/storage/v1/object/demandes/${path}`,{method:'POST',headers:{...H,'Content-Type':'image/jpeg','x-upsert':'false'},body});
+          if(!r.ok) throw new Error('photo '+(n+1)+' : '+r.status);
+          saved.push({label:photos[n].label,path}); btn.textContent=`Envoi des photos… ${n+1}/${photos.length}`;
+        }
+        btn.textContent='Envoi de la demande…';
+        const r=await fetch(`${C.url}/rest/v1/rpc/envoyer_demande`,{method:'POST',headers:{...H,'Content-Type':'application/json'},
+          body:JSON.stringify({p:{id,service_id:s.id,service:s.nom,nom:i.nom,tel:i.tel,email:i.email||'',adresse:i.adresse||'',cp:i.cp,ville:i.ville,message:i.msg,urgence:i.urgence,profil:i.profil,photos:saved,manquantes,site:hp?hp.value:''}})});
+        const ref=await r.json();
+        if(!r.ok) throw new Error((ref&&ref.message)||('erreur '+r.status));
+        st.step=4; window.onbeforeunload=null;
+        root.innerHTML = done(ref); root.scrollIntoView({behavior:'smooth'});
+      }catch(e){
+        btn.disabled=false; btn.textContent='Réessayer l’envoi';
+        err('L’envoi n’a pas abouti ('+(e.message||'réseau')+'). Vérifiez votre connexion et réessayez, ou appelez-nous au 04 84 48 95 51.');
+      }
+    })();
   }
 
   window.onbeforeunload = () => (Object.keys(st.shots).length||st.extra.length) && st.step<4 ? 'Vos photos ne sont pas encore envoyées.' : undefined;
