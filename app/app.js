@@ -54,14 +54,15 @@ async function start() {
   if (!p || p.role !== 'bureau' || !p.actif) { started = false; root.innerHTML = `<div class="login"><form><img src="../logo-bk.png" alt=""><h1>Accès non activé</h1><p>Votre compte (${E(session.user.email)}) n’a pas encore d’accès bureau.</p><button class="btn btn-line" type="button" id="out">Se déconnecter</button></form></div>`; $('#out').onclick = () => sb.auth.signOut(); return; }
   me = p; shell();
   const r = await sb.from('techniciens').select('*').eq('actif', true).order('ordre'); techs = r.data || [];
-  await loadDemandes(); const h = location.hash.slice(1); view = ['planning', 'demandes'].includes(h) ? h : 'planning';
-  await go(view); listen();
+  await loadDemandes(); const h = location.hash.slice(1); view = ['planning', 'demandes', 'controle'].includes(h) ? h : 'planning';
+  await go(view); listen(); badgeC();
 }
 function shell() {
   root.innerHTML = `<div class="app"><aside class="side"><div class="brand"><img src="../logo-bk.png" alt=""><div><b>BK+</b><small>Application</small></div></div>
   <button class="nav" data-v="planning">🗓 Planning</button>
   <button class="nav" data-v="demandes">📥 Demandes du site<span class="c" id="cn"></span></button>
-  <button class="nav" disabled>💼 Affaires<small>bientôt</small></button><button class="nav" disabled>🏗 Chantiers<small>bientôt</small></button><button class="nav" disabled>✅ À contrôler<small>bientôt</small></button>
+  <button class="nav" disabled>💼 Affaires<small>bientôt</small></button><button class="nav" disabled>🏗 Chantiers<small>bientôt</small></button><button class="nav" data-v="controle">✅ À contrôler<span class="c" id="cc"></span></button>
+  <a class="nav" href="tech.html" target="_blank" rel="noopener" style="text-decoration:none">📱 App technicien<small>aperçu</small></a>
   <div class="who"><b>${E(me.nom)}</b>Accès bureau<br><button id="out">Se déconnecter</button></div></aside><main class="main" id="main"><div class="loading">Chargement…</div></main></div>`;
   $('#out').onclick = () => sb.auth.signOut();
   document.querySelectorAll('[data-v]').forEach(b => b.onclick = () => go(b.dataset.v));
@@ -69,11 +70,11 @@ function shell() {
 async function go(v) {
   view = v; history.replaceState(null, '', '#' + v);
   document.querySelectorAll('[data-v]').forEach(b => b.classList.toggle('on', b.dataset.v === v));
-  if (v === 'planning') { await loadPlanning(); planning(); } else listDemandes();
+  if (v === 'planning') { await loadPlanning(); planning(); } else if (v === 'controle') await listControle(); else listDemandes();
 }
 function listen() {
   if (chan) sb.removeChannel(chan);
-  let tm = null; const refresh = () => { clearTimeout(tm); tm = setTimeout(async () => { if (view === 'planning') { await loadPlanning(); planning(); } }, 400); };
+  let tm = null; const refresh = () => { clearTimeout(tm); tm = setTimeout(async () => { badgeC(); if (view === 'planning') { await loadPlanning(); planning(); } else if (view === 'controle') await listControle(); }, 400); };
   chan = sb.channel('bk').on('postgres_changes', { event: '*', schema: 'public', table: 'demandes' }, p => {
     if (p.eventType === 'INSERT') { demandes.unshift(p.new); toast('📥 Nouvelle demande : ' + p.new.service + ' · ' + p.new.ville); }
     else if (p.eventType === 'UPDATE') { const i = demandes.findIndex(x => x.id === p.new.id); if (i > -1) demandes[i] = p.new; }
@@ -168,8 +169,8 @@ $('#scrim').onclick = closePanel; document.addEventListener('keydown', e => { if
 const kindOf = f => f.type.startsWith('image/') ? 'photo' : f.type.startsWith('video/') ? 'video' : f.type === 'application/pdf' ? 'pdf' : 'autre';
 async function signed(bucket, paths) { if (!paths.length) return {}; const { data } = await sb.storage.from(bucket).createSignedUrls(paths, 3600); const o = {}; (data || []).forEach(u => o[u.path] = u.signedUrl); return o; }
 
-async function detail(id) {
-  const i = inter.find(x => x.id === id); if (!i) return;
+async function detail(id, given) {
+  const i = given || inter.find(x => x.id === id); if (!i) return;
   const [{ data: pieces }, dem] = await Promise.all([sb.from('pieces').select('*').eq('intervention_id', id).order('created_at'), i.demande_id ? sb.from('demandes').select('*').eq('id', i.demande_id).maybeSingle() : Promise.resolve({ data: null })]);
   const d = dem.data;
   openPanel(`<header><div><span class="tag s-${i.statut}" style="margin:0">${STAT_I[i.statut]}</span>${i.epingle ? '<span class="tag t-aff">📌 Dans la journée</span>' : ''}<h2 style="margin-top:8px">${E(i.type === 'intervention' ? (i.adresse || i.ville || 'Intervention') : i.travaux)}</h2>
@@ -181,17 +182,19 @@ async function detail(id) {
     ${i.materiel.length ? `<div class="box"><h4>🧰 Matériel nécessaire</h4><ul class="mat">${i.materiel.map(m => `<li>${E(m)}</li>`).join('')}</ul></div>` : ''}
     ${(pieces || []).length ? `<div class="box"><h4>📎 Pièces jointes pour le technicien</h4><div class="ph" id="pj">${pieces.map(p => `<a target="_blank" rel="noopener" data-p="${E(p.path)}">${p.type === 'photo' ? '<img alt="">' : `<span class="ic">${p.type === 'video' ? '🎬' : '📄'}</span>`}${E(p.nom)}</a>`).join('')}</div></div>` : ''}
     ${d ? `<div class="box"><h4>📷 Demande du site ${E(d.ref)}</h4><div style="margin-bottom:8px">${E(d.message || '')}</div><div class="ph" id="dph">${d.photos.map(p => `<a target="_blank" rel="noopener" data-dp="${E(p.path)}"><img alt="">${E(p.label)}</a>`).join('')}</div></div>` : ''}
-    ${i.commentaire ? `<div class="box"><h4>Retour du technicien</h4>${E(i.commentaire)}</div>` : ''}
+    ${i.commentaire || (i.photos || []).length ? `<div class="box" style="border-color:#BFE8D6;background:#F3FBF7"><h4>✅ Retour du technicien${i.fin_at ? ' · ' + fdate(i.fin_at) : ''}</h4>${E(i.commentaire || '')}${(i.photos || []).length ? `<div class="ph" id="rph" style="margin-top:10px">${i.photos.map(p => `<a target="_blank" rel="noopener" data-rp="${E(p.path)}"><img alt="">${E(p.tag || 'Photo')}</a>`).join('')}</div>` : ''}</div>` : ''}
     <label style="font-size:13px;font-weight:800;color:var(--mute)">Statut<select id="st" style="display:block;width:100%;margin-top:6px;border:2px solid var(--line);border-radius:10px;padding:10px">${Object.entries(STAT_I).map(([k, v]) => `<option value="${k}" ${k === i.statut ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
   </div>
-  <footer><button class="btn btn-grad" id="ed">Modifier</button><button class="btn btn-line" id="p7">+7 jours</button><button class="btn btn-red" id="del" style="margin-left:auto">Supprimer</button></footer>`);
+  <footer>${i.statut === 'controle' ? '<button class="btn btn-grad" id="clo" style="background:var(--ok,#0E9F6E)">✓ Clôturer</button>' : ''}<button class="btn ${i.statut === 'controle' ? 'btn-line' : 'btn-grad'}" id="ed">Modifier</button><button class="btn btn-line" id="p7">+7 jours</button><button class="btn btn-red" id="del" style="margin-left:auto">Supprimer</button></footer>`);
   const urls = await signed('pieces', (pieces || []).map(p => p.path));
   document.querySelectorAll('#pj [data-p]').forEach(a => { const u = urls[a.dataset.p]; if (u) { a.href = u; const im = a.querySelector('img'); if (im) im.src = u; } });
   if (d) { const u2 = await signed('demandes', d.photos.map(p => p.path)); document.querySelectorAll('#dph [data-dp]').forEach(a => { const u = u2[a.dataset.dp]; if (u) { a.href = u; a.querySelector('img').src = u; } }); }
-  $('#st').onchange = async e => { const { error } = await sb.from('interventions').update({ statut: e.target.value }).eq('id', id); if (error) return toast('Erreur : ' + error.message); await loadPlanning(); planning(); toast('Statut mis à jour'); };
+  if ((i.photos || []).length) signed('retours', i.photos.map(p => p.path)).then(u3 => document.querySelectorAll('#rph [data-rp]').forEach(a => { const u = u3[a.dataset.rp]; if (u) { a.href = u; a.querySelector('img').src = u; } }));
+  if ($('#clo')) $('#clo').onclick = () => cloturer(id);
+  $('#st').onchange = async e => { const { error } = await sb.from('interventions').update({ statut: e.target.value }).eq('id', id); if (error) return toast('Erreur : ' + error.message); await refreshView(); toast('Statut mis à jour'); };
   $('#ed').onclick = () => form(i);
-  $('#p7').onclick = async () => { await sb.from('interventions').update({ date: iso(addDays(new Date(i.date + 'T12:00'), 7)) }).eq('id', id); closePanel(); await loadPlanning(); planning(); toast('Reprogrammée la semaine suivante'); };
-  $('#del').onclick = async () => { if (!confirm('Supprimer définitivement cette intervention ?')) return; if ((pieces || []).length) await sb.storage.from('pieces').remove(pieces.map(p => p.path)); const { error } = await sb.from('interventions').delete().eq('id', id); if (error) return toast('Erreur : ' + error.message); closePanel(); await loadPlanning(); planning(); toast('Intervention supprimée'); };
+  $('#p7').onclick = async () => { await sb.from('interventions').update({ date: iso(addDays(new Date(i.date + 'T12:00'), 7)) }).eq('id', id); closePanel(); await refreshView(); toast('Reprogrammée la semaine suivante'); };
+  $('#del').onclick = async () => { if (!confirm('Supprimer définitivement cette intervention ?')) return; if ((pieces || []).length) await sb.storage.from('pieces').remove(pieces.map(p => p.path)); const { error } = await sb.from('interventions').delete().eq('id', id); if (error) return toast('Erreur : ' + error.message); closePanel(); await refreshView(); toast('Intervention supprimée'); };
 }
 
 /* ================= Formulaire intervention ================= */
@@ -300,3 +303,28 @@ async function detailDemande(id) {
 
 sb.auth.onAuthStateChange(ev => { if (ev === 'PASSWORD_RECOVERY') newPasswordView(); else if (ev === 'SIGNED_IN') start(); else if (ev === 'SIGNED_OUT') { me = null; started = false; loginView(); } });
 if (/type=recovery/.test(location.hash)) newPasswordView(); else start();
+
+/* ================= À contrôler (retours terrain) ================= */
+let ctrl = [];
+async function badgeC() { const { count } = await sb.from('interventions').select('id', { count: 'exact', head: true }).eq('statut', 'controle'); const c = $('#cc'); if (c) c.textContent = count || ''; }
+async function refreshView() { badgeC(); if (view === 'controle') await listControle(); else { await loadPlanning(); planning(); } }
+async function cloturer(id) {
+  const { error } = await sb.from('interventions').update({ statut: 'cloturee' }).eq('id', id);
+  if (error) return toast('Erreur : ' + error.message);
+  closePanel(); toast('✓ Intervention clôturée'); badgeC();
+  await refreshView();
+}
+async function listControle() {
+  if (view !== 'controle') return;
+  const { data, error } = await sb.from('interventions').select('*, intervention_techs(tech_id), pieces(id)').eq('statut', 'controle').order('fin_at', { ascending: false });
+  if (error) return toast('Erreur : ' + error.message);
+  ctrl = (data || []).map(i => ({ ...i, techs: i.intervention_techs.map(x => x.tech_id), nbPieces: i.pieces.length }));
+  $('#main').innerHTML = `<div class="head"><h1>À contrôler</h1><span class="live"><i></i>En direct</span></div>
+   <p style="color:var(--mute);margin:-6px 0 16px">Interventions validées par les techniciens (photos + commentaire). Vérifiez puis clôturez.</p>
+   ${ctrl.length ? `<div class="list">${ctrl.map(i => `<button class="d" data-c="${i.id}"><span class="th" data-th="${E((i.photos || [])[0]?.path || '')}">${(i.photos || []).length ? '' : '📌'}</span>
+     <span><h3>${E(i.type === 'intervention' ? (i.adresse || i.ville || 'Intervention') : i.travaux)}${i.epingle ? '<span class="tag t-aff">📌 Tâche</span>' : ''}</h3><p>${i.techs.map(t => `<i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${T(t).couleur};margin-right:4px"></i>${E(T(t).nom)}`).join(' · ')} · ${(i.photos || []).length} photo${(i.photos || []).length > 1 ? 's' : ''}${i.commentaire ? ' · « ' + E(i.commentaire.slice(0, 70)) + (i.commentaire.length > 70 ? '…' : '') + ' »' : ''}</p></span>
+     <span class="r" style="color:var(--mute);font-size:13px;font-weight:700">${i.fin_at ? fdate(i.fin_at) : lbl(i.date, true)}</span></button>`).join('')}</div>` : `<div class="empty">Rien à contrôler : tout est à jour 👍</div>`}`;
+  document.querySelectorAll('[data-c]').forEach(b => b.onclick = () => detail(b.dataset.c, ctrl.find(x => x.id === b.dataset.c)));
+  const paths = [...document.querySelectorAll('[data-th]')].map(e => e.dataset.th).filter(Boolean);
+  signed('retours', paths).then(u => document.querySelectorAll('[data-th]').forEach(el => { if (u[el.dataset.th]) el.style.backgroundImage = `url('${u[el.dataset.th]}')`; }));
+}
