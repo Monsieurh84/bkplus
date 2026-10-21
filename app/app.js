@@ -194,7 +194,7 @@ async function detail(id, given) {
   $('#st').onchange = async e => { const { error } = await sb.from('interventions').update({ statut: e.target.value }).eq('id', id); if (error) return toast('Erreur : ' + error.message); await refreshView(); toast('Statut mis à jour'); };
   $('#ed').onclick = () => form(i);
   $('#p7').onclick = async () => { await sb.from('interventions').update({ date: iso(addDays(new Date(i.date + 'T12:00'), 7)) }).eq('id', id); closePanel(); await refreshView(); toast('Reprogrammée la semaine suivante'); };
-  $('#del').onclick = async () => { if (!confirm('Supprimer définitivement cette intervention ?')) return; if ((pieces || []).length) await sb.storage.from('pieces').remove(pieces.map(p => p.path)); const { error } = await sb.from('interventions').delete().eq('id', id); if (error) return toast('Erreur : ' + error.message); closePanel(); await refreshView(); toast('Intervention supprimée'); };
+  $('#del').onclick = async () => { if (!confirm('Supprimer définitivement cette intervention ?')) return; if ((pieces || []).length) await sb.storage.from('pieces').remove(pieces.map(p => p.path)); if ((i.photos || []).length) await sb.storage.from('retours').remove(i.photos.map(p => p.path)); const { error } = await sb.from('interventions').delete().eq('id', id); if (error) return toast('Erreur : ' + error.message); closePanel(); await refreshView(); toast('Intervention supprimée'); };
 }
 
 /* ================= Formulaire intervention ================= */

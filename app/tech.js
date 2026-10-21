@@ -23,7 +23,7 @@ const DB = { db: null,
 };
 
 /* ---------- État ---------- */
-let me = null, tech = null, team = [], preview = false, items = [], tab = 'jour', openId = null, online = navigator.onLine !== false, pending = 0, flushing = false, sun = false, reminderOn = false;
+let lastLocal = 0, me = null, tech = null, team = [], preview = false, items = [], tab = 'jour', openId = null, online = navigator.onLine !== false, pending = 0, flushing = false, sun = false, reminderOn = false;
 const drafts = {}; const matChk = {}; let navPref = null;
 try { sun = localStorage.getItem('bk-sun') === '1'; navPref = localStorage.getItem('bk-nav'); } catch (e) { }
 const T = id => team.find(t => t.id === id) || { nom: '?', couleur: '#8B8FA3' };
@@ -80,13 +80,13 @@ async function load() {
 let chan = null;
 function subscribe() {
   if (chan) sb.removeChannel(chan);
-  let tm; const re = () => { clearTimeout(tm); tm = setTimeout(async () => { try { await load(); if (!openId) render(); toast('Planning mis à jour par le bureau'); } catch (e) { } }, 600); };
+  let tm; const re = () => { clearTimeout(tm); tm = setTimeout(async () => { try { await load(); if (!openId) render(); if (Date.now() - lastLocal > 8000) toast('Planning mis à jour par le bureau'); } catch (e) { } }, 600); };
   chan = sb.channel('tech-' + tech.id).on('postgres_changes', { event: '*', schema: 'public', table: 'interventions' }, re).on('postgres_changes', { event: '*', schema: 'public', table: 'intervention_techs' }, re).subscribe();
 }
 
 /* ---------- Envois (avec file d'attente hors connexion) ---------- */
 async function refreshPending() { pending = (await DB.qAll().catch(() => [])).length; }
-async function enqueue(job) { job.id = job.id || uid(); job.at = Date.now(); await DB.qAdd(job); await refreshPending(); flush(); }
+async function enqueue(job) { lastLocal = Date.now(); job.id = job.id || uid(); job.at = Date.now(); await DB.qAdd(job); await refreshPending(); flush(); }
 async function flush() {
   if (flushing || !online) return; flushing = true;
   try {
