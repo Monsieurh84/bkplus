@@ -34,8 +34,7 @@ function loginView(msg) {
   $('#lf').onsubmit = async e => { e.preventDefault(); const b = e.submitter; b.disabled = true;
     const { error } = await sb.auth.signInWithPassword({ email: $('#em').value.trim(), password: $('#pw').value });
     b.disabled = false; if (error) { const m = $('#m'); m.className = 'msg err on'; m.textContent = 'E-mail ou mot de passe incorrect.'; } };
-  $('#fg').onclick = async () => { const em = $('#em').value.trim(), m = $('#m'); if (!em) { m.className = 'msg err on'; m.textContent = 'Indiquez d’abord votre e-mail.'; return; }
-    await sb.auth.resetPasswordForEmail(em, { redirectTo: location.href.split('#')[0] }); m.className = 'msg ok on'; m.textContent = 'Si ce compte existe, un e-mail de réinitialisation vient d’être envoyé.'; };
+  $('#fg').onclick = () => { const m = $('#m'); m.className = 'msg ok on'; m.textContent = 'Demandez à un membre du bureau (Alan, Julie ou Bastien) : dans l’application, menu « Équipe & accès », il vous crée un nouveau mot de passe en 10 secondes.'; };
 }
 function newPasswordView() {
   root.innerHTML = `<div class="login"><form id="np"><img src="../logo-bk.png" alt="BK+"><h1>Nouveau mot de passe</h1><p>Au moins 10 caractères.</p>
@@ -51,6 +50,7 @@ async function start() {
   if (started) return; started = true;
   const { data: { session } } = await sb.auth.getSession(); if (!session) { started = false; return loginView(); }
   const { data: p } = await sb.from('profils').select('*').eq('id', session.user.id).maybeSingle();
+  if (p && p.actif && p.role === 'technicien') { location.replace('tech.html'); return; }
   if (!p || p.role !== 'bureau' || !p.actif) { started = false; root.innerHTML = `<div class="login"><form><img src="../logo-bk.png" alt=""><h1>Accès non activé</h1><p>Votre compte (${E(session.user.email)}) n’a pas encore d’accès bureau.</p><button class="btn btn-line" type="button" id="out">Se déconnecter</button></form></div>`; $('#out').onclick = () => sb.auth.signOut(); return; }
   me = p; shell();
   const r = await sb.from('techniciens').select('*').eq('actif', true).order('ordre'); techs = r.data || [];
@@ -63,8 +63,9 @@ function shell() {
   <button class="nav" data-v="demandes">${ic('inbox')} Demandes du site<span class="c" id="cn"></span></button>
   <button class="nav" data-v="affaires">${ic('briefcase')} Affaires<span class="c" id="ca"></span></button><button class="nav" data-v="chantiers">${ic('helmet')} Chantiers</button><button class="nav" data-v="controle">${ic('check-circle')} À contrôler<span class="c" id="cc"></span></button>
   <a class="nav" href="tech.html" target="_blank" rel="noopener" style="text-decoration:none">${ic('smartphone')} App technicien<small>aperçu</small></a>
-  <div class="who"><b>${E(me.nom)}</b>Accès bureau<br><button id="out">Se déconnecter</button></div></aside><main class="main" id="main"><div class="loading">Chargement…</div></main></div>`;
-  $('#out').onclick = () => sb.auth.signOut();
+  <button class="nav" id="team">${ic('users')} Équipe & accès</button>
+  <div class="who"><b>${E(me.nom)}</b>Accès bureau<br><button id="mdp">Mon mot de passe</button> · <button id="out">Se déconnecter</button></div></aside><main class="main" id="main"><div class="loading">Chargement…</div></main></div>`;
+  $('#out').onclick = () => sb.auth.signOut(); $('#mdp').onclick = monMdp; $('#team').onclick = equipe;
   document.querySelectorAll('[data-v]').forEach(b => b.onclick = () => go(b.dataset.v));
 }
 async function go(v) {
@@ -332,4 +333,34 @@ async function listControle() {
   document.querySelectorAll('[data-c]').forEach(b => b.onclick = () => detail(b.dataset.c, ctrl.find(x => x.id === b.dataset.c)));
   const paths = [...document.querySelectorAll('[data-th]')].map(e => e.dataset.th).filter(Boolean);
   signed('retours', paths).then(u => document.querySelectorAll('[data-th]').forEach(el => { if (u[el.dataset.th]) el.style.backgroundImage = `url('${u[el.dataset.th]}')`; }));
+}
+
+/* ================= Mots de passe ================= */
+const APP_URL = 'https://monsieurh84.github.io/bkplus/app/', TECH_URL = APP_URL + 'tech.html';
+const genMdp = () => { const a = 'abcdefghjkmnpqrstuvwxyz', A = 'ABCDEFGHJKLMNPQRSTUVWXYZ', d = '23456789', r = n => crypto.getRandomValues(new Uint32Array(1))[0] % n;
+  const p = () => A[r(A.length)] + a[r(a.length)] + a[r(a.length)] + a[r(a.length)]; return p() + '-' + p() + '-' + d[r(8)] + d[r(8)]; };
+function monMdp() {
+  openPanel(`<header><h2>Mon mot de passe</h2><button class="x" aria-label="Fermer">×</button></header>
+  <form class="body" id="mf"><div class="form"><label class="full">Nouveau mot de passe (8 caractères minimum)<input type="password" name="a" minlength="8" autocomplete="new-password" required></label>
+  <label class="full">Confirmer<input type="password" name="b" minlength="8" autocomplete="new-password" required></label></div></form>
+  <footer><button class="btn btn-grad" form="mf" type="submit">Enregistrer</button></footer>`);
+  $('#mf').onsubmit = async e => { e.preventDefault(); const f = e.target; if (f.a.value !== f.b.value) return toast('Les deux mots de passe ne correspondent pas');
+    const { error } = await sb.auth.updateUser({ password: f.a.value }); if (error) return toast('Erreur : ' + error.message); closePanel(); toast('Mot de passe modifié'); };
+}
+async function equipe() {
+  const { data, error } = await sb.rpc('bureau_comptes'); if (error) return toast('Erreur : ' + error.message);
+  const rl = { bureau: 'Bureau', technicien: 'Technicien' };
+  openPanel(`<header><div><h2>Équipe & accès</h2><div style="color:var(--mute);font-size:13px">Créez un nouveau mot de passe pour un membre de l’équipe, puis envoyez-lui le message par SMS.</div></div><button class="x" aria-label="Fermer">×</button></header>
+  <div class="body">${data.map(u => `<div class="acc"><div><b>${E(u.nom)}</b><span class="tag ${u.role === 'bureau' ? 't-new' : 't-pla'}">${rl[u.role] || u.role}</span><small>${E(u.email)} · ${u.derniere_connexion ? 'dernière connexion ' + fdate(u.derniere_connexion) : 'jamais connecté'}</small></div>
+    <button class="btn btn-line" data-u="${u.id}">Nouveau mot de passe</button><div class="nm" id="nm-${u.id}"></div></div>`).join('')}</div>`);
+  document.querySelectorAll('[data-u]').forEach(b => b.onclick = async () => {
+    const u = data.find(x => x.id === b.dataset.u), mdp = genMdp();
+    if (!confirm('Créer un nouveau mot de passe pour ' + u.nom + ' ? L’ancien ne fonctionnera plus.')) return;
+    b.disabled = true; const { error } = await sb.rpc('bureau_mdp', { p_user: u.id, p_mdp: mdp }); b.disabled = false;
+    if (error) return toast('Erreur : ' + error.message);
+    const lien = u.role === 'bureau' ? APP_URL : TECH_URL;
+    const msg = `Bonjour ${u.nom.split(' ')[0]}, voici ton accès à l’application BK+ :\n${lien}\nIdentifiant : ${u.email}\nMot de passe : ${mdp}\nTu pourras le changer dans l’application (« Mon mot de passe »).`;
+    $('#nm-' + u.id).innerHTML = `<div class="newpw"><span>Nouveau mot de passe : <b>${E(mdp)}</b></span><button class="btn btn-grad" type="button">${ic('clipboard')} Copier le message à envoyer</button></div>`;
+    $('#nm-' + u.id).querySelector('button').onclick = async () => { try { await navigator.clipboard.writeText(msg); toast('Message copié : collez-le dans un SMS ou WhatsApp'); } catch (e) { prompt('Copiez ce message :', msg); } };
+  });
 }

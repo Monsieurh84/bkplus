@@ -43,7 +43,8 @@ const fullAddr = i => [i.adresse, [i.cp, i.ville].filter(Boolean).join(' ')].fil
 function loginView() {
   document.body.innerHTML = `<div class="login"><form id="lf"><img src="../logo-bk.png" alt="BK+"><h1>Bonjour </h1><p>Connectez-vous pour voir vos interventions.</p>
   <label for="em">E-mail</label><input id="em" type="email" autocomplete="username" required><label for="pw">Mot de passe</label><input id="pw" type="password" autocomplete="current-password" required>
-  <button class="go" type="submit">Se connecter</button><div class="msg" id="m"></div></form></div><div class="toast" id="toast"></div>`;
+  <button class="go" type="submit">Se connecter</button><button class="forgot" type="button" id="fg">Mot de passe oublié ?</button><div class="msg" id="m"></div></form></div><div class="toast" id="toast"></div>`;
+  $('#fg').onclick = () => { const m = $('#m'); m.className = 'msg ok on'; m.textContent = 'Appelez le bureau : Alan, Julie ou Bastien vous crée un nouveau mot de passe depuis l’application.'; };
   $('#lf').onsubmit = async e => { e.preventDefault(); const { error } = await sb.auth.signInWithPassword({ email: $('#em').value.trim(), password: $('#pw').value }); if (error) { const m = $('#m'); m.className = 'msg err on'; m.textContent = online ? 'E-mail ou mot de passe incorrect.' : 'Pas de réseau : connectez-vous une première fois avec du réseau.'; } };
 }
 
@@ -153,14 +154,14 @@ function list() {
     ${tab === 'jour' && todayJobs.length && !next && !pinsLeft.length ? `<div class="done-box">${ic('check-circle')} Journée terminée, tout est envoyé au bureau.</div>` : ''}
     <div class="tabs"><button data-tab="jour" class="${tab === 'jour' ? 'on' : ''}">Aujourd’hui</button><button data-tab="semaine" class="${tab === 'semaine' ? 'on' : ''}">Ma semaine</button></div>
     ${days.map(block).join('')}
-    <div style="text-align:center;margin-top:24px"><button class="btn" id="out">Se déconnecter</button></div>
+    <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:24px"><button class="btn" id="mdp">Mon mot de passe</button><button class="btn" id="out">Se déconnecter</button></div>
   </div>`;
   scr().querySelectorAll('[data-id]').forEach(b => b.onclick = () => { openId = b.dataset.id; render(); scr().querySelector('.scroll').scrollTop = 0; });
   scr().querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { tab = b.dataset.tab; render(); });
   scr().querySelectorAll('[data-nav]').forEach(b => b.onclick = () => navTo(items.find(x => x.id === b.dataset.nav)));
   scr().querySelectorAll('[data-pin]').forEach(b => b.onclick = async () => { const i = items.find(x => x.id === b.dataset.pin); i.statut = 'controle'; render();
     await enqueue({ kind: 'valider', iid: i.id, commentaire: 'Tâche faite à ' + nowHHMM(), photos: [] }); toast('✓ Tâche faite, le bureau est prévenu'); });
-  $('#out').onclick = () => sb.auth.signOut();
+  $('#out').onclick = () => sb.auth.signOut(); $('#mdp').onclick = monMdp;
   bindTop(); bindPreview();
 }
 
@@ -269,3 +270,11 @@ sb.auth.onAuthStateChange(ev => { if (ev === 'SIGNED_IN') start(); else if (ev =
 start();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { });
 if ('Notification' in window && Notification.permission === 'default') document.addEventListener('click', () => { try { Notification.requestPermission(); } catch (e) { } }, { once: true });
+
+/* ---------- Changer son mot de passe ---------- */
+function monMdp() {
+  const a = prompt('Nouveau mot de passe (8 caractères minimum) :'); if (a == null) return;
+  if (a.length < 8) return toast('Trop court : 8 caractères minimum');
+  const b = prompt('Retapez le nouveau mot de passe :'); if (b !== a) return toast('Les deux mots de passe ne correspondent pas');
+  sb.auth.updateUser({ password: a }).then(({ error }) => toast(error ? 'Impossible (réseau ?) : réessayez' : 'Mot de passe modifié'));
+}

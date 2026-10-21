@@ -138,3 +138,9 @@ input[type=range]{accent-color:var(--electric)}
 .abs-l .i{width:14px;height:14px}
 .ka small .i{width:13px;height:13px;vertical-align:-2px}
 .ka em .i{width:13px;height:13px;vertical-align:-2px}
+.who button{margin-top:6px}
+.acc{display:grid;grid-template-columns:1fr auto;gap:8px 12px;align-items:center;border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.acc b{font-size:15px}.acc small{display:block;color:var(--mute);font-size:12.5px;font-weight:600;margin-top:2px}.acc .tag{margin-left:8px}
+.acc .nm{grid-column:1/-1}.acc .nm:empty{display:none}
+.newpw{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;background:#E6F6EF;border-radius:10px;padding:10px 12px;font-size:14px}.newpw b{font-family:ui-monospace,Menlo,monospace;font-size:15px;letter-spacing:.02em}
+.side>.nav#team{margin-top:auto}.side>.nav#team+.who{margin-top:0}
