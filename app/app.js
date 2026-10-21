@@ -54,14 +54,14 @@ async function start() {
   if (!p || p.role !== 'bureau' || !p.actif) { started = false; root.innerHTML = `<div class="login"><form><img src="../logo-bk.png" alt=""><h1>Accès non activé</h1><p>Votre compte (${E(session.user.email)}) n’a pas encore d’accès bureau.</p><button class="btn btn-line" type="button" id="out">Se déconnecter</button></form></div>`; $('#out').onclick = () => sb.auth.signOut(); return; }
   me = p; shell();
   const r = await sb.from('techniciens').select('*').eq('actif', true).order('ordre'); techs = r.data || [];
-  await loadDemandes(); const h = location.hash.slice(1); view = ['planning', 'demandes', 'controle'].includes(h) ? h : 'planning';
+  await Promise.all([loadDemandes(), loadAffaires()]); const h = location.hash.slice(1); view = ['planning', 'demandes', 'controle', 'affaires', 'chantiers'].includes(h) ? h : 'planning';
   await go(view); listen(); badgeC();
 }
 function shell() {
   root.innerHTML = `<div class="app"><aside class="side"><div class="brand"><img src="../logo-bk.png" alt=""><div><b>BK+</b><small>Application</small></div></div>
   <button class="nav" data-v="planning">🗓 Planning</button>
   <button class="nav" data-v="demandes">📥 Demandes du site<span class="c" id="cn"></span></button>
-  <button class="nav" disabled>💼 Affaires<small>bientôt</small></button><button class="nav" disabled>🏗 Chantiers<small>bientôt</small></button><button class="nav" data-v="controle">✅ À contrôler<span class="c" id="cc"></span></button>
+  <button class="nav" data-v="affaires">💼 Affaires<span class="c" id="ca"></span></button><button class="nav" data-v="chantiers">🏗 Chantiers</button><button class="nav" data-v="controle">✅ À contrôler<span class="c" id="cc"></span></button>
   <a class="nav" href="tech.html" target="_blank" rel="noopener" style="text-decoration:none">📱 App technicien<small>aperçu</small></a>
   <div class="who"><b>${E(me.nom)}</b>Accès bureau<br><button id="out">Se déconnecter</button></div></aside><main class="main" id="main"><div class="loading">Chargement…</div></main></div>`;
   $('#out').onclick = () => sb.auth.signOut();
@@ -70,18 +70,20 @@ function shell() {
 async function go(v) {
   view = v; history.replaceState(null, '', '#' + v);
   document.querySelectorAll('[data-v]').forEach(b => b.classList.toggle('on', b.dataset.v === v));
-  if (v === 'planning') { await loadPlanning(); planning(); } else if (v === 'controle') await listControle(); else listDemandes();
+  if (v === 'planning') { await loadPlanning(); planning(); } else if (v === 'controle') await listControle(); else if (v === 'affaires') { await loadAffaires(); listAffaires(); } else if (v === 'chantiers') { await loadChantiers(); listChantiers(); } else listDemandes();
 }
 function listen() {
   if (chan) sb.removeChannel(chan);
-  let tm = null; const refresh = () => { clearTimeout(tm); tm = setTimeout(async () => { badgeC(); if (view === 'planning') { await loadPlanning(); planning(); } else if (view === 'controle') await listControle(); }, 400); };
+  let tm = null; const refresh = () => { clearTimeout(tm); tm = setTimeout(async () => { badgeC(); if (view === 'planning') { await loadPlanning(); planning(); } else if (view === 'controle') await listControle(); else if (view === 'chantiers') { await loadChantiers(); listChantiers(); } }, 400); };
   chan = sb.channel('bk').on('postgres_changes', { event: '*', schema: 'public', table: 'demandes' }, p => {
     if (p.eventType === 'INSERT') { demandes.unshift(p.new); toast('📥 Nouvelle demande : ' + p.new.service + ' · ' + p.new.ville); }
     else if (p.eventType === 'UPDATE') { const i = demandes.findIndex(x => x.id === p.new.id); if (i > -1) demandes[i] = p.new; }
     badge(); if (view === 'demandes') listDemandes();
   }).on('postgres_changes', { event: '*', schema: 'public', table: 'interventions' }, refresh)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'intervention_techs' }, refresh)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'absences' }, refresh).subscribe();
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'absences' }, refresh)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'affaires' }, () => { clearTimeout(listen.ta); listen.ta = setTimeout(async () => { await loadAffaires(); listAffaires(); }, 400); })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'chantiers' }, () => { clearTimeout(listen.tc); listen.tc = setTimeout(async () => { if (view === 'chantiers') { await loadChantiers(); listChantiers(); } }, 400); }).subscribe();
 }
 
 /* ================= Planning ================= */
@@ -98,7 +100,7 @@ async function loadPlanning() {
 const sortI = (a, b) => (b.epingle - a.epingle) || (a.heure || '').localeCompare(b.heure || '');
 function card(i, techId) {
   const team = i.techs.length > 1;
-  const ico = (i.demande_id ? '<span title="Demande du site (photos)">📷</span>' : '') + (i.nbPieces ? '<span title="Pièces jointes">📎</span>' : '') + (i.materiel.length ? '<span title="Matériel">🧰</span>' : '') + (i.recurrent ? '<span title="Récurrente">↻</span>' : '');
+  const ico = (i.demande_id ? '<span title="Demande du site (photos)">📷</span>' : '') + (i.nbPieces ? '<span title="Pièces jointes">📎</span>' : '') + (i.materiel.length ? '<span title="Matériel">🧰</span>' : '') + (i.recurrent ? '<span title="Récurrente">↻</span>' : '') + (i.chantier_id ? '<span title="Chantier">🏗</span>' : '') + (i.affaire_id && !i.chantier_id ? '<span title="Affaire">💼</span>' : '');
   return `<button class="card ${i.epingle ? 'pin' : ''} ${i.type === 'interne' ? 'interne' : ''} ${i.statut === 'cloturee' ? 'cl' : ''}" draggable="true" data-id="${i.id}" data-tech="${techId}" style="--stripe:${stripe(i.techs)};--sc:${SC[i.statut]}">
     <div class="t"><span class="dot" title="${STAT_I[i.statut]}"></span>${i.epingle ? '📌 Dans la journée' : hh(i.heure) + '–' + fin(i.heure, i.duree)}<span class="ico">${ico}</span></div>
     <div class="a">${E(i.epingle || i.type !== 'intervention' ? i.travaux : i.ville)}</div>${!i.epingle && i.type === 'intervention' ? `<div class="g">${E(i.client || i.occupant || '')}</div>` : ''}
@@ -205,6 +207,7 @@ async function form(i, opts) {
   let added = [], removed = [];
   openPanel(`<header><h2>${isNew ? (i.epingle ? '📌 Tâche à faire dans la journée' : 'Nouvelle intervention') : 'Modifier'}</h2><button class="x" aria-label="Fermer">×</button></header>
   <form class="body" id="f"><div class="form">
+    ${opts.ctx ? `<div class="full box" style="background:var(--soft);border:0"><b>${E(opts.ctx)}</b> · cette journée y sera rattachée.</div>` : ''}
     ${opts.demande ? `<div class="full box" style="background:var(--soft);border:0"><b>📷 Depuis la demande ${E(opts.demande.ref)}</b> · ${E(opts.demande.service)}. Ses photos seront visibles par le technicien.</div>` : ''}
     <label>Type<select name="type"><option value="intervention">Intervention</option><option value="tache" ${i.type === 'tache' ? 'selected' : ''}>Tâche (matériel, déchetterie…)</option><option value="interne" ${i.type === 'interne' ? 'selected' : ''}>Interne (réunion…)</option></select></label>
     <label>Date<input type="date" name="date" value="${i.date}" required></label>
@@ -237,7 +240,7 @@ async function form(i, opts) {
     const btn = $('#sv'); btn.disabled = true; btn.textContent = 'Enregistrement…';
     const pin = !!fd.get('epingle');
     const row = { type: fd.get('type'), date: fd.get('date'), epingle: pin, heure: pin ? null : (fd.get('heure') || '09:00'), duree: pin ? 0 : (+fd.get('duree') || 1), travaux: fd.get('travaux'), adresse: fd.get('adresse'), cp: fd.get('cp'), ville: fd.get('ville'), client: fd.get('client'), occupant: fd.get('occupant'), tel: fd.get('tel'),
-      materiel: String(fd.get('materiel') || '').split('\n').map(x => x.trim()).filter(Boolean), recurrent: !!fd.get('recurrent'), demande_id: i.demande_id || null };
+      materiel: String(fd.get('materiel') || '').split('\n').map(x => x.trim()).filter(Boolean), recurrent: !!fd.get('recurrent'), demande_id: i.demande_id || null, chantier_id: i.chantier_id || null, affaire_id: i.affaire_id || null };
     try {
       let id = i.id;
       if (isNew) { const r = await sb.from('interventions').insert({ ...row, created_by: me.id, updated_by: me.id }).select('id').single(); if (r.error) throw r.error; id = r.data.id; }
@@ -292,11 +295,13 @@ async function detailDemande(id) {
     ${d.photos.length ? `<div class="box"><h4>Photos (${d.photos.length})</h4><div class="ph" id="ph">${d.photos.map(p => `<a target="_blank" rel="noopener" data-p="${E(p.path)}"><img alt="">${E(p.label)}</a>`).join('')}</div></div>` : ''}
     ${d.manquantes.length ? `<div class="box" style="border-color:#FDE68A;background:#FFFBEB"><h4>Photos impossibles à prendre</h4>${d.manquantes.map(E).join(' · ')}</div>` : ''}
   </div>
-  <footer><button class="btn btn-grad" id="plan">🗓 Planifier</button>${d.statut !== 'affaire' ? `<button class="btn btn-line" data-s="affaire">💼 En affaire (devis)</button>` : ''}${d.statut !== 'archivee' ? `<button class="btn btn-line" data-s="archivee">Archiver</button>` : `<button class="btn btn-line" data-s="nouvelle">Remettre en nouvelle</button>`}</footer>`);
+  <footer><button class="btn btn-grad" id="plan">🗓 Planifier</button>${d.statut !== 'affaire' ? `<button class="btn btn-line" id="toaff">💼 Créer l’affaire (devis)</button>` : `<button class="btn btn-line" id="toaff">💼 Voir l’affaire</button>`}${d.statut !== 'archivee' ? `<button class="btn btn-line" data-s="archivee">Archiver</button>` : `<button class="btn btn-line" data-s="nouvelle">Remettre en nouvelle</button>`}</footer>`);
   $('#plan').onclick = () => form(null, { demande: d, pre: { client: d.profil === 'Particulier' ? 'Particulier' : '', occupant: d.nom, tel: d.tel, adresse: d.adresse || '', cp: d.cp || '', ville: d.ville || '', travaux: d.service + (d.message ? ' : ' + d.message : ''), demande_id: d.id } });
   document.querySelectorAll('[data-s]').forEach(b => b.onclick = async () => { b.disabled = true; const s = b.dataset.s;
     const { error } = await sb.from('demandes').update({ statut: s, traitee_par: me.id, traitee_le: new Date().toISOString() }).eq('id', d.id);
     if (error) { toast('Erreur : ' + error.message); b.disabled = false; return; } d.statut = s; closePanel(); badge(); listDemandes(); toast('Demande mise à jour'); });
+  $('#toaff').onclick = async () => { const ex = affaires.find(a => a.demande_id === d.id); if (ex) return affaireForm(ex);
+    affaireForm(null, { demande: d, pre: { source: 'site', client: d.nom, contact: d.nom, tel: d.tel, email: d.email || '', adresse: d.adresse || '', cp: d.cp || '', ville: d.ville || '', objet: d.service, description: [d.message, d.manquantes.length ? 'Photos non fournies : ' + d.manquantes.join(', ') : ''].filter(Boolean).join('\n\n'), demande_id: d.id } }); };
   const u = await signed('demandes', d.photos.map(p => p.path));
   document.querySelectorAll('#ph [data-p]').forEach(a => { if (u[a.dataset.p]) { a.href = u[a.dataset.p]; a.querySelector('img').src = u[a.dataset.p]; } });
 }

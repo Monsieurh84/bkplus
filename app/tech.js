@@ -59,7 +59,7 @@ async function start() {
     if (!p) throw new Error('profil');
     me = p; await DB.set('me', p);
     const { data: ts } = await sb.from('techniciens').select('*').eq('actif', true).order('ordre'); team = ts || [];
-    if (p.role === 'bureau') { preview = true; tech = team.find(t => t.id === localStorage.getItem('bk-preview')) || team[0]; }
+    if (p.role === 'bureau') { preview = true; let pv = null; try { pv = sessionStorage.getItem('bk-preview'); } catch (e) { } tech = team.find(t => t.id === pv) || team.find(t => t.profil_id === p.id) || team[0]; }
     else { tech = team.find(t => t.profil_id === p.id); if (!tech) { scr().innerHTML = `<div class="scroll"><div class="panel"><p>Votre compte n’est pas encore relié à une fiche technicien. Prévenez le bureau.</p></div><button class="btn" id="out">Se déconnecter</button></div>`; $('#out').onclick = () => sb.auth.signOut(); return; } }
     await load();
   } catch (e) {
@@ -122,8 +122,8 @@ function bindTop() {
   $('#sun').onclick = () => { sun = !sun; try { localStorage.setItem('bk-sun', sun ? '1' : '0'); } catch (e) { } scr().classList.toggle('sunmode', sun); $('#sun').textContent = sun ? '☀️' : '🌤'; };
   const b = $('#back'); if (b) b.onclick = () => { openId = null; render(); };
 }
-function previewBar() { return preview ? `<div class="preview">👁 Aperçu bureau : voir comme <select id="pv">${team.map(t => `<option value="${t.id}" ${t.id === tech.id ? 'selected' : ''}>${E(t.nom)}</option>`).join('')}</select></div>` : ''; }
-function bindPreview() { const s = $('#pv'); if (s) s.onchange = async () => { tech = team.find(t => t.id === s.value); try { localStorage.setItem('bk-preview', tech.id); } catch (e) { } openId = null; await load(); subscribe(); render(); }; }
+function previewBar() { return preview ? `<div class="preview">👁 Accès bureau · planning de <select id="pv">${team.map(t => `<option value="${t.id}" ${t.id === tech.id ? 'selected' : ''}>${E(t.nom)}</option>`).join('')}</select></div>` : ''; }
+function bindPreview() { const s = $('#pv'); if (s) s.onchange = async () => { tech = team.find(t => t.id === s.value); try { sessionStorage.setItem('bk-preview', tech.id); } catch (e) { } openId = null; await load(); subscribe(); render(); }; }
 
 /* ---------- Liste ---------- */
 function list() {
