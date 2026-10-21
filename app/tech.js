@@ -17,7 +17,7 @@ const scr = () => $('#screen');
 /* ---------- Petite base locale (brouillons + envois en attente) ---------- */
 const DB = { db: null,
   open() { return this.db ? Promise.resolve(this.db) : new Promise((res, rej) => { const r = indexedDB.open('bk-tech', 1); r.onupgradeneeded = () => { r.result.createObjectStore('kv'); r.result.createObjectStore('queue', { keyPath: 'id' }); }; r.onsuccess = () => res(this.db = r.result); r.onerror = () => rej(r.error); }); },
-  async tx(store, mode, fn) { const db = await this.open(); return new Promise((res, rej) => { const t = db.transaction(store, mode), s = t.objectStore(store); const out = fn(s); t.oncomplete = () => res(out && out.result !== undefined ? out.result : out); t.onerror = () => rej(t.error); }); },
+  async tx(store, mode, fn) { const db = await this.open(); return new Promise((res, rej) => { const t = db.transaction(store, mode), s = t.objectStore(store); const out = fn(s); t.oncomplete = () => res(out instanceof IDBRequest ? out.result : out); t.onerror = () => rej(t.error); }); },
   get(k) { return this.tx('kv', 'readonly', s => s.get(k)); }, set(k, v) { return this.tx('kv', 'readwrite', s => s.put(v, k)); }, del(k) { return this.tx('kv', 'readwrite', s => s.delete(k)); },
   qAll() { return this.tx('queue', 'readonly', s => s.getAll()); }, qAdd(v) { return this.tx('queue', 'readwrite', s => s.put(v)); }, qDel(id) { return this.tx('queue', 'readwrite', s => s.delete(id)); },
 };

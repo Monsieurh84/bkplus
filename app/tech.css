@@ -163,6 +163,7 @@ html,body{height:100%}body{background:var(--bg);overscroll-behavior:none}
 
 /* v2 : tâches épinglées, rappel, équipes, pièces jointes, matériel, GPS */
 .teamline{display:flex;align-items:center;gap:8px;margin-top:6px;font-size:15px;font-weight:800;color:var(--navy)}
+.av{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;color:#fff;font-weight:800;font-size:12px;border:2px solid #fff;flex:none;vertical-align:middle}.avs{display:inline-flex;margin-right:6px}.avs .av+.av{margin-left:-7px}.teamline{display:flex;align-items:center;gap:4px}
 .teamline .av,.pin .av,.binome .av{width:26px;height:26px;font-size:12px}
 .pins{background:#FFFBEB;border:2px solid #FDE68A;border-radius:22px;padding:16px;margin-bottom:16px}
 .pins h2{margin:0;font-size:20px;display:flex;justify-content:space-between;align-items:center;color:#78350F}
