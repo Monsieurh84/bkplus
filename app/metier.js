@@ -93,6 +93,7 @@ async function affaireForm(a, opts) {
   </div><datalist id="villes2">${['Istres', 'Miramas', 'Martigues', 'Fos-sur-Mer', 'Port-de-Bouc', 'Saint-Chamas', 'Cornillon-Confoux', 'Grans', 'Salon-de-Provence', 'Vitrolles', 'Marignane', 'Sausset-les-Pins', 'Port-Saint-Louis-du-Rhône', 'Aix-en-Provence', 'Marseille'].map(v => `<option value="${v}">`).join('')}</datalist></form>
   <footer><button class="btn btn-grad" form="af" type="submit" id="asv">${isNew ? 'Créer l’affaire' : 'Enregistrer'}</button>
     ${isNew ? '' : `<button class="btn btn-line" id="acp" title="Copier client + lignes pour les coller dans Isanet">📋 Copier pour Isanet</button><button class="btn btn-line" id="apl">🗓 Planifier</button>${a.statut === 'accepte' || a.statut === 'facture' ? `<button class="btn btn-line" id="ach">🏗 ${ch.length ? 'Voir le chantier' : 'Créer le chantier'}</button>` : ''}<button class="btn btn-red" id="adl" style="margin-left:auto">Supprimer</button>`}</footer>`);
+  $('#panel').classList.add('wide');
   const f = $('#af');
   const recalc = () => { const ht = totalHT(lignes), tv = num(f.tva.value); $('#tht').textContent = eur(ht); $('#ttc').textContent = eur(ht * (1 + tv / 100)); document.querySelectorAll('#lt tr').forEach(tr => { const x = lignes[+tr.dataset.k]; tr.querySelector('.tt').textContent = eur(num(x.q) * num(x.pu)); }); };
   const bindL = () => { document.querySelectorAll('#lt [data-f]').forEach(el => el.oninput = el.onchange = () => { lignes[+el.closest('tr').dataset.k][el.dataset.f] = el.value; recalc(); });
