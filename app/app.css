@@ -144,3 +144,26 @@ input[type=range]{accent-color:var(--electric)}
 .acc .nm{grid-column:1/-1}.acc .nm:empty{display:none}
 .newpw{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;background:#E6F6EF;border-radius:10px;padding:10px 12px;font-size:14px}.newpw b{font-family:ui-monospace,Menlo,monospace;font-size:15px;letter-spacing:.02em}
 .side>.nav#team{margin-top:auto}.side>.nav#team+.who{margin-top:0}
+
+/* Clients & articles */
+.cnt{color:var(--mute);font-size:13.5px;margin:0 0 10px}
+.dt{background:#fff;border:1px solid var(--line);border-radius:14px;overflow:auto}
+.dt table{width:100%;border-collapse:collapse;font-size:14px}
+.dt th{text-align:left;font-size:11.5px;color:var(--mute);font-weight:800;text-transform:uppercase;letter-spacing:.05em;padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap;position:sticky;top:0;background:#fff}
+.dt td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+.dt tr:last-child td{border-bottom:0}
+.dt tbody tr{cursor:pointer}.dt tbody tr:hover td{background:var(--soft)}
+.dt .n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.dt small{color:var(--mute)}
+.tg{font-style:normal;font-size:11px;font-weight:800;background:#EEF1FB;color:#2239A9;border-radius:999px;padding:2px 8px;white-space:nowrap}
+.tg.sv{background:#EAF7F1;color:#0E7A55}
+.acw{position:relative}
+.ac{position:absolute;left:0;right:0;top:100%;z-index:60;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 30px rgba(11,20,51,.16);margin-top:4px;padding:4px;max-height:320px;overflow:auto}
+.ac button{display:block;width:100%;text-align:left;border:0;background:none;border-radius:8px;padding:8px 10px;font-size:13.5px;color:var(--ink)}
+.ac button:hover,.ac button.on{background:var(--soft)}
+.ac button small{display:block;color:var(--mute);font-weight:500;font-size:12px;margin-top:1px}
+.ac p{margin:0;padding:8px 10px;color:var(--mute);font-size:13px}
+.lines td .ac{min-width:380px}
+label.linked>input{border-color:#0E9F6E}
+label.linked::after{content:"✓ fiche client liée";font-size:11.5px;font-weight:800;color:#0E9F6E;margin-top:3px;display:block}
+.hl{padding:6px 0;border-bottom:1px dashed var(--line);font-size:13.5px}.hl:last-child{border-bottom:0}.hl[data-ha]{cursor:pointer}.hl[data-ha]:hover{color:var(--indigo)}

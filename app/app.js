@@ -54,14 +54,14 @@ async function start() {
   if (!p || p.role !== 'bureau' || !p.actif) { started = false; root.innerHTML = `<div class="login"><form><img src="../logo-bk.png" alt=""><h1>Accès non activé</h1><p>Votre compte (${E(session.user.email)}) n’a pas encore d’accès bureau.</p><button class="btn btn-line" type="button" id="out">Se déconnecter</button></form></div>`; $('#out').onclick = () => sb.auth.signOut(); return; }
   me = p; shell();
   const r = await sb.from('techniciens').select('*').eq('actif', true).order('ordre'); techs = r.data || [];
-  await Promise.all([loadDemandes(), loadAffaires()]); const h = location.hash.slice(1); view = ['planning', 'demandes', 'controle', 'affaires', 'chantiers'].includes(h) ? h : 'planning';
+  await Promise.all([loadDemandes(), loadAffaires()]); const h = location.hash.slice(1); view = ['planning', 'demandes', 'controle', 'affaires', 'chantiers', 'clients', 'articles'].includes(h) ? h : 'planning';
   await go(view); listen(); badgeC();
 }
 function shell() {
   root.innerHTML = `<div class="app"><aside class="side"><div class="brand"><img src="../logo-bk.png" alt=""><div><b>BK+</b><small>Application</small></div></div>
   <button class="nav" data-v="planning">${ic('calendar')} Planning</button>
   <button class="nav" data-v="demandes">${ic('inbox')} Demandes du site<span class="c" id="cn"></span></button>
-  <button class="nav" data-v="affaires">${ic('briefcase')} Affaires<span class="c" id="ca"></span></button><button class="nav" data-v="chantiers">${ic('helmet')} Chantiers</button><button class="nav" data-v="controle">${ic('check-circle')} À contrôler<span class="c" id="cc"></span></button>
+  <button class="nav" data-v="affaires">${ic('briefcase')} Affaires<span class="c" id="ca"></span></button><button class="nav" data-v="chantiers">${ic('helmet')} Chantiers</button><button class="nav" data-v="clients">${ic('notebook')} Clients</button><button class="nav" data-v="articles">${ic('package')} Articles</button><button class="nav" data-v="controle">${ic('check-circle')} À contrôler<span class="c" id="cc"></span></button>
   <a class="nav" href="tech.html" target="_blank" rel="noopener" style="text-decoration:none">${ic('smartphone')} App technicien<small>aperçu</small></a>
   <button class="nav" id="team">${ic('users')} Équipe & accès</button>
   <div class="who"><b>${E(me.nom)}</b>Accès bureau<br><button id="mdp">Mon mot de passe</button> · <button id="out">Se déconnecter</button></div></aside><main class="main" id="main"><div class="loading">Chargement…</div></main></div>`;
@@ -71,7 +71,7 @@ function shell() {
 async function go(v) {
   view = v; history.replaceState(null, '', '#' + v);
   document.querySelectorAll('[data-v]').forEach(b => b.classList.toggle('on', b.dataset.v === v));
-  if (v === 'planning') { await loadPlanning(); planning(); } else if (v === 'controle') await listControle(); else if (v === 'affaires') { await loadAffaires(); listAffaires(); } else if (v === 'chantiers') { await loadChantiers(); listChantiers(); } else listDemandes();
+  if (v === 'planning') { await loadPlanning(); planning(); } else if (v === 'controle') await listControle(); else if (v === 'affaires') { await loadAffaires(); listAffaires(); } else if (v === 'chantiers') { await loadChantiers(); listChantiers(); } else if (v === 'clients') listClients(); else if (v === 'articles') listArticles(); else listDemandes();
 }
 function listen() {
   if (chan) sb.removeChannel(chan);
@@ -228,7 +228,7 @@ async function form(i, opts) {
     <label class="full inline"><input type="checkbox" name="recurrent" ${i.recurrent ? 'checked' : ''}> Intervention récurrente (contrat d’entretien)</label>
   </div><datalist id="villes">${['Istres', 'Miramas', 'Martigues', 'Fos-sur-Mer', 'Port-de-Bouc', 'Saint-Chamas', 'Cornillon-Confoux', 'Grans', 'Salon-de-Provence', 'Vitrolles', 'Marignane', 'Sausset-les-Pins', 'Port-Saint-Louis-du-Rhône', 'Aix-en-Provence', 'Marseille'].map(v => `<option value="${v}">`).join('')}</datalist></form>
   <footer><button class="btn btn-grad" form="f" type="submit" id="sv">${isNew ? 'Planifier' : 'Enregistrer'}</button><button class="btn btn-line" type="button" id="cc">Annuler</button></footer>`);
-  const f = $('#f');
+  const f = $('#f'); acIntervention(f, i);
   const syncPin = () => f.querySelectorAll('.hr').forEach(l => l.style.display = f.epingle.checked ? 'none' : ''); f.epingle.onchange = syncPin; syncPin();
   const drawPj = () => { $('#pjl').innerHTML = existing.filter(p => !removed.includes(p.id)).map(p => `<a>${p.type === 'photo' ? '<span class="ic">' + ic('image') + '</span>' : `<span class="ic">${p.type === 'video' ? ic('film') : ic('file')}</span>`}${E(p.nom)}<button type="button" class="rm" data-rme="${p.id}">×</button></a>`).join('') + added.map((f, k) => `<a>${kindOf(f) === 'photo' ? `<img src="${URL.createObjectURL(f)}" alt="">` : `<span class="ic">${kindOf(f) === 'video' ? ic('film') : ic('file')}</span>`}${E(f.name)}<button type="button" class="rm" data-rma="${k}">×</button></a>`).join('') || '<span style="font-size:13px;color:var(--mute)">Aucune.</span>';
     $('#pjl').querySelectorAll('[data-rme]').forEach(b => b.onclick = () => { removed.push(b.dataset.rme); drawPj(); });
@@ -241,7 +241,7 @@ async function form(i, opts) {
     const btn = $('#sv'); btn.disabled = true; btn.textContent = 'Enregistrement…';
     const pin = !!fd.get('epingle');
     const row = { type: fd.get('type'), date: fd.get('date'), epingle: pin, heure: pin ? null : (fd.get('heure') || '09:00'), duree: pin ? 0 : (+fd.get('duree') || 1), travaux: fd.get('travaux'), adresse: fd.get('adresse'), cp: fd.get('cp'), ville: fd.get('ville'), client: fd.get('client'), occupant: fd.get('occupant'), tel: fd.get('tel'),
-      materiel: String(fd.get('materiel') || '').split('\n').map(x => x.trim()).filter(Boolean), recurrent: !!fd.get('recurrent'), demande_id: i.demande_id || null, chantier_id: i.chantier_id || null, affaire_id: i.affaire_id || null };
+      materiel: String(fd.get('materiel') || '').split('\n').map(x => x.trim()).filter(Boolean), recurrent: !!fd.get('recurrent'), demande_id: i.demande_id || null, chantier_id: i.chantier_id || null, affaire_id: i.affaire_id || null, client_id: i.client_id || null };
     try {
       let id = i.id;
       if (isNew) { const r = await sb.from('interventions').insert({ ...row, created_by: me.id, updated_by: me.id }).select('id').single(); if (r.error) throw r.error; id = r.data.id; }

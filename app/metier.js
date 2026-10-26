@@ -95,17 +95,18 @@ async function affaireForm(a, opts) {
   <footer><button class="btn btn-grad" form="af" type="submit" id="asv">${isNew ? 'Créer l’affaire' : 'Enregistrer'}</button>
     ${isNew ? '' : `<button class="btn btn-line" id="acp" title="Copier client + lignes pour les coller dans Isanet">${ic('clipboard')} Copier pour Isanet</button><button class="btn btn-line" id="apl">${ic('calendar')} Planifier</button>${a.statut === 'accepte' || a.statut === 'facture' ? `<button class="btn btn-line" id="ach">${ic('helmet')} ${ch.length ? 'Voir le chantier' : 'Créer le chantier'}</button>` : ''}<button class="btn btn-red" id="adl" style="margin-left:auto">Supprimer</button>`}</footer>`);
   $('#panel').classList.add('wide');
-  const f = $('#af');
+  const f = $('#af'); acAffaire(f, a);
   const recalc = () => { const ht = totalHT(lignes), tv = num(f.tva.value); $('#tht').textContent = eur(ht); $('#ttc').textContent = eur(ht * (1 + tv / 100)); document.querySelectorAll('#lt tr').forEach(tr => { const x = lignes[+tr.dataset.k]; tr.querySelector('.tt').textContent = eur(num(x.q) * num(x.pu)); }); };
   const bindL = () => { document.querySelectorAll('#lt [data-f]').forEach(el => el.oninput = el.onchange = () => { lignes[+el.closest('tr').dataset.k][el.dataset.f] = el.value; recalc(); });
-    document.querySelectorAll('#lt [data-rm]').forEach(b => b.onclick = () => { lignes.splice(+b.dataset.rm, 1); if (!lignes.length) lignes.push({ d: '', q: 1, u: 'u', pu: '' }); $('#lt').innerHTML = lignesHTML(lignes); bindL(); recalc(); }); };
+    document.querySelectorAll('#lt [data-rm]').forEach(b => b.onclick = () => { lignes.splice(+b.dataset.rm, 1); if (!lignes.length) lignes.push({ d: '', q: 1, u: 'u', pu: '' }); $('#lt').innerHTML = lignesHTML(lignes); bindL(); recalc(); });
+    acLignes(lignes, () => { $('#lt').innerHTML = lignesHTML(lignes); bindL(); recalc(); }); };
   bindL(); recalc(); f.tva.onchange = recalc;
   $('#addl').onclick = () => { lignes.push({ d: '', q: 1, u: 'u', pu: '' }); $('#lt').innerHTML = lignesHTML(lignes); bindL(); recalc(); const ins = document.querySelectorAll('#lt [data-f="d"]'); ins[ins.length - 1].focus(); };
   f.statut.onchange = () => { const p = statutPatch({ envoye_le: f.envoye_le.value, relance_le: f.relance_le.value }, f.statut.value); if (p.envoye_le) f.envoye_le.value = p.envoye_le; if (p.relance_le) f.relance_le.value = p.relance_le; };
   const row = () => { const fd = new FormData(f), L = lignes.filter(x => String(x.d).trim() || num(x.pu)).map(x => ({ d: String(x.d).trim(), q: num(x.q), u: x.u || 'u', pu: num(x.pu) }));
     const o = {}; ['client', 'source', 'contact', 'tel', 'email', 'adresse', 'cp', 'ville', 'objet', 'description', 'statut', 'isanet_devis', 'isanet_facture', 'notes'].forEach(k => o[k] = String(fd.get(k) || '').trim());
     ['visite_le', 'envoye_le', 'relance_le'].forEach(k => o[k] = fd.get(k) || null);
-    return { ...o, tva: num(fd.get('tva')), lignes: L, montant_ht: totalHT(L), demande_id: a.demande_id || null }; };
+    return { ...o, tva: num(fd.get('tva')), lignes: L, montant_ht: totalHT(L), demande_id: a.demande_id || null, client_id: a.client_id || null }; };
   const save = async () => {
     const r = row(); let res;
     if (isNew) res = await sb.from('affaires').insert({ ...r, created_by: me.id }).select().single(); else res = await sb.from('affaires').update(r).eq('id', a.id).select().single();
