@@ -233,3 +233,4 @@ html,body{height:100%}body{background:var(--bg);overscroll-behavior:none}
 .remind>.i{width:26px;height:26px;flex:none}
 .done-box .i{width:22px;height:22px;vertical-align:-5px;margin-right:4px}
 .login .forgot{display:block;margin:12px auto 0;border:0;background:none;color:var(--blue);font-weight:700;font-size:15px}
+.toast:not(.show){pointer-events:none}
