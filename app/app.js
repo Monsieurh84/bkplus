@@ -54,11 +54,12 @@ async function start() {
   if (!p || p.role !== 'bureau' || !p.actif) { started = false; root.innerHTML = `<div class="login"><form><img src="../logo-bk.png" alt=""><h1>Accès non activé</h1><p>Votre compte (${E(session.user.email)}) n’a pas encore d’accès bureau.</p><button class="btn btn-line" type="button" id="out">Se déconnecter</button></form></div>`; $('#out').onclick = () => sb.auth.signOut(); return; }
   me = p; shell();
   const r = await sb.from('techniciens').select('*').eq('actif', true).order('ordre'); techs = r.data || [];
-  await Promise.all([loadDemandes(), loadAffaires()]); const h = location.hash.slice(1); view = ['planning', 'demandes', 'controle', 'affaires', 'chantiers', 'clients', 'articles'].includes(h) ? h : 'planning';
+  await Promise.all([loadDemandes(), loadAffaires()]); const h = location.hash.slice(1); view = ['planning', 'recherche', 'demandes', 'controle', 'affaires', 'chantiers', 'clients', 'articles'].includes(h) ? h : 'planning';
   await go(view); listen(); badgeC();
 }
 function shell() {
   root.innerHTML = `<div class="app"><aside class="side"><div class="brand"><img src="../logo-bk.png" alt=""><div><b>BK+</b><small>Application</small></div></div>
+  <button class="nav srch" data-v="recherche">${ic('search')} Rechercher une intervention</button>
   <button class="nav" data-v="planning">${ic('calendar')} Planning</button>
   <button class="nav" data-v="demandes">${ic('inbox')} Demandes du site<span class="c" id="cn"></span></button>
   <button class="nav" data-v="affaires">${ic('briefcase')} Affaires<span class="c" id="ca"></span></button><button class="nav" data-v="chantiers">${ic('helmet')} Chantiers</button><button class="nav" data-v="clients">${ic('notebook')} Clients</button><button class="nav" data-v="articles">${ic('package')} Articles</button><button class="nav" data-v="controle">${ic('check-circle')} À contrôler<span class="c" id="cc"></span></button>
@@ -71,7 +72,7 @@ function shell() {
 async function go(v) {
   view = v; history.replaceState(null, '', '#' + v);
   document.querySelectorAll('[data-v]').forEach(b => b.classList.toggle('on', b.dataset.v === v));
-  if (v === 'planning') { await loadPlanning(); planning(); } else if (v === 'controle') await listControle(); else if (v === 'affaires') { await loadAffaires(); listAffaires(); } else if (v === 'chantiers') { await loadChantiers(); listChantiers(); } else if (v === 'clients') listClients(); else if (v === 'articles') listArticles(); else listDemandes();
+  if (v === 'planning') { await loadPlanning(); planning(); } else if (v === 'controle') await listControle(); else if (v === 'affaires') { await loadAffaires(); listAffaires(); } else if (v === 'chantiers') { await loadChantiers(); listChantiers(); } else if (v === 'recherche') listRecherche(); else if (v === 'clients') listClients(); else if (v === 'articles') listArticles(); else listDemandes();
 }
 function listen() {
   if (chan) sb.removeChannel(chan);
@@ -88,7 +89,12 @@ function listen() {
 }
 
 /* ================= Planning ================= */
-function range() { return mode === 'semaine' ? [iso(week), iso(addDays(week, 5))] : [day, day]; }
+const H0 = 7, H1 = 20;                     // plage horaire affichée
+let showWE = false, hidden = new Set();
+try { showWE = localStorage.getItem('bk-we') === '1'; hidden = new Set(JSON.parse(localStorage.getItem('bk-hide') || '[]')); } catch (e) { }
+const saveUI = () => { try { localStorage.setItem('bk-we', showWE ? '1' : '0'); localStorage.setItem('bk-hide', JSON.stringify([...hidden])); } catch (e) { } };
+const nbDays = () => showWE ? 7 : 5;
+function range() { return mode === 'semaine' ? [iso(week), iso(addDays(week, nbDays() - 1))] : [day, day]; }
 async function loadPlanning() {
   const [a, b] = range();
   const [r1, r2] = await Promise.all([
@@ -99,70 +105,160 @@ async function loadPlanning() {
   absences = r2.data || [];
 }
 const sortI = (a, b) => (b.epingle - a.epingle) || (a.heure || '').localeCompare(b.heure || '');
-function card(i, techId) {
-  const team = i.techs.length > 1;
-  const ico = (i.demande_id ? '<span title="Demande du site (photos)">' + ic('camera') + '</span>' : '') + (i.nbPieces ? '<span title="Pièces jointes">' + ic('paperclip') + '</span>' : '') + (i.materiel.length ? '<span title="Matériel">' + ic('package') + '</span>' : '') + (i.recurrent ? '<span title="Récurrente">↻</span>' : '') + (i.chantier_id ? '<span title="Chantier">' + ic('helmet') + '</span>' : '') + (i.affaire_id && !i.chantier_id ? '<span title="Affaire">' + ic('briefcase') + '</span>' : '');
-  return `<button class="card ${i.epingle ? 'pin' : ''} ${i.type === 'interne' ? 'interne' : ''} ${i.statut === 'cloturee' ? 'cl' : ''}" draggable="true" data-id="${i.id}" data-tech="${techId}" style="--stripe:${stripe(i.techs)};--sc:${SC[i.statut]}">
-    <div class="t"><span class="dot" title="${STAT_I[i.statut]}"></span>${i.epingle ? ic('pin') + ' Dans la journée' : hh(i.heure) + '–' + fin(i.heure, i.duree)}<span class="ico">${ico}</span></div>
-    <div class="a">${E(i.epingle || i.type !== 'intervention' ? i.travaux : i.ville)}</div>${!i.epingle && i.type === 'intervention' ? `<div class="g">${E(i.client || i.occupant || '')}</div>` : ''}
-    ${team ? `<div class="team"><span class="avs">${avatars(i.techs)}</span>${i.techs.length > 2 ? i.techs.length + ' techniciens' : E(names(i.techs))}</div>` : ''}</button>`;
+const isAllDay = i => i.epingle || !i.heure;
+const mins = t => { const [h, m] = String(t || '00:00').split(':').map(Number); return h * 60 + (m || 0); };
+const hm = m => pad(Math.floor(m / 60)) + ':' + pad(m % 60);
+const tint = (hex, a) => { const h = (hex || '#8B8FA3').replace('#', ''); const n = parseInt(h.length === 3 ? h.split('').map(x => x + x).join('') : h, 16); return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`; };
+const icoOf = i => (i.demande_id ? ic('camera') : '') + (i.nbPieces ? ic('paperclip') : '') + (i.materiel.length ? ic('package') : '') + (i.recurrent ? '↻' : '') + (i.chantier_id ? ic('helmet') : '');
+const visTechs = () => techs.filter(t => !hidden.has(t.id));
+const isBureau = t => /bureau/i.test(t.fonction || '');
+
+/* Une intervention placée dans la grille horaire */
+function ev(i, t, px, col, cols) {
+  const s = Math.max(mins(i.heure), H0 * 60), e = Math.min(mins(i.heure) + Math.round((+i.duree || 1) * 60), H1 * 60);
+  const top = (s - H0 * 60) / 60 * px, h = Math.max((e - s) / 60 * px, 20), c = T(t).couleur;
+  const short = h < 40, title = i.type === 'intervention' ? (i.client || i.occupant || i.ville || 'Intervention') : i.travaux;
+  return `<div class="ev ${i.statut === 'cloturee' ? 'cl' : ''} ${short ? 'sh' : ''}" draggable="true" data-id="${i.id}" data-tech="${t}" title="${E(hh(i.heure) + '–' + fin(i.heure, i.duree) + ' · ' + title + (i.adresse ? ' · ' + i.adresse : ''))}"
+    style="top:${top}px;height:${h - 2}px;left:calc(${col / cols * 100}% + 1px);width:calc(${100 / cols}% - 2px);--c:${c};--bg:${tint(c, .16)};--sc:${SC[i.statut]}">
+    <b><i class="sd"></i>${E(title)}</b>${short ? '' : `<span>${hh(i.heure)}–${fin(i.heure, i.duree)}${i.type === 'intervention' && i.ville ? ' · ' + E(i.ville) : ''}</span>`}
+    ${h > 64 && i.type === 'intervention' ? `<span class="tr">${E(i.travaux || '')}</span>` : ''}${i.techs.length > 1 && h > 52 ? `<span class="avs">${avatars(i.techs)}</span>` : ''}<span class="ic2">${icoOf(i)}</span></div>`;
+}
+/* Répartit les interventions qui se chevauchent dans une même colonne */
+function layout(list) {
+  const out = [], ends = [];
+  list.sort((a, b) => mins(a.heure) - mins(b.heure)).forEach(i => {
+    const s = mins(i.heure), e = s + Math.round((+i.duree || 1) * 60);
+    let c = ends.findIndex(x => x <= s); if (c < 0) { c = ends.length; ends.push(e); } else ends[c] = e;
+    out.push([i, c]);
+  });
+  return out.map(([i, c]) => [i, c, Math.max(1, ends.length)]);
+}
+function lane(d, t, px, withHead) {
+  const ab = absences.find(a => a.tech_id === t.id && a.date === d);
+  const items = inter.filter(i => i.date === d && i.techs.includes(t.id) && !isAllDay(i));
+  return `<div class="ln ${ab ? 'abs' : ''}" data-date="${d}" data-tech="${t.id}" style="--c:${t.couleur}">${withHead ? '' : `<span class="lh" style="background:${t.couleur}" title="${E(t.nom)}"></span>`}${layout(items).map(([i, c, n]) => ev(i, t.id, px, c, n)).join('')}</div>`;
 }
 function planning() {
   if (view !== 'planning') return;
-  const today = iso(new Date()), days = [...Array(6)].map((_, k) => iso(addDays(week, k)));
+  const today = iso(new Date()), nowM = new Date().getHours() * 60 + new Date().getMinutes();
+  const days = mode === 'semaine' ? [...Array(nbDays())].map((_, k) => iso(addDays(week, k))) : [day];
+  const px = mode === 'semaine' ? 46 : 58, vis = visTechs();
   const title = mode === 'semaine' ? `Semaine du ${lbl(days[0])}` : lbl(day, true);
   let h = `<div class="head"><h1>Planning</h1><span class="live"><i></i>En direct</span>
    <div class="weeknav"><button id="prev" aria-label="Précédent">‹</button><span>${E(title)}</span><button id="next" aria-label="Suivant">›</button><button class="today" id="tod">Aujourd’hui</button></div>
    <div class="seg"><button data-m="jour" class="${mode === 'jour' ? 'on' : ''}">Jour</button><button data-m="semaine" class="${mode === 'semaine' ? 'on' : ''}">Semaine</button></div>
-   <button class="btn btn-line" id="npin">${ic('pin')} Tâche du jour</button><button class="btn btn-grad" id="nnew">+ Intervention</button></div>
-   <div class="legend">${techs.map(t => `<span><i style="background:${t.couleur}"></i>${E(t.nom)}</span>`).join('')}<span>▌▌ équipe = une bande par technicien</span><span>${ic('camera')} demande du site</span><span>${ic('paperclip')} pièces jointes</span><span>${ic('package')} matériel</span></div>`;
-  if (!techs.length) h += `<div class="empty">Aucun technicien enregistré.</div>`;
-  else if (mode === 'semaine') {
-    h += `<div class="grid"><div class="gh"></div>${days.map(d => `<div class="gh ${d === today ? 'today' : ''}">${d === today ? '<span>' + lbl(d) + '</span>' : lbl(d)}</div>`).join('')}`;
-    techs.forEach(t => {
-      h += `<div class="tn"><b><i style="background:${t.couleur}"></i>${E(t.nom)}</b><small>${E(t.fonction)}</small><button data-abs="${t.id}">+ absence</button></div>`;
-      days.forEach(d => {
-        const ab = absences.find(a => a.tech_id === t.id && a.date === d);
-        const it = inter.filter(i => i.date === d && i.techs.includes(t.id)).sort(sortI);
-        h += `<div class="cell ${d === today ? 'today' : ''} ${ab ? 'abs' : ''}" data-date="${d}" data-tech="${t.id}">${ab ? `<div class="abs-l">${ic('calendar-x')} ${E(ab.motif)}<button data-delabs="${ab.id}" aria-label="Retirer l’absence">×</button></div>` : ''}${it.map(i => card(i, t.id)).join('')}</div>`;
-      });
-    });
-    h += `</div>`;
+   ${mode === 'semaine' ? `<label class="tgl"><input type="checkbox" id="we" ${showWE ? 'checked' : ''}> Sam. et dim.</label>` : ''}
+   <button class="btn btn-line" id="npin">${ic('pin')} Rappel du jour</button><button class="btn btn-grad" id="nnew">+ Planifier</button></div>
+   <div class="people">${techs.map(t => `<button data-who="${t.id}" class="${hidden.has(t.id) ? 'off' : ''}" style="--c:${t.couleur}"><i></i>${E(t.nom)}${isBureau(t) ? ' <small>bureau</small>' : ''}</button>`).join('')}<span class="hint">Cliquez pour afficher ou masquer · double-clic dans le planning pour créer · clic droit sur une intervention pour la dupliquer</span></div>`;
+  if (!techs.length) { $('#main').innerHTML = h + `<div class="empty">Aucun membre de l’équipe enregistré.</div>`; return; }
+  const hours = [...Array(H1 - H0)].map((_, k) => `<div class="hr" style="height:${px}px"><span>${pad(H0 + k)}:00</span></div>`).join('');
+  const nLanes = d => Math.max(1, vis.filter(t => inter.some(i => i.date === d && i.techs.includes(t.id) && !isAllDay(i))).length);
+  const colsTpl = mode === 'semaine' ? '56px ' + days.map(d => `minmax(${Math.max(showWE ? 120 : 150, nLanes(d) * 74)}px,1fr)`).join(' ') : `56px repeat(${vis.length},minmax(130px,1fr))`;
+  h += `<div class="cal ${mode}" style="--px:${px}px;grid-template-columns:${colsTpl}">`;
+  if (mode === 'semaine') {
+    h += `<div class="ch ax"></div>${days.map(d => `<div class="ch ${d === today ? 'td' : ''}"><b>${lbl(d)}</b></div>`).join('')}`;
+    h += `<div class="ad ax">rappels</div>${days.map(d => allDay(d, vis)).join('')}`;
+    h += `<div class="ax hrs">${hours}</div>${days.map(d => { const who = vis.filter(t => inter.some(i => i.date === d && i.techs.includes(t.id) && !isAllDay(i)));
+      return `<div class="dc ${d === today ? 'td' : ''}" data-date="${d}" style="height:${(H1 - H0) * px}px">${who.map(t => lane(d, t, px)).join('')}${!who.length ? `<div class="ln empty-ln" data-date="${d}"></div>` : ''}${d === today && nowM > H0 * 60 && nowM < H1 * 60 ? `<i class="now" style="top:${(nowM - H0 * 60) / 60 * px}px"></i>` : ''}</div>`; }).join('')}`;
   } else {
-    h += `<div class="dayv">${techs.map(t => { const ab = absences.find(a => a.tech_id === t.id && a.date === day); const it = inter.filter(i => i.date === day && i.techs.includes(t.id)).sort(sortI);
-      return `<div class="dcol cell" data-date="${day}" data-tech="${t.id}"><h3><i style="background:${t.couleur}"></i>${E(t.nom)}</h3>${ab ? `<div class="abs-l">${ic('calendar-x')} ${E(ab.motif)}</div>` : ''}${it.map(i => card(i, t.id)).join('') || (ab ? '' : '<div style="color:var(--mute);font-size:13px;padding:6px">Disponible</div>')}</div>`; }).join('')}</div>`;
+    h += `<div class="ch ax"></div>${vis.map(t => `<div class="ch who" style="--c:${t.couleur}"><b><i></i>${E(t.nom)}</b><small>${E(t.fonction || '')}</small>${isBureau(t) ? '' : `<button data-abs="${t.id}">+ absence</button>`}</div>`).join('')}`;
+    h += `<div class="ad ax">rappels</div>${vis.map(t => allDay(day, [t], true)).join('')}`;
+    h += `<div class="ax hrs">${hours}</div>${vis.map(t => `<div class="dc ${day === today ? 'td' : ''}" data-date="${day}" style="height:${(H1 - H0) * px}px">${lane(day, t, px, true)}${day === today && nowM > H0 * 60 && nowM < H1 * 60 ? `<i class="now" style="top:${(nowM - H0 * 60) / 60 * px}px"></i>` : ''}</div>`).join('')}`;
   }
+  h += `</div>`;
   $('#main').innerHTML = h;
-  const nav = async n => { if (mode === 'semaine') week = addDays(week, 7 * n); else day = iso(addDays(new Date(day + 'T12:00'), n)); await loadPlanning(); planning(); };
+  const sc = $('.cal'); if (sc) { const first = Math.min(...inter.filter(i => !isAllDay(i)).map(i => mins(i.heure)), 8 * 60); sc.scrollTop = Math.max(0, (first - H0 * 60 - 30) / 60 * px); }
+  const nav = async n => { if (mode === 'semaine') week = addDays(week, 7 * n); else { let x = addDays(new Date(day + 'T12:00'), n); if (!showWE) while ([0, 6].includes(x.getDay())) x = addDays(x, n); day = iso(x); } await loadPlanning(); planning(); };
   $('#prev').onclick = () => nav(-1); $('#next').onclick = () => nav(1);
   $('#tod').onclick = async () => { week = monday(new Date()); day = iso(new Date()); await loadPlanning(); planning(); };
   document.querySelectorAll('[data-m]').forEach(b => b.onclick = async () => { mode = b.dataset.m; if (mode === 'jour' && (day < iso(week) || day > iso(addDays(week, 6)))) day = iso(week); await loadPlanning(); planning(); });
-  $('#nnew').onclick = () => form(); $('#npin').onclick = () => form(null, { epingle: true });
+  if ($('#we')) $('#we').onchange = async e => { showWE = e.target.checked; saveUI(); await loadPlanning(); planning(); };
+  document.querySelectorAll('[data-who]').forEach(b => b.onclick = () => { const id = b.dataset.who; hidden.has(id) ? hidden.delete(id) : hidden.add(id); saveUI(); planning(); });
+  $('#nnew').onclick = () => form(); $('#npin').onclick = () => form(null, { epingle: true, pre: { date: mode === 'jour' ? day : iso(new Date()) } });
   document.querySelectorAll('[data-abs]').forEach(b => b.onclick = () => absenceForm(b.dataset.abs));
   document.querySelectorAll('[data-delabs]').forEach(b => b.onclick = async e => { e.stopPropagation(); if (!confirm('Retirer cette absence ?')) return; await sb.from('absences').delete().eq('id', b.dataset.delabs); await loadPlanning(); planning(); });
-  bindDnD();
+  bindDnD(px);
 }
-function bindDnD() {
-  document.querySelectorAll('.card').forEach(c => {
-    c.onclick = () => detail(c.dataset.id);
-    c.ondragstart = e => { c.classList.add('dragging'); e.dataTransfer.setData('text/plain', c.dataset.id + '|' + c.dataset.tech); };
+function allDay(d, who, single) {
+  const pins = inter.filter(i => i.date === d && isAllDay(i) && i.techs.some(t => who.some(w => w.id === t))).sort(sortI);
+  const abs = absences.filter(a => a.date === d && who.some(w => w.id === a.tech_id));
+  return `<div class="ad" data-date="${d}" ${single ? `data-tech="${who[0].id}"` : ''}>${abs.map(a => `<span class="abl" style="--c:${T(a.tech_id).couleur}">${ic('calendar-x')} ${single ? '' : E(T(a.tech_id).nom) + ' · '}${E(a.motif)}<button data-delabs="${a.id}" aria-label="Retirer l’absence">×</button></span>`).join('')}
+    ${pins.map(i => `<div class="pinr" draggable="true" data-id="${i.id}" data-tech="${single ? who[0].id : i.techs[0]}" style="--c:${T(i.techs[0]).couleur};--bg:${tint(T(i.techs[0]).couleur, .14)}">${ic('pin')}<span>${E(i.travaux || '')}</span>${single ? '' : `<em>${E(names(i.techs))}</em>`}</div>`).join('')}</div>`;
+}
+function bindDnD(px) {
+  let grab = 0;
+  document.querySelectorAll('.ev,.pinr').forEach(c => {
+    c.onclick = e => { e.stopPropagation(); const i = inter.find(x => x.id === c.dataset.id); if (i) detail(i.id); };
+    c.oncontextmenu = e => { e.preventDefault(); ctxMenu(e, inter.find(x => x.id === c.dataset.id)); };
+    c.ondragstart = e => { grab = e.offsetY || 0; c.classList.add('dragging'); e.dataTransfer.setData('text/plain', c.dataset.id + '|' + c.dataset.tech); };
     c.ondragend = () => c.classList.remove('dragging');
   });
-  document.querySelectorAll('.cell').forEach(cell => {
-    cell.ondragover = e => { e.preventDefault(); cell.classList.add('over'); };
-    cell.ondragleave = () => cell.classList.remove('over');
-    cell.ondrop = async e => {
-      e.preventDefault(); cell.classList.remove('over');
-      const [id, from] = e.dataTransfer.getData('text/plain').split('|'), to = cell.dataset.tech, d = cell.dataset.date, i = inter.find(x => x.id === id); if (!i) return;
+  const target = (el, e) => { const ln = el.closest('.ln'); return ln && ln.dataset.tech ? ln.dataset.tech : null; };
+  document.querySelectorAll('.dc,.ad').forEach(z => {
+    z.ondragover = e => { e.preventDefault(); z.classList.add('over'); };
+    z.ondragleave = () => z.classList.remove('over');
+    z.ondrop = async e => {
+      e.preventDefault(); z.classList.remove('over');
+      const [id, from] = e.dataTransfer.getData('text/plain').split('|'), i = inter.find(x => x.id === id); if (!i) return;
+      const d = z.dataset.date, to = target(e.target, e) || z.dataset.tech || from;
       if (absences.find(a => a.tech_id === to && a.date === d)) return toast(T(to).nom + ' est absent ce jour-là');
-      const ops = [];
-      if (i.date !== d) ops.push(sb.from('interventions').update({ date: d }).eq('id', id));
+      const patch = { date: d };
+      if (z.classList.contains('dc') && !i.epingle) { const r = z.getBoundingClientRect(); let m = H0 * 60 + Math.round(((e.clientY - r.top - grab) / px * 60) / 15) * 15; m = Math.max(H0 * 60, Math.min(m, H1 * 60 - 15)); patch.heure = hm(m); }
+      const ops = [sb.from('interventions').update(patch).eq('id', id)];
       if (from !== to && !i.techs.includes(to)) { ops.push(sb.from('intervention_techs').delete().match({ intervention_id: id, tech_id: from })); ops.push(sb.from('intervention_techs').insert({ intervention_id: id, tech_id: to })); }
-      else if (from !== to) ops.push(sb.from('intervention_techs').delete().match({ intervention_id: id, tech_id: from }));
       const res = await Promise.all(ops); const er = res.find(r => r.error); if (er) return toast('Erreur : ' + er.error.message);
-      await loadPlanning(); planning(); toast('Reprogrammée : ' + lbl(d) + ' · ' + names(inter.find(x => x.id === id)?.techs || []));
+      await loadPlanning(); planning(); const n = inter.find(x => x.id === id);
+      toast('Déplacée : ' + lbl(d) + (patch.heure ? ' à ' + hh(patch.heure) : '') + ' · ' + names(n ? n.techs : [to]));
     };
   });
+  document.querySelectorAll('.dc').forEach(z => z.ondblclick = e => {
+    if (e.target.closest('.ev')) return; const r = z.getBoundingClientRect(); const m = H0 * 60 + Math.floor(((e.clientY - r.top) / px * 60) / 30) * 30;
+    const t = target(e.target) || (mode === 'jour' ? null : null); const ln = e.target.closest('.ln');
+    form(null, { pre: { date: z.dataset.date, heure: hm(m), techs: ln && ln.dataset.tech ? [ln.dataset.tech] : [] } });
+  });
+}
+function ctxMenu(e, i) {
+  if (!i) return; document.querySelectorAll('.ctx').forEach(x => x.remove());
+  const m = document.createElement('div'); m.className = 'ctx';
+  m.innerHTML = `<b>${E(i.type === 'intervention' ? (i.client || i.ville || 'Intervention') : i.travaux).slice(0, 40)}</b>
+    <button data-a="dup">${ic('clipboard')} Dupliquer…</button><button data-a="ed">${ic('pencil')} Modifier</button><button data-a="p7">${ic('repeat')} Même chose la semaine suivante</button><button data-a="del" class="red">Supprimer</button>`;
+  document.body.appendChild(m); const w = 250; m.style.left = Math.min(e.clientX, innerWidth - w - 8) + 'px'; m.style.top = Math.min(e.clientY, innerHeight - m.offsetHeight - 8) + 'px';
+  const close = () => { m.remove(); document.removeEventListener('mousedown', out); }; const out = x => { if (!m.contains(x.target)) close(); }; setTimeout(() => document.addEventListener('mousedown', out), 0);
+  m.querySelector('[data-a=dup]').onclick = () => { close(); duplicate(i); };
+  m.querySelector('[data-a=ed]').onclick = () => { close(); form(i); };
+  m.querySelector('[data-a=p7]').onclick = () => { close(); duplicate(i, iso(addDays(new Date(i.date + 'T12:00'), 7))); };
+  m.querySelector('[data-a=del]').onclick = async () => { close(); if (!confirm('Supprimer définitivement cette intervention ?')) return; const { error } = await sb.from('interventions').delete().eq('id', i.id); if (error) return toast('Erreur : ' + error.message); await refreshView(); toast('Intervention supprimée'); };
+}
+function duplicate(i, date) {
+  const keep = ['type', 'heure', 'duree', 'epingle', 'client', 'client_id', 'occupant', 'tel', 'adresse', 'cp', 'ville', 'travaux', 'materiel', 'recurrent', 'demande_id', 'chantier_id', 'affaire_id'];
+  const pre = {}; keep.forEach(k => pre[k] = i[k]); pre.materiel = [...(i.materiel || [])]; pre.techs = [...i.techs]; pre.date = date || i.date;
+  form(null, { pre, ctx: 'Copie de l’intervention du ' + lbl(i.date) + ' · changez la date, l’horaire ou le technicien puis enregistrez' });
+}
+
+/* ================= Recherche d’interventions ================= */
+let qS = '', fS = 'toutes';
+async function listRecherche() {
+  if (view !== 'recherche') return;
+  $('#main').innerHTML = `<div class="head"><h1>Rechercher une intervention</h1></div>
+    <div class="sbar"><input class="search big" id="qs" type="search" placeholder="Nom, prénom, adresse, ville, téléphone, travaux, n° d’affaire ou de devis…" value="${E(qS)}" autofocus>
+    <div class="seg">${[['toutes', 'Toutes'], ['avenir', 'À venir'], ['passees', 'Passées']].map(([k, l]) => `<button data-fs="${k}" class="${fS === k ? 'on' : ''}">${l}</button>`).join('')}</div></div><div id="rs"></div>`;
+  const run = async () => {
+    if (qS.length < 2) { $('#rs').innerHTML = '<p class="cnt">Tapez au moins 2 lettres. La recherche porte sur toutes les interventions : planifiées, en cours, clôturées.</p>'; return; }
+    const l = pat(qS);
+    const af = await sb.from('affaires').select('id').or(['ref', 'isanet_devis', 'isanet_facture', 'client'].map(k => `${k}.ilike.${l}`).join(',')).limit(60);
+    const ors = ['client', 'occupant', 'adresse', 'ville', 'cp', 'tel', 'travaux'].map(k => `${k}.ilike.${l}`); const ids = (af.data || []).map(a => a.id); if (ids.length) ors.push(`affaire_id.in.(${ids.join(',')})`);
+    let r = sb.from('interventions').select('*, intervention_techs(tech_id), pieces(id), affaires(ref,isanet_devis)').or(ors.join(',')).order('date', { ascending: false }).limit(150);
+    const t = iso(new Date()); if (fS === 'avenir') r = r.gte('date', t); if (fS === 'passees') r = r.lt('date', t);
+    const { data, error } = await r; if (error) return toast('Erreur : ' + error.message);
+    const list = (data || []).map(i => ({ ...i, techs: i.intervention_techs.map(x => x.tech_id), nbPieces: i.pieces.length }));
+    $('#rs').innerHTML = `<p class="cnt">${list.length} intervention${list.length > 1 ? 's' : ''}${list.length === 150 ? ' (les 150 plus récentes)' : ''}</p>` + (list.length ? `<div class="dt"><table><thead><tr><th>Date</th><th>Client / occupant</th><th>Adresse</th><th>Travaux</th><th>Équipe</th><th>Statut</th></tr></thead><tbody>
+      ${list.map(i => `<tr data-ri="${i.id}"><td><b>${lbl(i.date)}</b><br><small>${i.epingle ? 'dans la journée' : hh(i.heure) + '–' + fin(i.heure, i.duree)}</small></td><td><b>${E(i.client || '')}</b>${i.occupant ? '<br><small>' + E(i.occupant) + '</small>' : ''}${i.affaires ? `<br><small>${E(i.affaires.ref || '')}${i.affaires.isanet_devis ? ' · devis ' + E(i.affaires.isanet_devis) : ''}</small>` : ''}</td>
+        <td>${E([i.adresse, [i.cp, i.ville].filter(Boolean).join(' ')].filter(Boolean).join(', '))}</td><td>${E((i.travaux || '').slice(0, 90))}</td><td><span class="avs">${avatars(i.techs)}</span></td><td><span class="tag s-${i.statut}" style="margin:0">${STAT_I[i.statut]}</span></td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">Aucune intervention trouvée.</div>');
+    document.querySelectorAll('[data-ri]').forEach(tr => tr.onclick = () => { const i = list.find(x => x.id === tr.dataset.ri); inter = inter.filter(x => x.id !== i.id).concat([i]); detail(i.id, i); });
+  };
+  let tm; $('#qs').oninput = e => { qS = e.target.value.trim(); clearTimeout(tm); tm = setTimeout(run, 250); };
+  document.querySelectorAll('[data-fs]').forEach(b => b.onclick = () => { fS = b.dataset.fs; document.querySelectorAll('[data-fs]').forEach(x => x.classList.toggle('on', x === b)); run(); });
+  $('#qs').focus(); run();
 }
 
 /* ================= Panneau ================= */
@@ -183,64 +279,75 @@ async function detail(id, given) {
     ${i.type === 'intervention' ? `<dl class="kv"><dt>Client</dt><dd>${E(i.client || '—')}</dd><dt>Occupant</dt><dd>${E(i.occupant || '—')}</dd><dt>Téléphone</dt><dd>${i.tel ? `<a href="tel:${E(i.tel.replace(/\s/g, ''))}">${E(i.tel)}</a>` : '—'}</dd><dt>Adresse</dt><dd>${E([i.adresse, [i.cp, i.ville].filter(Boolean).join(' ')].filter(Boolean).join(', ') || '—')}</dd></dl>` : ''}
     <div class="box"><h4>Travaux à effectuer</h4>${E(i.travaux || '—')}</div>
     ${i.materiel.length ? `<div class="box"><h4>${ic('package')} Matériel nécessaire</h4><ul class="mat">${i.materiel.map(m => `<li>${E(m)}</li>`).join('')}</ul></div>` : ''}
-    ${(pieces || []).length ? `<div class="box"><h4>${ic('paperclip')} Pièces jointes pour le technicien</h4><div class="ph" id="pj">${pieces.map(p => `<a target="_blank" rel="noopener" data-p="${E(p.path)}">${p.type === 'photo' ? '<img alt="">' : `<span class="ic">${p.type === 'video' ? ic('film') : ic('file')}</span>`}${E(p.nom)}</a>`).join('')}</div></div>` : ''}
+    ${(pieces || []).filter(p => p.prive).length ? `<div class="box priv"><h4>${ic('file')} Devis et documents du bureau <small>(non visibles par les techniciens)</small></h4><div class="ph" id="pjb">${pieces.filter(p => p.prive).map(p => `<a target="_blank" rel="noopener" data-pb="${E(p.path)}">${p.type === 'photo' ? '<img alt="">' : `<span class="ic">${ic('file')}</span>`}${E(p.nom)}</a>`).join('')}</div></div>` : ''}
+    ${(pieces || []).filter(p => !p.prive).length ? `<div class="box"><h4>${ic('paperclip')} Pièces jointes pour le technicien</h4><div class="ph" id="pj">${pieces.filter(p => !p.prive).map(p => `<a target="_blank" rel="noopener" data-p="${E(p.path)}">${p.type === 'photo' ? '<img alt="">' : `<span class="ic">${p.type === 'video' ? ic('film') : ic('file')}</span>`}${E(p.nom)}</a>`).join('')}</div></div>` : ''}
     ${d ? `<div class="box"><h4>${ic('camera')} Demande du site ${E(d.ref)}</h4><div style="margin-bottom:8px">${E(d.message || '')}</div><div class="ph" id="dph">${d.photos.map(p => `<a target="_blank" rel="noopener" data-dp="${E(p.path)}"><img alt="">${E(p.label)}</a>`).join('')}</div></div>` : ''}
     ${i.commentaire || (i.photos || []).length ? `<div class="box" style="border-color:#BFE8D6;background:#F3FBF7"><h4>${ic('check-circle')} Retour du technicien${i.fin_at ? ' · ' + fdate(i.fin_at) : ''}</h4>${E(i.commentaire || '')}${(i.photos || []).length ? `<div class="ph" id="rph" style="margin-top:10px">${i.photos.map(p => `<a target="_blank" rel="noopener" data-rp="${E(p.path)}"><img alt="">${E(p.tag || 'Photo')}</a>`).join('')}</div>` : ''}</div>` : ''}
     <label style="font-size:13px;font-weight:800;color:var(--mute)">Statut<select id="st" style="display:block;width:100%;margin-top:6px;border:2px solid var(--line);border-radius:10px;padding:10px">${Object.entries(STAT_I).map(([k, v]) => `<option value="${k}" ${k === i.statut ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
   </div>
-  <footer>${i.statut === 'controle' ? '<button class="btn btn-grad" id="clo" style="background:var(--ok,#0E9F6E)">✓ Clôturer</button>' : ''}<button class="btn ${i.statut === 'controle' ? 'btn-line' : 'btn-grad'}" id="ed">Modifier</button><button class="btn btn-line" id="p7">+7 jours</button><button class="btn btn-red" id="del" style="margin-left:auto">Supprimer</button></footer>`);
-  const urls = await signed('pieces', (pieces || []).map(p => p.path));
+  <footer>${i.statut === 'controle' ? '<button class="btn btn-grad" id="clo" style="background:var(--ok,#0E9F6E)">✓ Clôturer</button>' : ''}<button class="btn ${i.statut === 'controle' ? 'btn-line' : 'btn-grad'}" id="ed">Modifier</button><button class="btn btn-line" id="dup">Dupliquer</button><button class="btn btn-line" id="p7">+7 jours</button><button class="btn btn-red" id="del" style="margin-left:auto">Supprimer</button></footer>`);
+  const urls = await signed('pieces', (pieces || []).filter(p => !p.prive).map(p => p.path));
+  signed('bureau', (pieces || []).filter(p => p.prive).map(p => p.path)).then(ub => document.querySelectorAll('#pjb [data-pb]').forEach(a => { const u = ub[a.dataset.pb]; if (u) { a.href = u; const im = a.querySelector('img'); if (im) im.src = u; } }));
   document.querySelectorAll('#pj [data-p]').forEach(a => { const u = urls[a.dataset.p]; if (u) { a.href = u; const im = a.querySelector('img'); if (im) im.src = u; } });
   if (d) { const u2 = await signed('demandes', d.photos.map(p => p.path)); document.querySelectorAll('#dph [data-dp]').forEach(a => { const u = u2[a.dataset.dp]; if (u) { a.href = u; a.querySelector('img').src = u; } }); }
   if ((i.photos || []).length) signed('retours', i.photos.map(p => p.path)).then(u3 => document.querySelectorAll('#rph [data-rp]').forEach(a => { const u = u3[a.dataset.rp]; if (u) { a.href = u; a.querySelector('img').src = u; } }));
   if ($('#clo')) $('#clo').onclick = () => cloturer(id);
   $('#st').onchange = async e => { const { error } = await sb.from('interventions').update({ statut: e.target.value }).eq('id', id); if (error) return toast('Erreur : ' + error.message); await refreshView(); toast('Statut mis à jour'); };
-  $('#ed').onclick = () => form(i);
+  $('#ed').onclick = () => form(i); $('#dup').onclick = () => duplicate(i);
   $('#p7').onclick = async () => { await sb.from('interventions').update({ date: iso(addDays(new Date(i.date + 'T12:00'), 7)) }).eq('id', id); closePanel(); await refreshView(); toast('Reprogrammée la semaine suivante'); };
-  $('#del').onclick = async () => { if (!confirm('Supprimer définitivement cette intervention ?')) return; if ((pieces || []).length) await sb.storage.from('pieces').remove(pieces.map(p => p.path)); if ((i.photos || []).length) await sb.storage.from('retours').remove(i.photos.map(p => p.path)); const { error } = await sb.from('interventions').delete().eq('id', id); if (error) return toast('Erreur : ' + error.message); closePanel(); await refreshView(); toast('Intervention supprimée'); };
+  $('#del').onclick = async () => { if (!confirm('Supprimer définitivement cette intervention ?')) return; if ((pieces || []).filter(p => !p.prive).length) await sb.storage.from('pieces').remove(pieces.filter(p => !p.prive).map(p => p.path)); if ((pieces || []).filter(p => p.prive).length) await sb.storage.from('bureau').remove(pieces.filter(p => p.prive).map(p => p.path)); if ((i.photos || []).length) await sb.storage.from('retours').remove(i.photos.map(p => p.path)); const { error } = await sb.from('interventions').delete().eq('id', id); if (error) return toast('Erreur : ' + error.message); closePanel(); await refreshView(); toast('Intervention supprimée'); };
 }
 
 /* ================= Formulaire intervention ================= */
 async function form(i, opts) {
-  opts = opts || {}; const isNew = !i;
-  i = i || { type: opts.epingle ? 'tache' : 'intervention', date: mode === 'jour' ? day : iso(new Date()), heure: '09:00', duree: 2, epingle: !!opts.epingle, statut: 'planifiee', client: '', occupant: '', tel: '', adresse: '', cp: '', ville: 'Istres', travaux: '', materiel: [], recurrent: false, techs: [], demande_id: null, ...(opts.pre || {}) };
+  opts = opts || {}; const isNew = !i || !i.id;
+  i = { type: opts.epingle ? 'tache' : 'intervention', date: mode === 'jour' ? day : iso(new Date()), heure: '09:00', duree: 2, epingle: !!opts.epingle, statut: 'planifiee', client: '', occupant: '', tel: '', adresse: '', cp: '', ville: 'Istres', travaux: '', materiel: [], recurrent: false, techs: [], demande_id: null, ...(i || {}), ...(opts.pre || {}) };
   let existing = []; if (!isNew) { const { data } = await sb.from('pieces').select('*').eq('intervention_id', i.id); existing = data || []; }
-  let added = [], removed = [];
-  openPanel(`<header><h2>${isNew ? (i.epingle ? ic('pin') + ' Tâche à faire dans la journée' : 'Nouvelle intervention') : 'Modifier'}</h2><button class="x" aria-label="Fermer">×</button></header>
+  const add = { tech: [], bur: [] }; let removed = [];
+  const debut = (i.heure || '09:00').slice(0, 5), finH = hm(Math.min(mins(debut) + Math.round((+i.duree || 1) * 60), 23 * 60 + 45));
+  const who = (list, label) => list.length ? `<div class="whog"><small>${label}</small><div class="checks">${list.map(t => `<label><input type="checkbox" name="techs" value="${t.id}" ${i.techs.includes(t.id) ? 'checked' : ''}><i style="width:10px;height:10px;border-radius:50%;background:${t.couleur};display:inline-block"></i>${E(t.nom)}</label>`).join('')}</div></div>` : '';
+  const upl = (k, title, help) => `<div class="full upl ${k === 'bur' ? 'priv' : ''}"><div class="ut">${title} <span>${help}</span></div><div class="ph" id="pj-${k}"></div><label class="btn btn-line" style="margin-top:8px;width:max-content">+ Ajouter des fichiers<input type="file" id="in-${k}" multiple accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx" class="sr"></label></div>`;
+  openPanel(`<header><h2>${isNew ? (i.epingle ? ic('pin') + ' Rappel dans la journée' : opts.ctx && /^Copie/.test(opts.ctx) ? 'Dupliquer l’intervention' : 'Planifier') : 'Modifier'}</h2><button class="x" aria-label="Fermer">×</button></header>
   <form class="body" id="f"><div class="form">
-    ${opts.ctx ? `<div class="full box" style="background:var(--soft);border:0"><b>${E(opts.ctx)}</b> · cette journée y sera rattachée.</div>` : ''}
+    ${opts.ctx ? `<div class="full box" style="background:var(--soft);border:0"><b>${E(opts.ctx)}</b></div>` : ''}
     ${opts.demande ? `<div class="full box" style="background:var(--soft);border:0"><b>${ic('camera')} Depuis la demande ${E(opts.demande.ref)}</b> · ${E(opts.demande.service)}. Ses photos seront visibles par le technicien.</div>` : ''}
-    <label>Type<select name="type"><option value="intervention">Intervention</option><option value="tache" ${i.type === 'tache' ? 'selected' : ''}>Tâche (matériel, déchetterie…)</option><option value="interne" ${i.type === 'interne' ? 'selected' : ''}>Interne (réunion…)</option></select></label>
+    <label>Type<select name="type"><option value="intervention">Intervention</option><option value="tache" ${i.type === 'tache' ? 'selected' : ''}>Tâche (matériel, déchetterie…)</option><option value="interne" ${i.type === 'interne' ? 'selected' : ''}>Rendez-vous / bureau (devis, réunion…)</option></select></label>
     <label>Date<input type="date" name="date" value="${i.date}" required></label>
-    <label class="full inline pinbox"><input type="checkbox" name="epingle" ${i.epingle ? 'checked' : ''}> ${ic('pin')} À faire dans la journée, sans heure précise (rappel au technicien avant la fin de journée)</label>
-    <label class="hr">Heure<input type="time" name="heure" value="${(i.heure || '09:00').slice(0, 5)}" step="900"></label>
-    <label class="hr">Durée (heures)<input type="number" name="duree" value="${i.duree}" min="0.5" step="0.5"></label>
-    <div class="full"><div style="font-size:13px;font-weight:800;color:var(--mute);margin-bottom:6px">Technicien(s) · plusieurs = équipe</div><div class="checks">${techs.map(t => `<label><input type="checkbox" name="techs" value="${t.id}" ${i.techs.includes(t.id) ? 'checked' : ''}><i style="width:10px;height:10px;border-radius:50%;background:${t.couleur};display:inline-block"></i>${E(t.nom)}</label>`).join('')}</div></div>
-    <label class="full">Travaux à effectuer<textarea name="travaux" required>${E(i.travaux)}</textarea></label>
+    <label class="full inline pinbox"><input type="checkbox" name="epingle" ${i.epingle ? 'checked' : ''}> ${ic('pin')} Rappel dans la journée, sans heure précise (affiché en haut du planning)</label>
+    <label class="hr">De<input type="time" name="heure" value="${debut}" step="900"></label>
+    <label class="hr">À<input type="time" name="fin" value="${finH}" step="900"></label>
+    <div class="full"><div style="font-size:13px;font-weight:800;color:var(--mute);margin-bottom:6px">Qui ? <span style="font-weight:600">· plusieurs = équipe</span></div>${who(techs.filter(t => !isBureau(t)), 'Techniciens')}${who(techs.filter(isBureau), 'Bureau')}</div>
     <label class="full">Adresse<input name="adresse" value="${E(i.adresse)}" autocomplete="off"></label>
     <label>Code postal<input name="cp" value="${E(i.cp)}" inputmode="numeric" maxlength="5"></label>
     <label>Ville<input name="ville" value="${E(i.ville)}" list="villes"></label>
     <label>Client (agence, syndic, particulier)<input name="client" value="${E(i.client)}"></label>
     <label>Occupant<input name="occupant" value="${E(i.occupant)}"></label>
     <label class="full">Téléphone de l’occupant<input name="tel" type="tel" value="${E(i.tel)}"></label>
-    <label class="full">${ic('package')} Matériel nécessaire <span style="font-weight:600">(une ligne par élément)</span><textarea name="materiel" placeholder="Ex. : Siphon PVC Ø40&#10;Flexible inox 50 cm">${E(i.materiel.join('\n'))}</textarea></label>
-    <div class="full"><div style="font-size:13px;font-weight:800;color:var(--mute);margin-bottom:6px">${ic('paperclip')} Pièces jointes pour le technicien <span style="font-weight:600">(photos, vidéos, PDF · facultatif)</span></div><div class="ph" id="pjl"></div><label class="btn btn-line" style="margin-top:8px;width:max-content">+ Ajouter des fichiers<input type="file" id="pjin" multiple accept="image/*,video/*,application/pdf" class="sr"></label></div>
+    <label class="full">Travaux à effectuer<textarea name="travaux" required>${E(i.travaux)}</textarea></label>
+    <label class="full">${ic('package')} Matériel nécessaire <span style="font-weight:600">(une ligne par élément)</span><textarea name="materiel" placeholder="Ex. : Siphon PVC Ø40&#10;Flexible inox 50 cm">${E((i.materiel || []).join('\n'))}</textarea></label>
+    ${upl('tech', ic('paperclip') + ' Pièces jointes pour le technicien', '(photos, vidéos, PDF · facultatif)')}
+    ${upl('bur', ic('file') + ' Devis et documents du bureau', '(visibles uniquement par le bureau, jamais par les techniciens)')}
     <label class="full inline"><input type="checkbox" name="recurrent" ${i.recurrent ? 'checked' : ''}> Intervention récurrente (contrat d’entretien)</label>
   </div><datalist id="villes">${['Istres', 'Miramas', 'Martigues', 'Fos-sur-Mer', 'Port-de-Bouc', 'Saint-Chamas', 'Cornillon-Confoux', 'Grans', 'Salon-de-Provence', 'Vitrolles', 'Marignane', 'Sausset-les-Pins', 'Port-Saint-Louis-du-Rhône', 'Aix-en-Provence', 'Marseille'].map(v => `<option value="${v}">`).join('')}</datalist></form>
   <footer><button class="btn btn-grad" form="f" type="submit" id="sv">${isNew ? 'Planifier' : 'Enregistrer'}</button><button class="btn btn-line" type="button" id="cc">Annuler</button></footer>`);
   const f = $('#f'); acIntervention(f, i);
   const syncPin = () => f.querySelectorAll('.hr').forEach(l => l.style.display = f.epingle.checked ? 'none' : ''); f.epingle.onchange = syncPin; syncPin();
-  const drawPj = () => { $('#pjl').innerHTML = existing.filter(p => !removed.includes(p.id)).map(p => `<a>${p.type === 'photo' ? '<span class="ic">' + ic('image') + '</span>' : `<span class="ic">${p.type === 'video' ? ic('film') : ic('file')}</span>`}${E(p.nom)}<button type="button" class="rm" data-rme="${p.id}">×</button></a>`).join('') + added.map((f, k) => `<a>${kindOf(f) === 'photo' ? `<img src="${URL.createObjectURL(f)}" alt="">` : `<span class="ic">${kindOf(f) === 'video' ? ic('film') : ic('file')}</span>`}${E(f.name)}<button type="button" class="rm" data-rma="${k}">×</button></a>`).join('') || '<span style="font-size:13px;color:var(--mute)">Aucune.</span>';
-    $('#pjl').querySelectorAll('[data-rme]').forEach(b => b.onclick = () => { removed.push(b.dataset.rme); drawPj(); });
-    $('#pjl').querySelectorAll('[data-rma]').forEach(b => b.onclick = () => { added.splice(+b.dataset.rma, 1); drawPj(); }); };
-  drawPj();
-  $('#pjin').onchange = e => { const big = [...e.target.files].filter(x => x.size > 50 * 1024 * 1024); if (big.length) toast('Fichier trop lourd (50 Mo max) : ' + big[0].name); added = added.concat([...e.target.files].filter(x => x.size <= 50 * 1024 * 1024)); e.target.value = ''; drawPj(); };
+  let dur = mins(f.fin.value) - mins(f.heure.value);
+  f.heure.onchange = () => { f.fin.value = hm(Math.min(mins(f.heure.value) + Math.max(dur, 15), 23 * 60 + 45)); };
+  f.fin.onchange = () => { dur = mins(f.fin.value) - mins(f.heure.value); };
+  const icon = (t, n) => t === 'photo' ? '<span class="ic">' + ic('image') + '</span>' : `<span class="ic">${t === 'video' ? ic('film') : ic('file')}</span>`;
+  const draw = k => { const ex = existing.filter(p => !!p.prive === (k === 'bur') && !removed.includes(p.id));
+    $('#pj-' + k).innerHTML = ex.map(p => `<a>${icon(p.type)}${E(p.nom)}<button type="button" class="rm" data-rme="${p.id}">×</button></a>`).join('') + add[k].map((x, n) => `<a>${kindOf(x) === 'photo' ? `<img src="${URL.createObjectURL(x)}" alt="">` : icon(kindOf(x))}${E(x.name)}<button type="button" class="rm" data-rma="${k}:${n}">×</button></a>`).join('') || '<span style="font-size:13px;color:var(--mute)">Aucun.</span>';
+    $('#pj-' + k).querySelectorAll('[data-rme]').forEach(b => b.onclick = () => { removed.push(b.dataset.rme); draw(k); });
+    $('#pj-' + k).querySelectorAll('[data-rma]').forEach(b => b.onclick = () => { const [kk, n] = b.dataset.rma.split(':'); add[kk].splice(+n, 1); draw(kk); }); };
+  ['tech', 'bur'].forEach(k => { draw(k); $('#in-' + k).onchange = e => { const all = [...e.target.files], big = all.filter(x => x.size > 50 * 1024 * 1024); if (big.length) toast('Fichier trop lourd (50 Mo max) : ' + big[0].name); add[k] = add[k].concat(all.filter(x => x.size <= 50 * 1024 * 1024)); e.target.value = ''; draw(k); }; });
   $('#cc').onclick = closePanel;
   f.onsubmit = async e => {
-    e.preventDefault(); const fd = new FormData(f), ts = fd.getAll('techs'); if (!ts.length) return toast('Choisissez au moins un technicien');
+    e.preventDefault(); const fd = new FormData(f), ts = fd.getAll('techs'); if (!ts.length) return toast('Choisissez au moins une personne');
+    const pin = !!fd.get('epingle'), d1 = mins(fd.get('heure') || '09:00'), d2 = mins(fd.get('fin') || '10:00');
+    if (!pin && d2 <= d1) return toast('L’heure de fin doit être après l’heure de début');
     const btn = $('#sv'); btn.disabled = true; btn.textContent = 'Enregistrement…';
-    const pin = !!fd.get('epingle');
-    const row = { type: fd.get('type'), date: fd.get('date'), epingle: pin, heure: pin ? null : (fd.get('heure') || '09:00'), duree: pin ? 0 : (+fd.get('duree') || 1), travaux: fd.get('travaux'), adresse: fd.get('adresse'), cp: fd.get('cp'), ville: fd.get('ville'), client: fd.get('client'), occupant: fd.get('occupant'), tel: fd.get('tel'),
+    const row = { type: fd.get('type'), date: fd.get('date'), epingle: pin, heure: pin ? null : hm(d1), duree: pin ? 0 : Math.round((d2 - d1) / 15) / 4, travaux: fd.get('travaux'), adresse: fd.get('adresse'), cp: fd.get('cp'), ville: fd.get('ville'), client: fd.get('client'), occupant: fd.get('occupant'), tel: fd.get('tel'),
       materiel: String(fd.get('materiel') || '').split('\n').map(x => x.trim()).filter(Boolean), recurrent: !!fd.get('recurrent'), demande_id: i.demande_id || null, chantier_id: i.chantier_id || null, affaire_id: i.affaire_id || null, client_id: i.client_id || null };
     try {
       let id = i.id;
@@ -249,17 +356,19 @@ async function form(i, opts) {
       const cur = isNew ? [] : i.techs, plus = ts.filter(t => !cur.includes(t)), moins = cur.filter(t => !ts.includes(t));
       if (plus.length) { const r = await sb.from('intervention_techs').insert(plus.map(t => ({ intervention_id: id, tech_id: t }))); if (r.error) throw r.error; }
       for (const t of moins) await sb.from('intervention_techs').delete().match({ intervention_id: id, tech_id: t });
-      for (const pid of removed) { const p = existing.find(x => x.id === pid); await sb.storage.from('pieces').remove([p.path]); await sb.from('pieces').delete().eq('id', pid); }
-      for (let k = 0; k < added.length; k++) { const file = added[k]; btn.textContent = `Envoi des fichiers ${k + 1}/${added.length}…`;
+      for (const pid of removed) { const p = existing.find(x => x.id === pid); await sb.storage.from(p.prive ? 'bureau' : 'pieces').remove([p.path]); await sb.from('pieces').delete().eq('id', pid); }
+      const files = add.tech.map(x => [x, false]).concat(add.bur.map(x => [x, true]));
+      for (let k = 0; k < files.length; k++) { const [file, prive] = files[k]; btn.textContent = `Envoi des fichiers ${k + 1}/${files.length}…`;
         const path = `${id}/${Date.now()}-${k}-${file.name.normalize('NFD').replace(/[^\w.\-]+/g, '_')}`;
-        const up = await sb.storage.from('pieces').upload(path, file, { contentType: file.type || 'application/octet-stream' }); if (up.error) throw up.error;
-        const r = await sb.from('pieces').insert({ intervention_id: id, nom: file.name, type: kindOf(file), path }); if (r.error) throw r.error; }
+        const up = await sb.storage.from(prive ? 'bureau' : 'pieces').upload(path, file, { contentType: file.type || 'application/octet-stream' }); if (up.error) throw up.error;
+        const r = await sb.from('pieces').insert({ intervention_id: id, nom: file.name, type: kindOf(file), path, prive }); if (r.error) throw r.error; }
       if (opts.demande) await sb.from('demandes').update({ statut: 'planifiee', traitee_par: me.id, traitee_le: new Date().toISOString() }).eq('id', opts.demande.id);
       closePanel(); week = monday(new Date(row.date + 'T12:00')); if (mode === 'jour') day = row.date; await go('planning');
-      toast((pin ? 'Tâche épinglée' : 'Intervention enregistrée') + ' pour ' + names(ts));
+      toast((pin ? 'Rappel ajouté' : (isNew ? 'Planifié' : 'Enregistré')) + ' pour ' + names(ts));
     } catch (er) { btn.disabled = false; btn.textContent = isNew ? 'Planifier' : 'Enregistrer'; toast('Erreur : ' + (er.message || er)); }
   };
 }
+
 function absenceForm(techId) {
   openPanel(`<header><h2>Absence · ${E(T(techId).nom)}</h2><button class="x" aria-label="Fermer">×</button></header>
   <form class="body" id="fa"><div class="form"><label>Du<input type="date" name="du" value="${iso(new Date())}" required></label><label>Au<input type="date" name="au" value="${iso(new Date())}" required></label>
@@ -313,7 +422,7 @@ if (/type=recovery/.test(location.hash)) newPasswordView(); else start();
 /* ================= À contrôler (retours terrain) ================= */
 let ctrl = [];
 async function badgeC() { const { count } = await sb.from('interventions').select('id', { count: 'exact', head: true }).eq('statut', 'controle'); const c = $('#cc'); if (c) c.textContent = count || ''; }
-async function refreshView() { badgeC(); if (view === 'controle') await listControle(); else { await loadPlanning(); planning(); } }
+async function refreshView() { badgeC(); if (view === 'controle') await listControle(); else if (view === 'recherche') await listRecherche(); else { await loadPlanning(); planning(); } }
 async function cloturer(id) {
   const { error } = await sb.from('interventions').update({ statut: 'cloturee' }).eq('id', id);
   if (error) return toast('Erreur : ' + error.message);
