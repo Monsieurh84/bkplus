@@ -269,9 +269,11 @@ const MIME = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'i
 /* Copie le fichier en mémoire tout de suite (une photo glissée depuis Messages ou WhatsApp peut disparaître juste après le dépôt) et corrige son type s'il est vide */
 async function fixFile(f) {
   if (!f) return null; const ext = (f.name.split('.').pop() || '').toLowerCase(), type = f.type || MIME[ext] || 'application/octet-stream';
-  try { const buf = await f.arrayBuffer(); if (!buf.byteLength) throw new Error('vide'); return new File([buf], f.name || ('photo-' + Date.now() + '.jpg'), { type }); }
-  catch (e) { toast('« ' + (f.name || 'fichier') + ' » n’a pas pu être lu : enregistrez-le d’abord dans vos fichiers, puis ajoutez-le'); return null; }
+  try { const buf = await f.arrayBuffer(); if (!buf.byteLength) throw new Error('vide'); const nm = !f.name || /^image\.(png|tiff?|jpe?g)$/i.test(f.name) ? 'photo-' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '-' + Math.random().toString(36).slice(2, 5) + '.' + (type.split('/')[1] || 'png').replace('jpeg', 'jpg') : f.name; return new File([buf], nm, { type }); }
+  catch (e) { toast('Cette photo ne peut pas être glissée depuis Messages : faites clic droit › Copier sur la photo, puis Cmd + V ici'); return null; }
 }
+/* Coller (Cmd+V) une photo copiée depuis Messages, WhatsApp, Aperçu… dans le formulaire ouvert */
+document.addEventListener('paste', e => { const fl = [...(e.clipboardData?.files || [])]; if (!fl.length || !window.__bkPaste) return; if (window.__bkPaste(fl)) e.preventDefault(); });
 const kindOf = f => f.type.startsWith('image/') ? 'photo' : f.type.startsWith('video/') ? 'video' : f.type === 'application/pdf' ? 'pdf' : 'autre';
 async function signed(bucket, paths) { if (!paths.length) return {}; const { data } = await sb.storage.from(bucket).createSignedUrls(paths, 3600); const o = {}; (data || []).forEach(u => o[u.path] = u.signedUrl); return o; }
 
@@ -313,7 +315,7 @@ async function form(i, opts) {
   const add = { tech: [], bur: [] }; let removed = [];
   const debut = (i.heure || '09:00').slice(0, 5), finH = hm(Math.min(mins(debut) + Math.round((+i.duree || 1) * 60), 23 * 60 + 45));
   const who = (list, label) => list.length ? `<div class="whog"><small>${label}</small><div class="checks">${list.map(t => `<label><input type="checkbox" name="techs" value="${t.id}" ${i.techs.includes(t.id) ? 'checked' : ''}><i style="width:10px;height:10px;border-radius:50%;background:${t.couleur};display:inline-block"></i>${E(t.nom)}</label>`).join('')}</div></div>` : '';
-  const upl = (k, title, help) => `<div class="full upl ${k === 'bur' ? 'priv' : ''}"><div class="ut">${title} <span>${help}</span></div><div class="ph" id="pj-${k}"></div><div class="dz"><label class="btn btn-line">+ Ajouter des fichiers<input type="file" id="in-${k}" multiple accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx" class="sr"></label><span>ou glissez-les ici (photo d’un message, PDF, devis…)</span></div></div>`;
+  const upl = (k, title, help) => `<div class="full upl ${k === 'bur' ? 'priv' : ''}"><div class="ut">${title} <span>${help}</span></div><div class="ph" id="pj-${k}"></div><div class="dz"><label class="btn btn-line">+ Ajouter des fichiers<input type="file" id="in-${k}" multiple accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx" class="sr"></label><span>ou glissez-les ici · photo d’un message : clic droit › Copier, puis <b>Cmd + V</b></span></div></div>`;
   openPanel(`<header><h2>${isNew ? (i.epingle ? ic('pin') + ' Rappel dans la journée' : opts.ctx && /^Copie/.test(opts.ctx) ? 'Dupliquer l’intervention' : 'Planifier') : 'Modifier'}</h2><button class="x" aria-label="Fermer">×</button></header>
   <form class="body" id="f"><div class="form">
     ${opts.ctx ? `<div class="full box" style="background:var(--soft);border:0"><b>${E(opts.ctx)}</b></div>` : ''}
@@ -355,7 +357,8 @@ async function form(i, opts) {
     z.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
     z.addEventListener('dragleave', () => { if (--dc <= 0) { dc = 0; z.classList.remove('drop'); } });
     z.addEventListener('drop', e => { e.preventDefault(); dc = 0; z.classList.remove('drop'); addFiles(k, e.dataTransfer.files); }); });
-  f.addEventListener('paste', e => { const fl = [...(e.clipboardData?.files || [])]; if (!fl.length) return; e.preventDefault(); addFiles(document.activeElement && document.activeElement.closest('.upl.priv') ? 'bur' : 'tech', fl); });
+  let pasteK = 'tech'; ['tech', 'bur'].forEach(k => $('#pj-' + k).closest('.upl').addEventListener('pointerdown', () => { pasteK = k; }));
+  window.__bkPaste = fl => { if (!document.body.contains(f)) return false; addFiles(pasteK, fl); return true; };
   $('#cc').onclick = closePanel;
   f.onsubmit = async e => {
     e.preventDefault(); const fd = new FormData(f), ts = fd.getAll('techs'); if (!ts.length) return toast('Choisissez au moins une personne');
