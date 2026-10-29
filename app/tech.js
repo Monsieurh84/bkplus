@@ -178,7 +178,7 @@ async function fiche() {
   scr().innerHTML = topBar(`${i.epingle ? ic('pin') : hh(i.heure)} · ${E(i.ville || 'Tâche')}`, lbl(i.date), true) + previewBar() + `<div class="scroll">
     ${done ? '<div class="done-box">✓ Terminée et envoyée au bureau</div>' : ''}
     ${isJob ? `<div class="step"><div class="${step >= 0 ? 'on' : ''}">Prévue</div><div class="${step >= 1 ? 'on' : ''}">En route</div><div class="${step >= 2 ? 'on' : ''}">Sur place</div><div class="${step >= 3 ? 'on' : ''}">Terminée</div></div>` : ''}
-    <div class="addr"><div class="a">${E(isJob ? (i.adresse || i.ville) : i.travaux)}</div><div class="v">${E(isJob ? [i.cp, i.ville].filter(Boolean).join(' ') : fullAddr(i))}</div></div>
+    <div class="addr"><div class="a">${E(isJob ? (i.adresse || i.ville) : i.travaux)}</div><div class="v">${E(isJob ? [i.cp, i.ville].filter(Boolean).join(' ') : fullAddr(i))}</div>${isJob && i.complement ? `<div class="v" style="font-weight:700">${E(i.complement)}</div>` : ''}</div>
     ${others.length ? `<div class="binome"><span class="avs">${avatars(i.techs)}</span> En équipe avec ${E(others.map(x => T(x).nom).join(', '))}</div>` : ''}
     ${isJob ? `<div class="big-actions">${i.tel ? `<a class="bigbtn call" href="${telUrl(i.tel)}">${ICON.phone}Appeler</a>` : '<span></span>'}<button class="bigbtn route" data-nav="${i.id}">${ICON.route}Itinéraire</button></div>` : ''}
     ${isJob && i.statut === 'planifiee' ? `<button class="primary-step" id="go">${ic('truck')} Je pars</button>` : ''}

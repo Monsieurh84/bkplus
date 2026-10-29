@@ -230,7 +230,7 @@ function ctxMenu(e, i) {
   m.querySelector('[data-a=del]').onclick = async () => { close(); if (!confirm('Supprimer définitivement cette intervention ?')) return; const { error } = await sb.from('interventions').delete().eq('id', i.id); if (error) return toast('Erreur : ' + error.message); await refreshView(); toast('Intervention supprimée'); };
 }
 function duplicate(i, date) {
-  const keep = ['type', 'heure', 'duree', 'epingle', 'client', 'client_id', 'occupant', 'tel', 'adresse', 'cp', 'ville', 'travaux', 'materiel', 'recurrent', 'demande_id', 'chantier_id', 'affaire_id'];
+  const keep = ['type', 'heure', 'duree', 'epingle', 'client', 'client_id', 'occupant', 'tel', 'adresse', 'complement', 'cp', 'ville', 'travaux', 'materiel', 'recurrent', 'demande_id', 'chantier_id', 'affaire_id'];
   const pre = {}; keep.forEach(k => pre[k] = i[k]); pre.materiel = [...(i.materiel || [])]; pre.techs = [...i.techs]; pre.date = date || i.date;
   form(null, { pre, ctx: 'Copie de l’intervention du ' + lbl(i.date) + ' · changez la date, l’horaire ou le technicien puis enregistrez' });
 }
@@ -246,7 +246,7 @@ async function listRecherche() {
     if (qS.length < 2) { $('#rs').innerHTML = '<p class="cnt">Tapez au moins 2 lettres. La recherche porte sur toutes les interventions : planifiées, en cours, clôturées.</p>'; return; }
     const l = pat(qS);
     const af = await sb.from('affaires').select('id').or(['ref', 'isanet_devis', 'isanet_facture', 'client'].map(k => `${k}.ilike.${l}`).join(',')).limit(60);
-    const ors = ['client', 'occupant', 'adresse', 'ville', 'cp', 'tel', 'travaux'].map(k => `${k}.ilike.${l}`); const ids = (af.data || []).map(a => a.id); if (ids.length) ors.push(`affaire_id.in.(${ids.join(',')})`);
+    const ors = ['client', 'occupant', 'adresse', 'complement', 'ville', 'cp', 'tel', 'travaux'].map(k => `${k}.ilike.${l}`); const ids = (af.data || []).map(a => a.id); if (ids.length) ors.push(`affaire_id.in.(${ids.join(',')})`);
     let r = sb.from('interventions').select('*, intervention_techs(tech_id), pieces(id), affaires(ref,isanet_devis)').or(ors.join(',')).order('date', { ascending: false }).limit(150);
     const t = iso(new Date()); if (fS === 'avenir') r = r.gte('date', t); if (fS === 'passees') r = r.lt('date', t);
     const { data, error } = await r; if (error) return toast('Erreur : ' + error.message);
@@ -276,7 +276,7 @@ async function detail(id, given) {
     <div style="color:var(--mute);font-size:13.5px">${E(i.ville || '')} · ${lbl(i.date, true)}${i.epingle ? '' : ' · ' + hh(i.heure) + '–' + fin(i.heure, i.duree)}</div></div><button class="x" aria-label="Fermer">×</button></header>
   <div class="body">
     <div class="chips">${i.techs.map(t => `<span><i style="background:${T(t).couleur}"></i>${E(T(t).nom)}</span>`).join('')}${i.recurrent ? '<span>↻ Récurrente</span>' : ''}</div>
-    ${i.type === 'intervention' ? `<dl class="kv"><dt>Client</dt><dd>${E(i.client || '—')}</dd><dt>Occupant</dt><dd>${E(i.occupant || '—')}</dd><dt>Téléphone</dt><dd>${i.tel ? `<a href="tel:${E(i.tel.replace(/\s/g, ''))}">${E(i.tel)}</a>` : '—'}</dd><dt>Adresse</dt><dd>${E([i.adresse, [i.cp, i.ville].filter(Boolean).join(' ')].filter(Boolean).join(', ') || '—')}</dd></dl>` : ''}
+    ${i.type === 'intervention' ? `<dl class="kv"><dt>Client</dt><dd>${E(i.client || '—')}</dd><dt>Occupant</dt><dd>${E(i.occupant || '—')}</dd><dt>Téléphone</dt><dd>${i.tel ? `<a href="tel:${E(i.tel.replace(/\s/g, ''))}">${E(i.tel)}</a>` : '—'}</dd><dt>Adresse</dt><dd>${E([i.adresse, [i.cp, i.ville].filter(Boolean).join(' ')].filter(Boolean).join(', ') || '—')}${i.complement ? `<br><span style="color:var(--mute)">${E(i.complement)}</span>` : ''}</dd></dl>` : ''}
     <div class="box"><h4>Travaux à effectuer</h4>${E(i.travaux || '—')}</div>
     ${i.materiel.length ? `<div class="box"><h4>${ic('package')} Matériel nécessaire</h4><ul class="mat">${i.materiel.map(m => `<li>${E(m)}</li>`).join('')}</ul></div>` : ''}
     ${(pieces || []).filter(p => p.prive).length ? `<div class="box priv"><h4>${ic('file')} Devis et documents du bureau <small>(non visibles par les techniciens)</small></h4><div class="ph" id="pjb">${pieces.filter(p => p.prive).map(p => `<a target="_blank" rel="noopener" data-pb="${E(p.path)}">${p.type === 'photo' ? '<img alt="">' : `<span class="ic">${ic('file')}</span>`}${E(p.nom)}</a>`).join('')}</div></div>` : ''}
@@ -301,12 +301,12 @@ async function detail(id, given) {
 /* ================= Formulaire intervention ================= */
 async function form(i, opts) {
   opts = opts || {}; const isNew = !i || !i.id;
-  i = { type: opts.epingle ? 'tache' : 'intervention', date: mode === 'jour' ? day : iso(new Date()), heure: '09:00', duree: 2, epingle: !!opts.epingle, statut: 'planifiee', client: '', occupant: '', tel: '', adresse: '', cp: '', ville: 'Istres', travaux: '', materiel: [], recurrent: false, techs: [], demande_id: null, ...(i || {}), ...(opts.pre || {}) };
+  i = { type: opts.epingle ? 'tache' : 'intervention', date: mode === 'jour' ? day : iso(new Date()), heure: '09:00', duree: 2, epingle: !!opts.epingle, statut: 'planifiee', client: '', occupant: '', tel: '', adresse: '', complement: '', cp: '', ville: '', travaux: '', materiel: [], recurrent: false, techs: [], demande_id: null, ...(i || {}), ...(opts.pre || {}) };
   let existing = []; if (!isNew) { const { data } = await sb.from('pieces').select('*').eq('intervention_id', i.id); existing = data || []; }
   const add = { tech: [], bur: [] }; let removed = [];
   const debut = (i.heure || '09:00').slice(0, 5), finH = hm(Math.min(mins(debut) + Math.round((+i.duree || 1) * 60), 23 * 60 + 45));
   const who = (list, label) => list.length ? `<div class="whog"><small>${label}</small><div class="checks">${list.map(t => `<label><input type="checkbox" name="techs" value="${t.id}" ${i.techs.includes(t.id) ? 'checked' : ''}><i style="width:10px;height:10px;border-radius:50%;background:${t.couleur};display:inline-block"></i>${E(t.nom)}</label>`).join('')}</div></div>` : '';
-  const upl = (k, title, help) => `<div class="full upl ${k === 'bur' ? 'priv' : ''}"><div class="ut">${title} <span>${help}</span></div><div class="ph" id="pj-${k}"></div><label class="btn btn-line" style="margin-top:8px;width:max-content">+ Ajouter des fichiers<input type="file" id="in-${k}" multiple accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx" class="sr"></label></div>`;
+  const upl = (k, title, help) => `<div class="full upl ${k === 'bur' ? 'priv' : ''}"><div class="ut">${title} <span>${help}</span></div><div class="ph" id="pj-${k}"></div><div class="dz"><label class="btn btn-line">+ Ajouter des fichiers<input type="file" id="in-${k}" multiple accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx" class="sr"></label><span>ou glissez-les ici (photo d’un message, PDF, devis…)</span></div></div>`;
   openPanel(`<header><h2>${isNew ? (i.epingle ? ic('pin') + ' Rappel dans la journée' : opts.ctx && /^Copie/.test(opts.ctx) ? 'Dupliquer l’intervention' : 'Planifier') : 'Modifier'}</h2><button class="x" aria-label="Fermer">×</button></header>
   <form class="body" id="f"><div class="form">
     ${opts.ctx ? `<div class="full box" style="background:var(--soft);border:0"><b>${E(opts.ctx)}</b></div>` : ''}
@@ -317,7 +317,8 @@ async function form(i, opts) {
     <label class="hr">De<input type="time" name="heure" value="${debut}" step="900"></label>
     <label class="hr">À<input type="time" name="fin" value="${finH}" step="900"></label>
     <div class="full"><div style="font-size:13px;font-weight:800;color:var(--mute);margin-bottom:6px">Qui ? <span style="font-weight:600">· plusieurs = équipe</span></div>${who(techs.filter(t => !isBureau(t)), 'Techniciens')}${who(techs.filter(isBureau), 'Bureau')}</div>
-    <label class="full">Adresse<input name="adresse" value="${E(i.adresse)}" autocomplete="off"></label>
+    <label class="full">Adresse<input name="adresse" value="${E(i.adresse)}" autocomplete="off" placeholder="Tapez le début de l’adresse, puis choisissez dans la liste"></label>
+    <label class="full">Complément d’adresse (facultatif)<input name="complement" value="${E(i.complement || '')}" autocomplete="off" placeholder="Résidence, bâtiment, étage, n° d’appartement, code…"></label>
     <label>Code postal<input name="cp" value="${E(i.cp)}" inputmode="numeric" maxlength="5"></label>
     <label>Ville<input name="ville" value="${E(i.ville)}" list="villes"></label>
     <label>Client (agence, syndic, particulier)<input name="client" value="${E(i.client)}"></label>
@@ -330,7 +331,7 @@ async function form(i, opts) {
     <label class="full inline"><input type="checkbox" name="recurrent" ${i.recurrent ? 'checked' : ''}> Intervention récurrente (contrat d’entretien)</label>
   </div><datalist id="villes">${['Istres', 'Miramas', 'Martigues', 'Fos-sur-Mer', 'Port-de-Bouc', 'Saint-Chamas', 'Cornillon-Confoux', 'Grans', 'Salon-de-Provence', 'Vitrolles', 'Marignane', 'Sausset-les-Pins', 'Port-Saint-Louis-du-Rhône', 'Aix-en-Provence', 'Marseille'].map(v => `<option value="${v}">`).join('')}</datalist></form>
   <footer><button class="btn btn-grad" form="f" type="submit" id="sv">${isNew ? 'Planifier' : 'Enregistrer'}</button><button class="btn btn-line" type="button" id="cc">Annuler</button></footer>`);
-  const f = $('#f'); acIntervention(f, i);
+  const f = $('#f'); acIntervention(f, i); acAdresse(f);
   const syncPin = () => f.querySelectorAll('.hr').forEach(l => l.style.display = f.epingle.checked ? 'none' : ''); f.epingle.onchange = syncPin; syncPin();
   let dur = mins(f.fin.value) - mins(f.heure.value);
   f.heure.onchange = () => { f.fin.value = hm(Math.min(mins(f.heure.value) + Math.max(dur, 15), 23 * 60 + 45)); };
@@ -340,14 +341,21 @@ async function form(i, opts) {
     $('#pj-' + k).innerHTML = ex.map(p => `<a>${icon(p.type)}${E(p.nom)}<button type="button" class="rm" data-rme="${p.id}">×</button></a>`).join('') + add[k].map((x, n) => `<a>${kindOf(x) === 'photo' ? `<img src="${URL.createObjectURL(x)}" alt="">` : icon(kindOf(x))}${E(x.name)}<button type="button" class="rm" data-rma="${k}:${n}">×</button></a>`).join('') || '<span style="font-size:13px;color:var(--mute)">Aucun.</span>';
     $('#pj-' + k).querySelectorAll('[data-rme]').forEach(b => b.onclick = () => { removed.push(b.dataset.rme); draw(k); });
     $('#pj-' + k).querySelectorAll('[data-rma]').forEach(b => b.onclick = () => { const [kk, n] = b.dataset.rma.split(':'); add[kk].splice(+n, 1); draw(kk); }); };
-  ['tech', 'bur'].forEach(k => { draw(k); $('#in-' + k).onchange = e => { const all = [...e.target.files], big = all.filter(x => x.size > 50 * 1024 * 1024); if (big.length) toast('Fichier trop lourd (50 Mo max) : ' + big[0].name); add[k] = add[k].concat(all.filter(x => x.size <= 50 * 1024 * 1024)); e.target.value = ''; draw(k); }; });
+  const addFiles = (k, list) => { const all = [...list].filter(x => x && x.size), big = all.filter(x => x.size > 50 * 1024 * 1024); if (big.length) toast('Fichier trop lourd (50 Mo max) : ' + big[0].name); const ok = all.filter(x => x.size <= 50 * 1024 * 1024); add[k] = add[k].concat(ok); draw(k); if (ok.length) toast(ok.length > 1 ? ok.length + ' fichiers ajoutés' : 'Fichier ajouté : ' + ok[0].name); };
+  ['tech', 'bur'].forEach(k => { draw(k); $('#in-' + k).onchange = e => { addFiles(k, e.target.files); e.target.value = ''; };
+    const z = $('#pj-' + k).closest('.upl'); let dc = 0;
+    z.addEventListener('dragenter', e => { e.preventDefault(); dc++; z.classList.add('drop'); });
+    z.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
+    z.addEventListener('dragleave', () => { if (--dc <= 0) { dc = 0; z.classList.remove('drop'); } });
+    z.addEventListener('drop', e => { e.preventDefault(); dc = 0; z.classList.remove('drop'); addFiles(k, e.dataTransfer.files); }); });
+  f.addEventListener('paste', e => { const fl = [...(e.clipboardData?.files || [])]; if (!fl.length) return; e.preventDefault(); addFiles(document.activeElement && document.activeElement.closest('.upl.priv') ? 'bur' : 'tech', fl); });
   $('#cc').onclick = closePanel;
   f.onsubmit = async e => {
     e.preventDefault(); const fd = new FormData(f), ts = fd.getAll('techs'); if (!ts.length) return toast('Choisissez au moins une personne');
     const pin = !!fd.get('epingle'), d1 = mins(fd.get('heure') || '09:00'), d2 = mins(fd.get('fin') || '10:00');
     if (!pin && d2 <= d1) return toast('L’heure de fin doit être après l’heure de début');
     const btn = $('#sv'); btn.disabled = true; btn.textContent = 'Enregistrement…';
-    const row = { type: fd.get('type'), date: fd.get('date'), epingle: pin, heure: pin ? null : hm(d1), duree: pin ? 0 : Math.round((d2 - d1) / 15) / 4, travaux: fd.get('travaux'), adresse: fd.get('adresse'), cp: fd.get('cp'), ville: fd.get('ville'), client: fd.get('client'), occupant: fd.get('occupant'), tel: fd.get('tel'),
+    const row = { type: fd.get('type'), date: fd.get('date'), epingle: pin, heure: pin ? null : hm(d1), duree: pin ? 0 : Math.round((d2 - d1) / 15) / 4, travaux: fd.get('travaux'), adresse: fd.get('adresse'), complement: fd.get('complement') || null, cp: fd.get('cp'), ville: fd.get('ville'), client: fd.get('client'), occupant: fd.get('occupant'), tel: fd.get('tel'),
       materiel: String(fd.get('materiel') || '').split('\n').map(x => x.trim()).filter(Boolean), recurrent: !!fd.get('recurrent'), demande_id: i.demande_id || null, chantier_id: i.chantier_id || null, affaire_id: i.affaire_id || null, client_id: i.client_id || null };
     try {
       let id = i.id;

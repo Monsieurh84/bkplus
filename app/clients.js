@@ -41,11 +41,25 @@ const articleLine = a => `<b>${E(a.nom)}</b><small>${a.ref ? E(a.ref) + ' · ' :
 /* Formulaire d'intervention : choisir un client remplit l'adresse */
 function acIntervention(f, i) {
   attachAC(f.client, q => searchClients(q, 8), clientLine, c => {
-    f.client.value = c.nom; f.adresse.value = [c.adresse, c.complement].filter(Boolean).join(', '); f.cp.value = c.cp || ''; f.ville.value = c.ville || '';
+    f.client.value = c.nom; f.adresse.value = c.adresse || ''; if (f.complement) f.complement.value = c.complement || ''; f.cp.value = c.cp || ''; f.ville.value = c.ville || '';
     if (c.tel) f.tel.value = c.tel; if (c.type === 'entreprise' && c.contact && !f.occupant.value) f.occupant.value = c.contact;
     i.client_id = c.id; markLinked(f.client, true); toast('Fiche client reprise : ' + c.nom); });
   f.client.addEventListener('input', () => { i.client_id = null; markLinked(f.client, false); });
   markLinked(f.client, !!i.client_id);
+}
+/* Adresse : suggestions de la Base Adresse Nationale (comme Apple Plans), remplit CP et ville */
+async function searchAdresse(q) {
+  const qs = `q=${encodeURIComponent(q)}&limit=6&lat=43.514&lon=4.988&autocomplete=1`;
+  for (const u of ['https://data.geopf.fr/geocodage/search?index=address&', 'https://api-adresse.data.gouv.fr/search/?']) {
+    try { const r = await fetch(u + qs); if (!r.ok) continue; const j = await r.json(); return { data: (j.features || []).map(x => x.properties) }; } catch (e) { }
+  }
+  return { data: [] };
+}
+const adrLine = a => `<b>${E(a.name || a.label)}</b><small>${E([a.postcode, a.city].filter(Boolean).join(' '))}${a.context ? ' · ' + E(String(a.context).split(',').slice(-2).join(',').trim()) : ''}</small>`;
+function acAdresse(f) {
+  attachAC(f.adresse, q => q.length < 4 ? Promise.resolve({ data: [] }) : searchAdresse(q), adrLine, a => {
+    f.adresse.value = a.type === 'municipality' ? '' : (a.name || ''); f.cp.value = a.postcode || ''; f.ville.value = a.city || '';
+    (a.type === 'municipality' ? f.adresse : f.complement || f.adresse).focus(); });
 }
 /* Formulaire d'affaire : client + articles dans le chiffrage */
 function acAffaire(f, a) {
