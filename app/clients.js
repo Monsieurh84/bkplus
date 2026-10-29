@@ -147,7 +147,7 @@ async function listArticles() {
   $('#main').innerHTML = `<div class="head"><h1>Articles</h1>
     <input class="search" id="qart" type="search" placeholder="Rechercher : désignation, référence…" value="${E(qArt)}">
     <div class="seg">${[['tous', 'Tous'], ['Produit', 'Produits'], ['Service', 'Services']].map(([k, l]) => `<button data-ta="${k}" class="${typeArt === k ? 'on' : ''}">${l}</button>`).join('')}</div>
-    <button class="btn btn-grad" id="nart">+ Nouvel article</button></div><div id="alist"><div class="loading">Chargement…</div></div>`;
+    <button class="btn btn-line" id="xart" title="Fichier .xlsx au format d’import d’Isanet">${ic('file')} Exporter pour Isanet <b id="xn"></b></button><button class="btn btn-grad" id="nart">+ Nouvel article</button></div><div id="alist"><div class="loading">Chargement…</div></div>`;
   const run = async () => {
     const { data, count, error } = await searchArticles(qArt, 100, typeArt); if (error) return toast('Erreur : ' + error.message);
     $('#alist').innerHTML = `<p class="cnt">${qArt ? `${count} résultat${count > 1 ? 's' : ''} pour « ${E(qArt)} »` : `${(count || 0).toLocaleString('fr-FR')} articles`}${count > data.length ? ` · ${data.length} affichés, affinez la recherche` : ''} · ils se proposent tout seuls dans le chiffrage des affaires</p>
@@ -156,6 +156,7 @@ async function listArticles() {
       : '<div class="empty">Aucun article trouvé.</div>'}`;
     document.querySelectorAll('[data-ar]').forEach(tr => tr.onclick = () => articleForm(data.find(a => a.id === tr.dataset.ar)));
   };
+  $('#xart').onclick = exportArticlesIsanet; nbExport();
   let tm; $('#qart').oninput = e => { qArt = e.target.value.trim(); clearTimeout(tm); tm = setTimeout(run, 220); };
   document.querySelectorAll('[data-ta]').forEach(b => b.onclick = () => { typeArt = b.dataset.ta; document.querySelectorAll('[data-ta]').forEach(x => x.classList.toggle('on', x === b)); run(); });
   $('#nart').onclick = () => articleForm(null);
@@ -183,4 +184,25 @@ function articleForm(a) {
     const res = isNew ? await sb.from('articles').insert(r) : await sb.from('articles').update(r).eq('id', a.id);
     if (res.error) return toast('Erreur : ' + res.error.message); closePanel(); toast(isNew ? 'Article créé' : 'Article enregistré'); if (view === 'articles') listArticles(); };
   if ($('#ardel')) $('#ardel').onclick = async () => { const { error } = await sb.from('articles').update({ actif: false }).eq('id', a.id); if (error) return toast('Erreur : ' + error.message); closePanel(); toast('Article retiré du catalogue'); listArticles(); };
+}
+
+/* ================= Export vers Isanet (import par fichier, pas d'API chez Isanet) ================= */
+const ISANET_ART = ['ID', 'NOM', 'REFERENCE', 'DESCRIPTION', 'TYPE', 'PRIX UNITAIRE', 'PRIX UNITAIRE FOURNISSEUR (HT)', 'UNITÉ', 'STOCK', 'TVA (%)', 'CODE COMPTABLE', 'CATEGORIE'];
+let xlsxP = null;
+const loadXLSX = () => xlsxP || (xlsxP = new Promise((ok, ko) => { if (window.XLSX) return ok(window.XLSX); const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload = () => ok(window.XLSX); s.onerror = () => { xlsxP = null; ko(new Error('Impossible de charger le module Excel')); }; document.head.appendChild(s); }));
+async function nbExport() { const { count } = await sb.from('articles').select('id', { count: 'exact', head: true }).eq('a_exporter', true); const el = $('#xn'); if (el) el.textContent = count ? '(' + count + ')' : ''; return count || 0; }
+async function exportArticlesIsanet() {
+  const { data, error } = await sb.from('articles').select('*').eq('a_exporter', true).order('nom'); if (error) return toast('Erreur : ' + error.message);
+  if (!data.length) return toast('Rien à exporter : tous les articles sont déjà dans Isanet');
+  const nv = data.filter(a => a.id.startsWith('bk-')).length;
+  if (!confirm(`${data.length} article${data.length > 1 ? 's' : ''} à envoyer dans Isanet (${nv} nouveau${nv > 1 ? 'x' : ''}, ${data.length - nv} modifié${data.length - nv > 1 ? 's' : ''}).\n\nLe fichier va se télécharger. Ensuite dans Isanet : Mes articles › Importer › Choisir un fichier › Importer.`)) return;
+  try {
+    const X = await loadXLSX();
+    const rows = data.map(a => [a.id.startsWith('bk-') ? '' : a.id, a.nom || '', a.ref || '', a.description || '', a.type || 'Produit', a.pu_ht ?? '', a.pu_fournisseur ?? '', '', a.stock ?? '', a.tva ?? 20, '', '']);
+    const ws = X.utils.aoa_to_sheet([ISANET_ART, ...rows]); ws['!cols'] = ISANET_ART.map((h, k) => ({ wch: [10, 34, 14, 50][k] || 14 }));
+    const wb = X.utils.book_new(); X.utils.book_append_sheet(wb, ws, 'Articles');
+    X.writeFile(wb, `import-articles-BK-${iso(new Date())}.xlsx`);
+    const r = await sb.from('articles').update({ a_exporter: false }).in('id', data.map(a => a.id)); if (r.error) throw r.error;
+    toast('Fichier prêt : importez-le dans Isanet'); nbExport();
+  } catch (e) { toast('Erreur : ' + (e.message || e)); }
 }
