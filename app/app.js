@@ -265,6 +265,13 @@ async function listRecherche() {
 function openPanel(html) { const P = $('#panel'); P.classList.remove('wide'); P.innerHTML = html; P.classList.add('on'); P.setAttribute('aria-hidden', 'false'); $('#scrim').classList.add('on'); P.querySelector('.x').onclick = closePanel; }
 function closePanel() { const P = $('#panel'); P.classList.remove('on'); P.setAttribute('aria-hidden', 'true'); $('#scrim').classList.remove('on'); }
 $('#scrim').onclick = closePanel; document.addEventListener('keydown', e => { if (e.key === 'Escape') closePanel(); });
+const MIME = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', heic: 'image/heic', heif: 'image/heif', mov: 'video/quicktime', mp4: 'video/mp4', m4v: 'video/mp4', pdf: 'application/pdf', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
+/* Copie le fichier en mémoire tout de suite (une photo glissée depuis Messages ou WhatsApp peut disparaître juste après le dépôt) et corrige son type s'il est vide */
+async function fixFile(f) {
+  if (!f) return null; const ext = (f.name.split('.').pop() || '').toLowerCase(), type = f.type || MIME[ext] || 'application/octet-stream';
+  try { const buf = await f.arrayBuffer(); if (!buf.byteLength) throw new Error('vide'); return new File([buf], f.name || ('photo-' + Date.now() + '.jpg'), { type }); }
+  catch (e) { toast('« ' + (f.name || 'fichier') + ' » n’a pas pu être lu : enregistrez-le d’abord dans vos fichiers, puis ajoutez-le'); return null; }
+}
 const kindOf = f => f.type.startsWith('image/') ? 'photo' : f.type.startsWith('video/') ? 'video' : f.type === 'application/pdf' ? 'pdf' : 'autre';
 async function signed(bucket, paths) { if (!paths.length) return {}; const { data } = await sb.storage.from(bucket).createSignedUrls(paths, 3600); const o = {}; (data || []).forEach(u => o[u.path] = u.signedUrl); return o; }
 
@@ -341,7 +348,7 @@ async function form(i, opts) {
     $('#pj-' + k).innerHTML = ex.map(p => `<a>${icon(p.type)}${E(p.nom)}<button type="button" class="rm" data-rme="${p.id}">×</button></a>`).join('') + add[k].map((x, n) => `<a>${kindOf(x) === 'photo' ? `<img src="${URL.createObjectURL(x)}" alt="">` : icon(kindOf(x))}${E(x.name)}<button type="button" class="rm" data-rma="${k}:${n}">×</button></a>`).join('') || '<span style="font-size:13px;color:var(--mute)">Aucun.</span>';
     $('#pj-' + k).querySelectorAll('[data-rme]').forEach(b => b.onclick = () => { removed.push(b.dataset.rme); draw(k); });
     $('#pj-' + k).querySelectorAll('[data-rma]').forEach(b => b.onclick = () => { const [kk, n] = b.dataset.rma.split(':'); add[kk].splice(+n, 1); draw(kk); }); };
-  const addFiles = (k, list) => { const all = [...list].filter(x => x && x.size), big = all.filter(x => x.size > 50 * 1024 * 1024); if (big.length) toast('Fichier trop lourd (50 Mo max) : ' + big[0].name); const ok = all.filter(x => x.size <= 50 * 1024 * 1024); add[k] = add[k].concat(ok); draw(k); if (ok.length) toast(ok.length > 1 ? ok.length + ' fichiers ajoutés' : 'Fichier ajouté : ' + ok[0].name); };
+  const addFiles = async (k, list) => { const all = (await Promise.all([...list].map(fixFile))).filter(Boolean), big = all.filter(x => x.size > 50 * 1024 * 1024); if (big.length) toast('Fichier trop lourd (50 Mo max) : ' + big[0].name); const ok = all.filter(x => x.size <= 50 * 1024 * 1024); add[k] = add[k].concat(ok); draw(k); if (ok.length) toast(ok.length > 1 ? ok.length + ' fichiers ajoutés' : 'Fichier ajouté : ' + ok[0].name); };
   ['tech', 'bur'].forEach(k => { draw(k); $('#in-' + k).onchange = e => { addFiles(k, e.target.files); e.target.value = ''; };
     const z = $('#pj-' + k).closest('.upl'); let dc = 0;
     z.addEventListener('dragenter', e => { e.preventDefault(); dc++; z.classList.add('drop'); });
@@ -368,7 +375,7 @@ async function form(i, opts) {
       const files = add.tech.map(x => [x, false]).concat(add.bur.map(x => [x, true]));
       for (let k = 0; k < files.length; k++) { const [file, prive] = files[k]; btn.textContent = `Envoi des fichiers ${k + 1}/${files.length}…`;
         const path = `${id}/${Date.now()}-${k}-${file.name.normalize('NFD').replace(/[^\w.\-]+/g, '_')}`;
-        const up = await sb.storage.from(prive ? 'bureau' : 'pieces').upload(path, file, { contentType: file.type || 'application/octet-stream' }); if (up.error) throw up.error;
+        const up = await sb.storage.from(prive ? 'bureau' : 'pieces').upload(path, file, { contentType: file.type || 'application/octet-stream' }); if (up.error) throw new Error('envoi de « ' + file.name + ' » impossible (' + up.error.message + ')');
         const r = await sb.from('pieces').insert({ intervention_id: id, nom: file.name, type: kindOf(file), path, prive }); if (r.error) throw r.error; }
       if (opts.demande) await sb.from('demandes').update({ statut: 'planifiee', traitee_par: me.id, traitee_le: new Date().toISOString() }).eq('id', opts.demande.id);
       closePanel(); week = monday(new Date(row.date + 'T12:00')); if (mode === 'jour') day = row.date; await go('planning');
