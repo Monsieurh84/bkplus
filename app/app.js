@@ -90,7 +90,7 @@ function listen() {
 
 /* ================= Planning ================= */
 const H0 = 7, H1 = 20;                     // plage horaire affichée
-let showWE = false, hidden = new Set();
+let showWE = false, hidden = new Set(), planKey = '';
 try { showWE = localStorage.getItem('bk-we') === '1'; hidden = new Set(JSON.parse(localStorage.getItem('bk-hide') || '[]')); } catch (e) { }
 const saveUI = () => { try { localStorage.setItem('bk-we', showWE ? '1' : '0'); localStorage.setItem('bk-hide', JSON.stringify([...hidden])); } catch (e) { } };
 const nbDays = () => showWE ? 7 : 5;
@@ -163,7 +163,7 @@ function planning() {
   if (!techs.length) { $('#main').innerHTML = h + `<div class="empty">Aucun membre de l’équipe enregistré.</div>`; return; }
   const hours = [...Array(H1 - H0)].map((_, k) => `<div class="hr" style="height:${px}px"><span>${pad(H0 + k)}:00</span></div>`).join('');
   const nLanes = d => Math.max(1, vis.filter(t => inter.some(i => i.date === d && i.techs.includes(t.id) && !isAllDay(i))).length);
-  const colsTpl = mode === 'semaine' ? '56px ' + days.map(d => `minmax(${Math.max(days.length > 5 ? 120 : 150, nLanes(d) * 74)}px,1fr)`).join(' ') : `56px repeat(${vis.length},minmax(130px,1fr))`;
+  const colsTpl = mode === 'semaine' ? '46px ' + days.map(d => `minmax(${Math.max(days.length > 5 ? 84 : 100, nLanes(d) * 46)}px,1fr)`).join(' ') : `56px repeat(${vis.length},minmax(130px,1fr))`;
   h += `<div class="cal ${mode}" style="--px:${px}px;grid-template-columns:${colsTpl}">`;
   if (mode === 'semaine') {
     h += `<div class="ch ax"></div>${days.map(d => `<div class="ch ${d === today ? 'td' : ''} ${ferie(d) ? 'fer' : ''}"><b>${lbl(d)}</b>${ferie(d) ? `<small class="fl">${E(ferie(d))}</small>` : ''}</div>`).join('')}`;
@@ -176,8 +176,9 @@ function planning() {
     h += `<div class="ax hrs">${hours}</div>${vis.map(t => `<div class="dc ${day === today ? 'td' : ''}" data-date="${day}" style="height:${(H1 - H0) * px}px">${lane(day, t, px, true)}${day === today && nowM > H0 * 60 && nowM < H1 * 60 ? `<i class="now" style="top:${(nowM - H0 * 60) / 60 * px}px"></i>` : ''}</div>`).join('')}`;
   }
   h += `</div>`;
-  $('#main').innerHTML = h;
-  const sc = $('.cal'); if (sc) { const first = Math.min(...inter.filter(i => !isAllDay(i)).map(i => mins(i.heure)), 8 * 60); sc.scrollTop = Math.max(0, (first - H0 * 60 - 30) / 60 * px); }
+  const key = mode + (mode === 'semaine' ? iso(week) : day), old = $('.cal'), keep = old && planKey === key ? [old.scrollLeft, old.scrollTop, $('#main').scrollTop, document.scrollingElement.scrollTop] : null;
+  $('#main').innerHTML = h; planKey = key;
+  const sc = $('.cal'); if (sc) { if (keep) { sc.scrollLeft = keep[0]; sc.scrollTop = keep[1]; $('#main').scrollTop = keep[2]; document.scrollingElement.scrollTop = keep[3]; } else { const first = Math.min(...inter.filter(i => !isAllDay(i)).map(i => mins(i.heure)), 8 * 60); sc.scrollTop = Math.max(0, (first - H0 * 60 - 30) / 60 * px); } }
   const nav = async n => { if (mode === 'semaine') week = addDays(week, 7 * n); else { let x = addDays(new Date(day + 'T12:00'), n); if (!showWE) while ([0, 6].includes(x.getDay())) x = addDays(x, n); day = iso(x); } await loadPlanning(); planning(); };
   $('#prev').onclick = () => nav(-1); $('#next').onclick = () => nav(1);
   /* Glisser deux doigts sur le trackpad (ou flèches ← → du clavier, ou balayage sur iPad) pour changer de semaine */

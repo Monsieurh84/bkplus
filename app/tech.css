@@ -238,3 +238,7 @@ html,body{height:100%}body{background:var(--bg);overscroll-behavior:none}
 .wkn span{flex:1;text-align:center;font-size:17px;font-weight:800}
 .wkn button{width:56px;height:52px;border-radius:16px;border:2px solid var(--line);background:#fff;font-size:28px;font-weight:800;color:var(--navy)}
 .wkn button:disabled{opacity:.3}
+.who2{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-bottom:10px}
+.who2 div{background:#fff;border:2px solid var(--line);border-radius:18px;padding:12px 16px}
+.who2 small{display:block;font-size:13px;font-weight:800;color:var(--mute);text-transform:uppercase;letter-spacing:.04em}
+.who2 b{font-size:22px;font-weight:800;line-height:1.2}

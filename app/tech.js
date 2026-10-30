@@ -37,6 +37,7 @@ const ICON = {
   mic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1M12 18v4"/></svg>',
   open: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>' };
 const telUrl = t => 'tel:' + String(t || '').replace(/\s/g, '');
+const who = i => [i.client, i.occupant].filter(Boolean).join(' · ');
 const fullAddr = i => [i.adresse, [i.cp, i.ville].filter(Boolean).join(' ')].filter(Boolean).join(', ');
 
 /* ---------- Connexion ---------- */
@@ -145,7 +146,7 @@ function list() {
   const m0 = addDays(monday(new Date()), 7 * wk), days = tab === 'jour' ? [today] : [...Array(7)].map((_, k) => iso(addDays(m0, k))).filter((d, k) => k < 5 || mine.some(i => i.date === d));
   const job = i => `<button class="job ${i.type !== 'intervention' ? 'int' : ''} ${i.statut === 'controle' ? 'done' : ''}" data-id="${i.id}" style="--sc:${stripe(i.techs)}">
       <div class="h">${hh(i.heure)}<small>${fin(i.heure, i.duree)}</small></div>
-      <div class="b"><div class="ad">${E(i.type === 'intervention' ? (i.adresse || i.ville) : i.travaux)}</div><div class="vi">${E(i.type === 'intervention' ? i.ville : (i.type === 'interne' ? 'Interne' : 'Tâche'))}${i.pieces.length ? ' · ' + ic('paperclip') : ''}${i.statut === 'controle' ? ' · ✓ Terminée' : ''}</div>${i.techs.length > 1 ? `<div class="teamline"><span class="avs">${avatars(i.techs)}</span>${E(i.techs.map(x => T(x).nom).join(' + '))}</div>` : ''}</div>
+      <div class="b"><div class="ad">${E(i.type === 'intervention' ? (who(i) || i.adresse || i.ville) : i.travaux)}</div><div class="vi">${E(i.type === 'intervention' ? (who(i) ? [i.adresse, i.ville].filter(Boolean).join(', ') : i.ville) : (i.type === 'interne' ? 'Interne' : 'Tâche'))}${i.pieces.length ? ' · ' + ic('paperclip') : ''}${i.statut === 'controle' ? ' · ✓ Terminée' : ''}</div>${i.techs.length > 1 ? `<div class="teamline"><span class="avs">${avatars(i.techs)}</span>${E(i.techs.map(x => T(x).nom).join(' + '))}</div>` : ''}</div>
       ${i.type === 'intervention' ? `<span class="st ${i.statut}">${i.statut === 'controle' ? 'Terminée' : { planifiee: 'Planifiée', enroute: 'En route', encours: 'En cours' }[i.statut] || ''}</span>` : ''}<span class="chev">›</span></button>`;
   const pin = i => { const ok = i.statut === 'controle', others = i.techs.filter(x => x !== tech.id);
     return `<div class="pin ${ok ? 'ok' : ''}"><div class="pt">${ok ? '✓ ' : ''}${E(i.travaux)}</div><div class="pm">${E(fullAddr(i))}${others.length ? ` · avec <span class="avs">${avatars(others)}</span> ${E(others.map(x => T(x).nom).join(', '))}` : ''}</div>
@@ -155,7 +156,7 @@ function list() {
       (it.length ? it.map(job).join('') : (pd.length && tab === 'semaine' ? '' : `<div class="panel"><p style="color:var(--mute)">Rien de prévu.</p></div>`)); };
   scr().innerHTML = topBar(`Bonjour ${E(tech.nom)} `, lbl(today), false) + previewBar() + `<div class="scroll">
     ${tab === 'jour' && reminderOn && pinsLeft.length ? `<div class="remind" role="alert">${ic('alarm')} <div><b>Avant la fin de journée</b>Il reste ${pinsLeft.length} tâche${pinsLeft.length > 1 ? 's' : ''} à faire aujourd’hui.</div></div>` : ''}
-    ${tab === 'jour' && next ? `<div class="next"><div class="lbl">${next.statut === 'planifiee' ? 'Prochaine intervention' : 'En ce moment'} · ${hh(next.heure)}</div><div class="ad">${E(next.adresse || next.ville)}</div><div class="vi">${E(next.ville)}${next.occupant ? ' · ' + E(next.occupant) : ''}</div>
+    ${tab === 'jour' && next ? `<div class="next"><div class="lbl">${next.statut === 'planifiee' ? 'Prochaine intervention' : 'En ce moment'} · ${hh(next.heure)}</div><div class="ad">${E(who(next) || next.adresse || next.ville)}</div><div class="vi">${E(who(next) ? [next.adresse, next.ville].filter(Boolean).join(', ') : next.ville)}</div>
       <div class="row2">${next.tel ? `<a href="${telUrl(next.tel)}">${ICON.phone}Appeler</a>` : '<span></span>'}<button data-nav="${next.id}">${ICON.route}Itinéraire</button><button class="go" data-id="${next.id}">${ICON.open}Ouvrir</button></div></div>` : ''}
     ${tab === 'jour' && pins.length ? `<div class="pins"><h2>${ic('pin')} À faire aujourd’hui <span>${pins.length - pinsLeft.length}/${pins.length}</span></h2><p>Pas d’heure précise : quand vous avez un moment dans la journée.</p>${pins.map(pin).join('')}</div>` : ''}
     ${tab === 'jour' && todayJobs.length ? `<div class="prog"><span>${done} / ${todayJobs.length} interventions</span><div class="bar"><i style="width:${done / todayJobs.length * 100}%"></i></div></div>` : ''}
@@ -188,6 +189,7 @@ async function fiche() {
   scr().innerHTML = topBar(`${i.epingle ? ic('pin') : hh(i.heure)} · ${E(i.ville || 'Tâche')}`, lbl(i.date), true) + previewBar() + `<div class="scroll">
     ${done ? '<div class="done-box">✓ Terminée et envoyée au bureau</div>' : ''}
     ${isJob ? `<div class="step"><div class="${step >= 0 ? 'on' : ''}">Prévue</div><div class="${step >= 1 ? 'on' : ''}">En route</div><div class="${step >= 2 ? 'on' : ''}">Sur place</div><div class="${step >= 3 ? 'on' : ''}">Terminée</div></div>` : ''}
+    ${isJob && who(i) ? `<div class="who2">${i.client ? `<div><small>Client</small><b>${E(i.client)}</b></div>` : ''}${i.occupant ? `<div><small>Occupant</small><b>${E(i.occupant)}</b></div>` : ''}</div>` : ''}
     <div class="addr"><div class="a">${E(isJob ? (i.adresse || i.ville) : i.travaux)}</div><div class="v">${E(isJob ? [i.cp, i.ville].filter(Boolean).join(' ') : fullAddr(i))}</div>${isJob && i.complement ? `<div class="v" style="font-weight:700">${E(i.complement)}</div>` : ''}</div>
     ${others.length ? `<div class="binome"><span class="avs">${avatars(i.techs)}</span> En équipe avec ${E(others.map(x => T(x).nom).join(', '))}</div>` : ''}
     ${isJob ? `<div class="big-actions">${i.tel ? `<a class="bigbtn call" href="${telUrl(i.tel)}">${ICON.phone}Appeler</a>` : '<span></span>'}<button class="bigbtn route" data-nav="${i.id}">${ICON.route}Itinéraire</button></div>` : ''}
