@@ -69,7 +69,7 @@ async function start() {
   }
   await refreshPending(); render(); flush(); subscribe();
 }
-const NBW = 6; let wk = 0;
+const NBW = 6; let wk = 0; const addx = {};
 async function load() {
   const a = iso(monday(new Date())), b = iso(addDays(monday(new Date()), 7 * NBW - 1));
   const { data, error } = await sb.from('interventions').select('*, mine:intervention_techs!inner(tech_id), pieces(*), demande:demandes(ref,message,photos)').eq('mine.tech_id', tech.id).gte('date', a).lte('date', b);
@@ -100,6 +100,13 @@ async function flush() {
         for (let k = 0; k < j.photos.length; k++) { const p = j.photos[k], path = `${j.iid}/${j.id}-${k + 1}.jpg`;
           const up = await sb.storage.from('retours').upload(path, p.blob, { contentType: 'image/jpeg', upsert: true }); if (up.error) throw up.error; photos.push({ path, tag: p.tag || '' }); }
         const { error } = await sb.rpc('tech_valider', { p_id: j.iid, p_commentaire: j.commentaire, p_photos: photos }); if (error) throw error;
+      }
+      if (j.kind === 'completer') {
+        const photos = [];
+        for (let k = 0; k < j.photos.length; k++) { const p = j.photos[k], path = `${j.iid}/${j.id}-c${k + 1}.jpg`;
+          const up = await sb.storage.from('retours').upload(path, p.blob, { contentType: 'image/jpeg', upsert: true }); if (up.error) throw up.error; photos.push({ path, tag: p.tag || 'Ajout' }); }
+        const { error } = await sb.rpc('tech_completer', { p_id: j.iid, p_commentaire: j.commentaire, p_photos: photos });
+        if (error) { if (/clôturée/.test(error.message)) toast('Trop tard : le bureau a déjà clôturé cette intervention'); else throw error; }
       }
       await DB.qDel(j.id);
     }
@@ -195,6 +202,11 @@ async function fiche() {
       ${done ? '' : `<label class="photo-btn">${ICON.cam}Prendre une photo<input type="file" accept="image/*" capture="environment" class="sr" id="cam"></label>`}
       <div class="thumbs">${d.photos.map((p, k) => `<figure><img src="${URL.createObjectURL(p.blob)}" alt="Photo ${k + 1}" data-lb>${done ? '' : `<button class="tg" data-tag="${k}">${p.tag || 'Avant / Après ?'}</button><button class="rm" data-rm="${k}" aria-label="Supprimer">×</button>`}</figure>`).join('')}</div></div>
     <div class="panel"><h3>${ic('pencil')} Commentaire</h3>${done ? `<p>${E(i.commentaire || '')}</p>` : `<div class="chips">${PHRASES.map(p => `<button data-ph="${E(p)}">+ ${E(p)}</button>`).join('')}</div><div class="cmt"><textarea id="cmt" placeholder="Ce qui a été fait, ce qui reste à prévoir…">${E(d.commentaire)}</textarea><button class="mic" id="mic">${ICON.mic}Dicter</button></div>`}</div>` : ''}
+    ${isJob && i.statut === 'controle' ? `<div class="panel add"><h3>${ic('pencil')} Oublié quelque chose ?</h3><p style="color:var(--mute);margin:0 0 10px">Tant que le bureau n’a pas clôturé, vous pouvez encore ajouter des photos ou un commentaire.</p>
+      <label class="photo-btn">${ICON.cam}Ajouter une photo<input type="file" accept="image/*" capture="environment" class="sr" id="cam2"></label>
+      <div class="thumbs">${(addx[i.id] || { photos: [] }).photos.map((p, k) => `<figure><img src="${URL.createObjectURL(p.blob)}" alt=""><button class="rm" data-rm2="${k}" aria-label="Supprimer">×</button></figure>`).join('')}</div>
+      <div class="cmt"><textarea id="cmt2" placeholder="Ce que vous avez oublié de dire…">${E((addx[i.id] || {}).commentaire || '')}</textarea></div>
+      <button class="primary-step" style="background:var(--ok);margin-top:12px" id="send2">Envoyer au bureau</button></div>` : ''}
     ${!isJob && !done ? `<button class="primary-step" style="background:var(--ok)" id="pindone">✓ C’est fait</button>` : ''}
   </div>
   ${done || !isJob ? '' : `<div class="validate"><div class="alert" id="alert" role="alert"></div><div class="need"><span id="n1">○ 1 photo minimum</span><span id="n2">○ Un commentaire</span></div><button id="ok">Valider l’intervention</button></div>`}
@@ -213,6 +225,13 @@ async function fiche() {
   const go = $('#go'); if (go) go.onclick = async () => { i.statut = 'enroute'; fiche(); await enqueue({ kind: 'statut', iid: i.id, statut: 'enroute' }); toast('Le bureau voit que vous êtes en route'); };
   const here = $('#here'); if (here) here.onclick = async () => { i.statut = 'encours'; i.debut_at = new Date().toISOString(); fiche(); await enqueue({ kind: 'statut', iid: i.id, statut: 'encours' }); toast('Arrivée enregistrée à ' + nowHHMM()); };
   const pd = $('#pindone'); if (pd) pd.onclick = async () => { i.statut = 'controle'; await enqueue({ kind: 'valider', iid: i.id, commentaire: 'Tâche faite à ' + nowHHMM(), photos: [] }); openId = null; render(); toast('✓ Tâche faite, le bureau est prévenu'); };
+  if (i.statut === 'controle' && isJob && $('#send2')) { const x = addx[i.id] = addx[i.id] || { photos: [], commentaire: '' };
+    $('#cmt2').oninput = e => { x.commentaire = e.target.value; };
+    $('#cam2').onchange = async e => { const f = e.target.files[0]; if (!f) return; x.photos.push({ blob: await shrink(f), tag: 'Ajout' }); const y = scr().querySelector('.scroll').scrollTop; await fiche(); scr().querySelector('.scroll').scrollTop = y; };
+    scr().querySelectorAll('[data-rm2]').forEach(b => b.onclick = async () => { x.photos.splice(+b.dataset.rm2, 1); await fiche(); });
+    $('#send2').onclick = async () => { if (!x.photos.length && x.commentaire.trim().length < 2) return toast('Ajoutez une photo ou un commentaire');
+      await enqueue({ kind: 'completer', iid: i.id, commentaire: x.commentaire.trim(), photos: x.photos.map(p => ({ blob: p.blob, tag: p.tag })) });
+      delete addx[i.id]; openId = null; render(); toast(online ? '✓ Ajout envoyé au bureau' : '✓ Gardé sur l’appareil · partira au retour du réseau'); }; }
   if (done || !isJob) return;
   const saveDraft = () => DB.set('draft-' + i.id, d).catch(() => { });
   const upd = () => { const a = d.photos.length > 0, b = d.commentaire.trim().length > 1; $('#n1').className = a ? 'ok' : ''; $('#n1').textContent = (a ? '✓' : '○') + ' 1 photo minimum'; $('#n2').className = b ? 'ok' : ''; $('#n2').textContent = (b ? '✓' : '○') + ' Un commentaire'; $('#ok').classList.toggle('ready', a && b); if (a && b) $('#alert').classList.remove('show'); };
