@@ -290,10 +290,12 @@ async function clipImages() {
     out.push(new File([b], 'photo-' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '-' + Math.random().toString(36).slice(2, 5) + '.' + (t.split('/')[1] || 'png'), { type: t })); }
   return out;
 }
+const jlog = (quoi, detail) => { try { sb.from('journal').insert({ quoi, detail, ua: navigator.userAgent.slice(0, 200) }).then(() => { }, () => { }); } catch (e) { } };
 async function pasteFiles(fl) { const ok = (await Promise.all(fl.map(f => fixFile(f, true)))).filter(Boolean); if (ok.length === fl.length && ok.length) return ok;
-  try { const c = await clipImages(); if (c.length) return ok.concat(c); } catch (e) { toast('Autorisez l’accès au presse-papiers (bouton « Autoriser » en haut de Chrome), puis refaites Cmd + V'); return ok; }
+  try { const c = await clipImages(); jlog('cmdv-clip', { n: c.length }); if (c.length) return ok.concat(c); } catch (e) { jlog('cmdv-clip', { err: e.name + ': ' + e.message }); toast('Autorisez l’accès au presse-papiers (bouton « Autoriser » en haut de Chrome), puis refaites Cmd + V'); return ok; }
   if (!ok.length) toast('Impossible de lire cette photo. Dans Messages : clic droit › Copier, puis Cmd + V ici'); return ok; }
 document.addEventListener('paste', e => { if (!window.__bkPaste) return; const fl = [...(e.clipboardData?.files || [])], img = [...(e.clipboardData?.items || [])].some(x => x.kind === 'file' || x.type.startsWith('image/'));
+  jlog('cmdv', { types: [...(e.clipboardData?.types || [])], items: [...(e.clipboardData?.items || [])].map(x => x.kind + ':' + x.type), files: fl.map(f => f.name + '|' + f.type + '|' + f.size) });
   if (!fl.length && !img) return; e.preventDefault(); pasteFiles(fl).then(ok => { if (ok.length) window.__bkPaste(ok, true); }); });
 /* Une pièce jointe peut être partagée par toutes les dates d'une série : on ne supprime le fichier que s'il n'est plus utilisé */
 async function rmIfAlone(bucket, paths) { paths = [...new Set(paths)]; if (!paths.length) return; const { data } = await sb.from('pieces').select('path').in('path', paths); const used = new Set((data || []).map(x => x.path)); const free = paths.filter(p => !used.has(p)); if (free.length) await sb.storage.from(bucket).remove(free); }
@@ -345,7 +347,7 @@ async function form(i, opts) {
   const add = { tech: [], bur: [] }; let removed = [];
   const debut = (i.heure || '09:00').slice(0, 5), finH = hm(Math.min(mins(debut) + Math.round((+i.duree || 1) * 60), 23 * 60 + 45));
   const who = (list, label) => list.length ? `<div class="whog"><small>${label}</small><div class="checks">${list.map(t => `<label><input type="checkbox" name="techs" value="${t.id}" ${i.techs.includes(t.id) ? 'checked' : ''}><i style="width:10px;height:10px;border-radius:50%;background:${t.couleur};display:inline-block"></i>${E(t.nom)}</label>`).join('')}</div></div>` : '';
-  const upl = (k, title, help) => `<div class="full upl ${k === 'bur' ? 'priv' : ''}"><div class="ut">${title} <span>${help}</span></div><div class="ph" id="pj-${k}"></div><div class="dz"><label class="btn btn-line">+ Ajouter des fichiers<input type="file" id="in-${k}" multiple accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx" class="sr"></label><span>ou glissez-les ici · photo d’un message : clic droit › Copier, puis <b>Cmd + V</b></span></div></div>`;
+  const upl = (k, title, help) => `<div class="full upl ${k === 'bur' ? 'priv' : ''}"><div class="ut">${title} <span>${help}</span></div><div class="ph" id="pj-${k}"></div><div class="dz"><label class="btn btn-line">+ Ajouter des fichiers<input type="file" id="in-${k}" multiple accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx" class="sr"></label><button type="button" class="btn btn-line" data-clip="${k}">${ic('paperclip')} Coller la photo copiée</button><span>ou glissez-les ici</span></div></div>`;
   openPanel(`<header><h2>${isNew ? (i.epingle ? ic('pin') + ' Rappel dans la journée' : opts.ctx && /^Copie/.test(opts.ctx) ? 'Dupliquer l’intervention' : 'Planifier') : 'Modifier'}</h2><button class="x" aria-label="Fermer">×</button></header>
   <form class="body" id="f"><div class="form">
     ${opts.ctx ? `<div class="full box" style="background:var(--soft);border:0"><b>${E(opts.ctx)}</b></div>` : ''}
@@ -404,6 +406,12 @@ async function form(i, opts) {
     z.addEventListener('drop', e => { e.preventDefault(); dc = 0; z.classList.remove('drop'); addFiles(k, e.dataTransfer.files); }); });
   let pasteK = 'tech'; ['tech', 'bur'].forEach(k => $('#pj-' + k).closest('.upl').addEventListener('pointerdown', () => { pasteK = k; }));
   window.__bkPaste = (fl, ready) => { if (!document.body.contains(f)) return false; ready ? addReady(pasteK, fl) : addFiles(pasteK, fl); return true; };
+  f.querySelectorAll('[data-clip]').forEach(b => b.onclick = async () => { const k = b.dataset.clip; let c = [], err = '';
+    try { c = await clipImages(); } catch (e) { err = e.name || 'Erreur'; }
+    if (c.length) return addReady(k, c);
+    toast(err === 'NotAllowedError' ? 'Chrome bloque l’accès au presse-papiers : cliquez sur le cadenas à gauche de l’adresse › Presse-papiers › Autoriser, puis recommencez'
+      : err ? 'Erreur presse-papiers (' + err + ')' : 'Aucune photo dans le presse-papiers : faites d’abord clic droit sur la photo › Copier');
+    jlog('bouton', { err: err || null, n: c.length }); });
   const addReady = (k, ok) => { add[k] = add[k].concat(ok); draw(k); toast(ok.length > 1 ? ok.length + ' photos ajoutées' : 'Photo ajoutée'); };
   $('#cc').onclick = closePanel;
   f.onsubmit = async e => {
