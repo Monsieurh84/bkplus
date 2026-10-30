@@ -94,7 +94,8 @@ let showWE = false, hidden = new Set();
 try { showWE = localStorage.getItem('bk-we') === '1'; hidden = new Set(JSON.parse(localStorage.getItem('bk-hide') || '[]')); } catch (e) { }
 const saveUI = () => { try { localStorage.setItem('bk-we', showWE ? '1' : '0'); localStorage.setItem('bk-hide', JSON.stringify([...hidden])); } catch (e) { } };
 const nbDays = () => showWE ? 7 : 5;
-function range() { return mode === 'semaine' ? [iso(week), iso(addDays(week, nbDays() - 1))] : [day, day]; }
+function range() { return mode === 'semaine' ? [iso(week), iso(addDays(week, 6))] : [day, day]; }
+const weOn = () => showWE || inter.some(i => { const g = new Date(i.date + 'T12:00').getDay(); return g === 0 || g === 6; });
 async function loadPlanning() {
   const [a, b] = range();
   const [r1, r2] = await Promise.all([
@@ -104,6 +105,15 @@ async function loadPlanning() {
   inter = (r1.data || []).map(i => ({ ...i, techs: i.intervention_techs.map(x => x.tech_id), nbPieces: i.pieces.length }));
   absences = r2.data || [];
 }
+/* Jours fériés (France métropolitaine) */
+const FER = {};
+function feries(y) { if (FER[y]) return FER[y];
+  const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451), mo = Math.floor((h + l - 7 * m + 114) / 31), da = ((h + l - 7 * m + 114) % 31) + 1;
+  const P = new Date(y, mo - 1, da, 12), o = {};
+  [['01-01', 'Jour de l’an'], ['05-01', 'Fête du Travail'], ['05-08', 'Victoire 1945'], ['07-14', 'Fête nationale'], ['08-15', 'Assomption'], ['11-01', 'Toussaint'], ['11-11', 'Armistice'], ['12-25', 'Noël']].forEach(([md, n]) => o[y + '-' + md] = n);
+  o[iso(addDays(P, 1))] = 'Lundi de Pâques'; o[iso(addDays(P, 39))] = 'Ascension'; o[iso(addDays(P, 50))] = 'Lundi de Pentecôte';
+  return FER[y] = o; }
+const ferie = d => feries(+d.slice(0, 4))[d] || '';
 const sortI = (a, b) => (b.epingle - a.epingle) || (a.heure || '').localeCompare(b.heure || '');
 const isAllDay = i => i.epingle || !i.heure;
 const mins = t => { const [h, m] = String(t || '00:00').split(':').map(Number); return h * 60 + (m || 0); };
@@ -141,9 +151,9 @@ function lane(d, t, px, withHead) {
 function planning() {
   if (view !== 'planning') return;
   const today = iso(new Date()), nowM = new Date().getHours() * 60 + new Date().getMinutes();
-  const days = mode === 'semaine' ? [...Array(nbDays())].map((_, k) => iso(addDays(week, k))) : [day];
+  const days = mode === 'semaine' ? [...Array(weOn() ? 7 : 5)].map((_, k) => iso(addDays(week, k))) : [day];
   const px = mode === 'semaine' ? 46 : 58, vis = visTechs();
-  const title = mode === 'semaine' ? `Semaine du ${lbl(days[0])}` : lbl(day, true);
+  const title = mode === 'semaine' ? `Semaine du ${lbl(days[0])}` : lbl(day, true) + (ferie(day) ? ' · ' + ferie(day) : '');
   let h = `<div class="head"><h1>Planning</h1><span class="live"><i></i>En direct</span>
    <div class="weeknav"><button id="prev" aria-label="Précédent">‹</button><span>${E(title)}</span><button id="next" aria-label="Suivant">›</button><button class="today" id="tod">Aujourd’hui</button></div>
    <div class="seg"><button data-m="jour" class="${mode === 'jour' ? 'on' : ''}">Jour</button><button data-m="semaine" class="${mode === 'semaine' ? 'on' : ''}">Semaine</button></div>
@@ -153,10 +163,10 @@ function planning() {
   if (!techs.length) { $('#main').innerHTML = h + `<div class="empty">Aucun membre de l’équipe enregistré.</div>`; return; }
   const hours = [...Array(H1 - H0)].map((_, k) => `<div class="hr" style="height:${px}px"><span>${pad(H0 + k)}:00</span></div>`).join('');
   const nLanes = d => Math.max(1, vis.filter(t => inter.some(i => i.date === d && i.techs.includes(t.id) && !isAllDay(i))).length);
-  const colsTpl = mode === 'semaine' ? '56px ' + days.map(d => `minmax(${Math.max(showWE ? 120 : 150, nLanes(d) * 74)}px,1fr)`).join(' ') : `56px repeat(${vis.length},minmax(130px,1fr))`;
+  const colsTpl = mode === 'semaine' ? '56px ' + days.map(d => `minmax(${Math.max(days.length > 5 ? 120 : 150, nLanes(d) * 74)}px,1fr)`).join(' ') : `56px repeat(${vis.length},minmax(130px,1fr))`;
   h += `<div class="cal ${mode}" style="--px:${px}px;grid-template-columns:${colsTpl}">`;
   if (mode === 'semaine') {
-    h += `<div class="ch ax"></div>${days.map(d => `<div class="ch ${d === today ? 'td' : ''}"><b>${lbl(d)}</b></div>`).join('')}`;
+    h += `<div class="ch ax"></div>${days.map(d => `<div class="ch ${d === today ? 'td' : ''} ${ferie(d) ? 'fer' : ''}"><b>${lbl(d)}</b>${ferie(d) ? `<small class="fl">${E(ferie(d))}</small>` : ''}</div>`).join('')}`;
     h += `<div class="ad ax">rappels</div>${days.map(d => allDay(d, vis)).join('')}`;
     h += `<div class="ax hrs">${hours}</div>${days.map(d => { const who = vis.filter(t => inter.some(i => i.date === d && i.techs.includes(t.id) && !isAllDay(i)));
       return `<div class="dc ${d === today ? 'td' : ''}" data-date="${d}" style="height:${(H1 - H0) * px}px">${who.map(t => lane(d, t, px)).join('')}${!who.length ? `<div class="ln empty-ln" data-date="${d}"></div>` : ''}${d === today && nowM > H0 * 60 && nowM < H1 * 60 ? `<i class="now" style="top:${(nowM - H0 * 60) / 60 * px}px"></i>` : ''}</div>`; }).join('')}`;
@@ -274,6 +284,8 @@ async function fixFile(f) {
 }
 /* Coller (Cmd+V) une photo copiée depuis Messages, WhatsApp, Aperçu… dans le formulaire ouvert */
 document.addEventListener('paste', e => { const fl = [...(e.clipboardData?.files || [])]; if (!fl.length || !window.__bkPaste) return; if (window.__bkPaste(fl)) e.preventDefault(); });
+/* Une pièce jointe peut être partagée par toutes les dates d'une série : on ne supprime le fichier que s'il n'est plus utilisé */
+async function rmIfAlone(bucket, paths) { paths = [...new Set(paths)]; if (!paths.length) return; const { data } = await sb.from('pieces').select('path').in('path', paths); const used = new Set((data || []).map(x => x.path)); const free = paths.filter(p => !used.has(p)); if (free.length) await sb.storage.from(bucket).remove(free); }
 const kindOf = f => f.type.startsWith('image/') ? 'photo' : f.type.startsWith('video/') ? 'video' : f.type === 'application/pdf' ? 'pdf' : 'autre';
 async function signed(bucket, paths) { if (!paths.length) return {}; const { data } = await sb.storage.from(bucket).createSignedUrls(paths, 3600); const o = {}; (data || []).forEach(u => o[u.path] = u.signedUrl); return o; }
 
@@ -304,7 +316,14 @@ async function detail(id, given) {
   $('#st').onchange = async e => { const { error } = await sb.from('interventions').update({ statut: e.target.value }).eq('id', id); if (error) return toast('Erreur : ' + error.message); await refreshView(); toast('Statut mis à jour'); };
   $('#ed').onclick = () => form(i); $('#dup').onclick = () => duplicate(i);
   $('#p7').onclick = async () => { await sb.from('interventions').update({ date: iso(addDays(new Date(i.date + 'T12:00'), 7)) }).eq('id', id); closePanel(); await refreshView(); toast('Reprogrammée la semaine suivante'); };
-  $('#del').onclick = async () => { if (!confirm('Supprimer définitivement cette intervention ?')) return; if ((pieces || []).filter(p => !p.prive).length) await sb.storage.from('pieces').remove(pieces.filter(p => !p.prive).map(p => p.path)); if ((pieces || []).filter(p => p.prive).length) await sb.storage.from('bureau').remove(pieces.filter(p => p.prive).map(p => p.path)); if ((i.photos || []).length) await sb.storage.from('retours').remove(i.photos.map(p => p.path)); const { error } = await sb.from('interventions').delete().eq('id', id); if (error) return toast('Erreur : ' + error.message); closePanel(); await refreshView(); toast('Intervention supprimée'); };
+  $('#del').onclick = async () => { let ids = [id];
+    if (i.serie) { const { data: nx } = await sb.from('interventions').select('id').eq('serie', i.serie).gt('date', i.date); if ((nx || []).length && confirm(`Cette intervention fait partie d’une série.\n\nOK : supprimer aussi les ${nx.length} suivantes\nAnnuler : choisir de ne supprimer que celle-ci`)) ids = ids.concat(nx.map(x => x.id)); else if (!confirm('Supprimer seulement cette date ?')) return; }
+    else if (!confirm('Supprimer définitivement cette intervention ?')) return;
+    const { data: pcs } = await sb.from('pieces').select('path,prive').in('intervention_id', ids);
+    if ((i.photos || []).length) await sb.storage.from('retours').remove(i.photos.map(p => p.path));
+    const { error } = await sb.from('interventions').delete().in('id', ids); if (error) return toast('Erreur : ' + error.message);
+    await rmIfAlone('pieces', (pcs || []).filter(p => !p.prive).map(p => p.path)); await rmIfAlone('bureau', (pcs || []).filter(p => p.prive).map(p => p.path));
+    closePanel(); await refreshView(); toast(ids.length > 1 ? ids.length + ' interventions supprimées' : 'Intervention supprimée'); };
 }
 
 /* ================= Formulaire intervention ================= */
@@ -323,8 +342,8 @@ async function form(i, opts) {
     <label>Type<select name="type"><option value="intervention">Intervention</option><option value="tache" ${i.type === 'tache' ? 'selected' : ''}>Tâche (matériel, déchetterie…)</option><option value="interne" ${i.type === 'interne' ? 'selected' : ''}>Rendez-vous / bureau (devis, réunion…)</option></select></label>
     <label>Date<input type="date" name="date" value="${i.date}" required></label>
     <label class="full inline pinbox"><input type="checkbox" name="epingle" ${i.epingle ? 'checked' : ''}> ${ic('pin')} Rappel dans la journée, sans heure précise (affiché en haut du planning)</label>
-    <label class="hr">De<input type="time" name="heure" value="${debut}" step="900"></label>
-    <label class="hr">À<input type="time" name="fin" value="${finH}" step="900"></label>
+    <label class="hr">De<input type="time" name="heure" value="${debut}" step="60"></label>
+    <label class="hr">À<input type="time" name="fin" value="${finH}" step="60"></label>
     <div class="full"><div style="font-size:13px;font-weight:800;color:var(--mute);margin-bottom:6px">Qui ? <span style="font-weight:600">· plusieurs = équipe</span></div>${who(techs.filter(t => !isBureau(t)), 'Techniciens')}${who(techs.filter(isBureau), 'Bureau')}</div>
     <label class="full">Adresse<input name="adresse" value="${E(i.adresse)}" autocomplete="off" placeholder="Tapez le début de l’adresse, puis choisissez dans la liste"></label>
     <label class="full">Complément d’adresse (facultatif)<input name="complement" value="${E(i.complement || '')}" autocomplete="off" placeholder="Résidence, bâtiment, étage, n° d’appartement, code…"></label>
@@ -337,10 +356,25 @@ async function form(i, opts) {
     <label class="full">${ic('package')} Matériel nécessaire <span style="font-weight:600">(une ligne par élément)</span><textarea name="materiel" placeholder="Ex. : Siphon PVC Ø40&#10;Flexible inox 50 cm">${E((i.materiel || []).join('\n'))}</textarea></label>
     ${upl('tech', ic('paperclip') + ' Pièces jointes pour le technicien', '(photos, vidéos, PDF · facultatif)')}
     ${upl('bur', ic('file') + ' Devis et documents du bureau', '(visibles uniquement par le bureau, jamais par les techniciens)')}
-    <label class="full inline"><input type="checkbox" name="recurrent" ${i.recurrent ? 'checked' : ''}> Intervention récurrente (contrat d’entretien)</label>
+    ${isNew ? `<div class="full rep"><label>Répéter<select name="rep"><option value="">Non, une seule fois</option><option value="j">Chaque jour, du lundi au vendredi (chantier sur plusieurs jours)</option><option value="s1">Chaque semaine</option><option value="s2">Toutes les 2 semaines</option><option value="m1">Chaque mois (relevé de compteur…)</option><option value="m3">Tous les 3 mois</option><option value="m6">Tous les 6 mois</option><option value="a1">Chaque année (contrat d’entretien)</option></select></label>
+      <label class="repu" hidden>Jusqu’au<input type="date" name="jusqu"></label><p class="repn" hidden></p></div>`
+    : (i.serie ? `<p class="full" style="margin:0;color:var(--mute);font-size:13px">↻ Fait partie d’une série : seule cette date est modifiée.</p>` : '')}
   </div><datalist id="villes">${['Istres', 'Miramas', 'Martigues', 'Fos-sur-Mer', 'Port-de-Bouc', 'Saint-Chamas', 'Cornillon-Confoux', 'Grans', 'Salon-de-Provence', 'Vitrolles', 'Marignane', 'Sausset-les-Pins', 'Port-Saint-Louis-du-Rhône', 'Aix-en-Provence', 'Marseille'].map(v => `<option value="${v}">`).join('')}</datalist></form>
   <footer><button class="btn btn-grad" form="f" type="submit" id="sv">${isNew ? 'Planifier' : 'Enregistrer'}</button><button class="btn btn-line" type="button" id="cc">Annuler</button></footer>`);
   const f = $('#f'); acIntervention(f, i); acAdresse(f);
+  const occ = () => { const rp = f.rep ? f.rep.value : '', start = f.date.value; if (!rp || !start) return [start];
+    const end = f.jusqu.value, out = [], d0 = new Date(start + 'T12:00'), lim = end ? new Date(end + 'T12:00') : null;
+    if (!lim || lim < d0) return [start];
+    const u = rp[0], n = +rp.slice(1) || 1;
+    for (let k = 0; out.length < 400; k++) { let d;
+      if (u === 'j') d = addDays(d0, k); else if (u === 's') d = addDays(d0, 7 * n * k);
+      else { const mm = u === 'a' ? 12 * k : n * k, y = d0.getFullYear(), m = d0.getMonth() + mm, last = new Date(y, m + 1, 0).getDate(); d = new Date(y, m, Math.min(d0.getDate(), last), 12); }
+      if (d > lim) break; if (u === 'j' && [0, 6].includes(d.getDay())) continue; out.push(iso(d)); }
+    return out; };
+  if (f.rep) { const upd = () => { const on = !!f.rep.value; f.querySelector('.repu').hidden = !on; const n = f.querySelector('.repn'); const o = on ? occ() : []; n.hidden = !on;
+      n.textContent = !on ? '' : !f.jusqu.value ? 'Choisissez la date de fin.' : o.length > 1 ? `${o.length} dates seront créées : du ${lbl(o[0])} au ${lbl(o[o.length - 1])}.` : 'La date de fin doit être après la date de début.'; };
+    f.rep.onchange = () => { if (f.rep.value && !f.jusqu.value) { const d = new Date(f.date.value + 'T12:00'), u = f.rep.value[0]; f.jusqu.value = iso(u === 'j' ? addDays(d, 4) : u === 's' ? addDays(d, 7 * 8) : new Date(d.getFullYear() + 1, d.getMonth(), d.getDate() - 1, 12)); } upd(); };
+    f.jusqu.onchange = upd; f.date.addEventListener('change', upd); }
   const syncPin = () => f.querySelectorAll('.hr').forEach(l => l.style.display = f.epingle.checked ? 'none' : ''); f.epingle.onchange = syncPin; syncPin();
   let dur = mins(f.fin.value) - mins(f.heure.value);
   f.heure.onchange = () => { f.fin.value = hm(Math.min(mins(f.heure.value) + Math.max(dur, 15), 23 * 60 + 45)); };
@@ -365,24 +399,28 @@ async function form(i, opts) {
     const pin = !!fd.get('epingle'), d1 = mins(fd.get('heure') || '09:00'), d2 = mins(fd.get('fin') || '10:00');
     if (!pin && d2 <= d1) return toast('L’heure de fin doit être après l’heure de début');
     const btn = $('#sv'); btn.disabled = true; btn.textContent = 'Enregistrement…';
-    const row = { type: fd.get('type'), date: fd.get('date'), epingle: pin, heure: pin ? null : hm(d1), duree: pin ? 0 : Math.round((d2 - d1) / 15) / 4, travaux: fd.get('travaux'), adresse: fd.get('adresse'), complement: fd.get('complement') || null, cp: fd.get('cp'), ville: fd.get('ville'), client: fd.get('client'), occupant: fd.get('occupant'), tel: fd.get('tel'),
-      materiel: String(fd.get('materiel') || '').split('\n').map(x => x.trim()).filter(Boolean), recurrent: !!fd.get('recurrent'), demande_id: i.demande_id || null, chantier_id: i.chantier_id || null, affaire_id: i.affaire_id || null, client_id: i.client_id || null };
+    const row = { type: fd.get('type'), date: fd.get('date'), epingle: pin, heure: pin ? null : hm(d1), duree: pin ? 0 : Math.round((d2 - d1) / 60 * 10000) / 10000, travaux: fd.get('travaux'), adresse: fd.get('adresse'), complement: fd.get('complement') || null, cp: fd.get('cp'), ville: fd.get('ville'), client: fd.get('client'), occupant: fd.get('occupant'), tel: fd.get('tel'),
+      materiel: String(fd.get('materiel') || '').split('\n').map(x => x.trim()).filter(Boolean), recurrent: !!fd.get('rep') || !!i.recurrent, demande_id: i.demande_id || null, chantier_id: i.chantier_id || null, affaire_id: i.affaire_id || null, client_id: i.client_id || null };
     try {
-      let id = i.id;
-      if (isNew) { const r = await sb.from('interventions').insert({ ...row, created_by: me.id, updated_by: me.id }).select('id').single(); if (r.error) throw r.error; id = r.data.id; }
+      let id = i.id, ids = [];
+      const dates = isNew ? occ() : [row.date];
+      if (isNew && dates.length > 1 && !confirm(`Créer ${dates.length} interventions, du ${lbl(dates[0])} au ${lbl(dates[dates.length - 1])} ?`)) { btn.disabled = false; btn.textContent = 'Planifier'; return; }
+      if (isNew) { const serie = dates.length > 1 ? (crypto.randomUUID ? crypto.randomUUID() : null) : null;
+        const r = await sb.from('interventions').insert(dates.map(dt => ({ ...row, date: dt, serie, created_by: me.id, updated_by: me.id }))).select('id,date'); if (r.error) throw r.error;
+        ids = r.data.sort((a, b) => a.date.localeCompare(b.date)).map(x => x.id); id = ids[0]; }
       else { const r = await sb.from('interventions').update(row).eq('id', id); if (r.error) throw r.error; }
       const cur = isNew ? [] : i.techs, plus = ts.filter(t => !cur.includes(t)), moins = cur.filter(t => !ts.includes(t));
-      if (plus.length) { const r = await sb.from('intervention_techs').insert(plus.map(t => ({ intervention_id: id, tech_id: t }))); if (r.error) throw r.error; }
+      if (plus.length) { const r = await sb.from('intervention_techs').insert((ids.length ? ids : [id]).flatMap(x => plus.map(t => ({ intervention_id: x, tech_id: t })))); if (r.error) throw r.error; }
       for (const t of moins) await sb.from('intervention_techs').delete().match({ intervention_id: id, tech_id: t });
-      for (const pid of removed) { const p = existing.find(x => x.id === pid); await sb.storage.from(p.prive ? 'bureau' : 'pieces').remove([p.path]); await sb.from('pieces').delete().eq('id', pid); }
+      for (const pid of removed) { const p = existing.find(x => x.id === pid); await sb.from('pieces').delete().eq('id', pid); await rmIfAlone(p.prive ? 'bureau' : 'pieces', [p.path]); }
       const files = add.tech.map(x => [x, false]).concat(add.bur.map(x => [x, true]));
       for (let k = 0; k < files.length; k++) { const [file, prive] = files[k]; btn.textContent = `Envoi des fichiers ${k + 1}/${files.length}…`;
         const path = `${id}/${Date.now()}-${k}-${file.name.normalize('NFD').replace(/[^\w.\-]+/g, '_')}`;
         const up = await sb.storage.from(prive ? 'bureau' : 'pieces').upload(path, file, { contentType: file.type || 'application/octet-stream' }); if (up.error) throw new Error('envoi de « ' + file.name + ' » impossible (' + up.error.message + ')');
-        const r = await sb.from('pieces').insert({ intervention_id: id, nom: file.name, type: kindOf(file), path, prive }); if (r.error) throw r.error; }
+        const r = await sb.from('pieces').insert((ids.length ? ids : [id]).map(x => ({ intervention_id: x, nom: file.name, type: kindOf(file), path, prive }))); if (r.error) throw r.error; }
       if (opts.demande) await sb.from('demandes').update({ statut: 'planifiee', traitee_par: me.id, traitee_le: new Date().toISOString() }).eq('id', opts.demande.id);
       closePanel(); week = monday(new Date(row.date + 'T12:00')); if (mode === 'jour') day = row.date; await go('planning');
-      toast((pin ? 'Rappel ajouté' : (isNew ? 'Planifié' : 'Enregistré')) + ' pour ' + names(ts));
+      toast((pin ? 'Rappel ajouté' : (isNew ? (ids.length > 1 ? ids.length + ' dates planifiées' : 'Planifié') : 'Enregistré')) + ' pour ' + names(ts));
     } catch (er) { btn.disabled = false; btn.textContent = isNew ? 'Planifier' : 'Enregistrer'; toast('Erreur : ' + (er.message || er)); }
   };
 }

@@ -69,8 +69,9 @@ async function start() {
   }
   await refreshPending(); render(); flush(); subscribe();
 }
+const NBW = 6; let wk = 0;
 async function load() {
-  const a = iso(monday(new Date())), b = iso(addDays(monday(new Date()), 6));
+  const a = iso(monday(new Date())), b = iso(addDays(monday(new Date()), 7 * NBW - 1));
   const { data, error } = await sb.from('interventions').select('*, mine:intervention_techs!inner(tech_id), pieces(*), demande:demandes(ref,message,photos)').eq('mine.tech_id', tech.id).gte('date', a).lte('date', b);
   if (error) throw error;
   const ids = (data || []).map(i => i.id);
@@ -134,7 +135,7 @@ function list() {
   const todayJobs = timed.filter(i => i.date === today && i.type === 'intervention').sort((a, b) => (a.heure || '').localeCompare(b.heure || ''));
   const pins = mine.filter(i => i.date === today && i.epingle), pinsLeft = pins.filter(i => i.statut !== 'controle');
   const done = todayJobs.filter(i => i.statut === 'controle').length, next = todayJobs.find(i => i.statut !== 'controle');
-  const days = tab === 'jour' ? [today] : [...Array(6)].map((_, k) => iso(addDays(monday(new Date()), k)));
+  const m0 = addDays(monday(new Date()), 7 * wk), days = tab === 'jour' ? [today] : [...Array(7)].map((_, k) => iso(addDays(m0, k))).filter((d, k) => k < 5 || mine.some(i => i.date === d));
   const job = i => `<button class="job ${i.type !== 'intervention' ? 'int' : ''} ${i.statut === 'controle' ? 'done' : ''}" data-id="${i.id}" style="--sc:${stripe(i.techs)}">
       <div class="h">${hh(i.heure)}<small>${fin(i.heure, i.duree)}</small></div>
       <div class="b"><div class="ad">${E(i.type === 'intervention' ? (i.adresse || i.ville) : i.travaux)}</div><div class="vi">${E(i.type === 'intervention' ? i.ville : (i.type === 'interne' ? 'Interne' : 'Tâche'))}${i.pieces.length ? ' · ' + ic('paperclip') : ''}${i.statut === 'controle' ? ' · ✓ Terminée' : ''}</div>${i.techs.length > 1 ? `<div class="teamline"><span class="avs">${avatars(i.techs)}</span>${E(i.techs.map(x => T(x).nom).join(' + '))}</div>` : ''}</div>
@@ -152,12 +153,14 @@ function list() {
     ${tab === 'jour' && pins.length ? `<div class="pins"><h2>${ic('pin')} À faire aujourd’hui <span>${pins.length - pinsLeft.length}/${pins.length}</span></h2><p>Pas d’heure précise : quand vous avez un moment dans la journée.</p>${pins.map(pin).join('')}</div>` : ''}
     ${tab === 'jour' && todayJobs.length ? `<div class="prog"><span>${done} / ${todayJobs.length} interventions</span><div class="bar"><i style="width:${done / todayJobs.length * 100}%"></i></div></div>` : ''}
     ${tab === 'jour' && todayJobs.length && !next && !pinsLeft.length ? `<div class="done-box">${ic('check-circle')} Journée terminée, tout est envoyé au bureau.</div>` : ''}
-    <div class="tabs"><button data-tab="jour" class="${tab === 'jour' ? 'on' : ''}">Aujourd’hui</button><button data-tab="semaine" class="${tab === 'semaine' ? 'on' : ''}">Ma semaine</button></div>
+    <div class="tabs"><button data-tab="jour" class="${tab === 'jour' ? 'on' : ''}">Aujourd’hui</button><button data-tab="semaine" class="${tab === 'semaine' ? 'on' : ''}">Mes semaines</button></div>
+    ${tab === 'semaine' ? `<div class="wkn"><button id="wkp" ${wk ? '' : 'disabled'} aria-label="Semaine précédente">‹</button><span>${wk === 0 ? 'Cette semaine' : wk === 1 ? 'Semaine prochaine' : 'Semaine du ' + lbl(iso(m0))}</span><button id="wkn" ${wk < NBW - 1 ? '' : 'disabled'} aria-label="Semaine suivante">›</button></div>` : ''}
     ${days.map(block).join('')}
     <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:24px"><button class="btn" id="mdp">Mon mot de passe</button><button class="btn" id="out">Se déconnecter</button></div>
   </div>`;
   scr().querySelectorAll('[data-id]').forEach(b => b.onclick = () => { openId = b.dataset.id; render(); scr().querySelector('.scroll').scrollTop = 0; });
-  scr().querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { tab = b.dataset.tab; render(); });
+  scr().querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { tab = b.dataset.tab; wk = 0; render(); });
+  if ($('#wkp')) { $('#wkp').onclick = () => { wk = Math.max(0, wk - 1); render(); }; $('#wkn').onclick = () => { wk = Math.min(NBW - 1, wk + 1); render(); }; }
   scr().querySelectorAll('[data-nav]').forEach(b => b.onclick = () => navTo(items.find(x => x.id === b.dataset.nav)));
   scr().querySelectorAll('[data-pin]').forEach(b => b.onclick = async () => { const i = items.find(x => x.id === b.dataset.pin); i.statut = 'controle'; render();
     await enqueue({ kind: 'valider', iid: i.id, commentaire: 'Tâche faite à ' + nowHHMM(), photos: [] }); toast('✓ Tâche faite, le bureau est prévenu'); });

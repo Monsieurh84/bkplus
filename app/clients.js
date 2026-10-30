@@ -84,7 +84,7 @@ async function listClients() {
   $('#main').innerHTML = `<div class="head"><h1>Clients</h1>
     <input class="search" id="qc" type="search" placeholder="Rechercher : nom, ville, adresse, e-mail…" value="${E(qC)}">
     <div class="seg">${[['tous', 'Tous'], ['particulier', 'Particuliers'], ['entreprise', 'Entreprises']].map(([k, l]) => `<button data-tc="${k}" class="${typeC === k ? 'on' : ''}">${l}</button>`).join('')}</div>
-    <button class="btn btn-grad" id="ncl">+ Nouveau client</button></div><div id="clist"><div class="loading">Chargement…</div></div>`;
+    <button class="btn btn-line" id="xcl" title="Fichier .xlsx au format d’import d’Isanet">${ic('file')} Exporter pour Isanet <b id="xnc"></b></button><button class="btn btn-grad" id="ncl">+ Nouveau client</button></div><div id="clist"><div class="loading">Chargement…</div></div>`;
   const run = async () => {
     const { data, count, error } = await searchClients(qC, 80, typeC); if (error) return toast('Erreur : ' + error.message);
     if (!qC && typeC === 'tous') clientsCount = count;
@@ -95,6 +95,7 @@ async function listClients() {
     document.querySelectorAll('[data-cl]').forEach(tr => tr.onclick = () => clientForm(data.find(c => c.id === tr.dataset.cl)));
     if ($('#ncl2')) $('#ncl2').onclick = () => clientForm(null, { nom: qC });
   };
+  $('#xcl').onclick = () => exportIsanet('clients'); nbExport('clients');
   let tm; $('#qc').oninput = e => { qC = e.target.value.trim(); clearTimeout(tm); tm = setTimeout(run, 220); };
   document.querySelectorAll('[data-tc]').forEach(b => b.onclick = () => { typeC = b.dataset.tc; document.querySelectorAll('[data-tc]').forEach(x => x.classList.toggle('on', x === b)); run(); });
   $('#ncl').onclick = () => clientForm(null);
@@ -156,7 +157,7 @@ async function listArticles() {
       : '<div class="empty">Aucun article trouvé.</div>'}`;
     document.querySelectorAll('[data-ar]').forEach(tr => tr.onclick = () => articleForm(data.find(a => a.id === tr.dataset.ar)));
   };
-  $('#xart').onclick = exportArticlesIsanet; nbExport();
+  $('#xart').onclick = () => exportIsanet('articles'); nbExport('articles');
   let tm; $('#qart').oninput = e => { qArt = e.target.value.trim(); clearTimeout(tm); tm = setTimeout(run, 220); };
   document.querySelectorAll('[data-ta]').forEach(b => b.onclick = () => { typeArt = b.dataset.ta; document.querySelectorAll('[data-ta]').forEach(x => x.classList.toggle('on', x === b)); run(); });
   $('#nart').onclick = () => articleForm(null);
@@ -186,23 +187,27 @@ function articleForm(a) {
   if ($('#ardel')) $('#ardel').onclick = async () => { const { error } = await sb.from('articles').update({ actif: false }).eq('id', a.id); if (error) return toast('Erreur : ' + error.message); closePanel(); toast('Article retiré du catalogue'); listArticles(); };
 }
 
-/* ================= Export vers Isanet (import par fichier, pas d'API chez Isanet) ================= */
-const ISANET_ART = ['ID', 'NOM', 'REFERENCE', 'DESCRIPTION', 'TYPE', 'PRIX UNITAIRE', 'PRIX UNITAIRE FOURNISSEUR (HT)', 'UNITÉ', 'STOCK', 'TVA (%)', 'CODE COMPTABLE', 'CATEGORIE'];
+/* ================= Export vers Isanet (pas d'API chez Isanet : import par fichier, mêmes colonnes que leurs exports) ================= */
+const ISANET = {
+  articles: { titre: 'article', menu: 'Mes articles', badge: 'xn', head: ['ID', 'NOM', 'REFERENCE', 'DESCRIPTION', 'TYPE', 'PRIX UNITAIRE', 'PRIX UNITAIRE FOURNISSEUR (HT)', 'UNITÉ', 'STOCK', 'TVA (%)', 'CODE COMPTABLE', 'CATEGORIE'],
+    row: a => [a.id.startsWith('bk-') ? '' : a.id, a.nom || '', a.ref || '', a.description || '', a.type || 'Produit', a.pu_ht ?? '', a.pu_fournisseur ?? '', '', a.stock ?? '', a.tva ?? 20, '', ''] },
+  clients: { titre: 'client', menu: 'Mes contacts', badge: 'xnc', head: ['ID', 'STATUT', 'CATÉGORIE', 'TYPE', 'NOM', 'CONTACT PRÉNOM', 'CONTACT NOM', 'TÉLÉPHONE', 'E-MAIL', 'ADRESSE', "COMPLÉMENT D'ADRESSE", 'CODE POSTAL', 'VILLE', 'PAYS', 'N°SIRET', 'N°TVA INTRACOMMUNAUTAIRE', 'SITE WEB', 'COMMENTAIRES', 'REFERENCE CLIENT', 'IBAN', 'BIC', 'CODE AUXILIAIRE', 'C.A.'],
+    row: c => { const ent = c.type === 'entreprise', ct = String(c.contact || '').trim().split(/\s+/);
+      return [c.id.startsWith('bk-') ? '' : c.id, ent ? 'CLIENT ENTREPRISE' : 'CLIENT PARTICULIER', ent ? 'Entreprise' : 'Particulier', 'Client', c.nom || '', ent && c.contact ? ct[0] : '', ent && c.contact ? ct.slice(1).join(' ') : '', c.tel || '', c.email || '', c.adresse || '', c.complement || '', c.cp || '', c.ville || '', 'France', c.siret || '', '', '', c.notes || '', '', '', '', c.code_aux || '', '']; } }
+};
 let xlsxP = null;
 const loadXLSX = () => xlsxP || (xlsxP = new Promise((ok, ko) => { if (window.XLSX) return ok(window.XLSX); const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload = () => ok(window.XLSX); s.onerror = () => { xlsxP = null; ko(new Error('Impossible de charger le module Excel')); }; document.head.appendChild(s); }));
-async function nbExport() { const { count } = await sb.from('articles').select('id', { count: 'exact', head: true }).eq('a_exporter', true); const el = $('#xn'); if (el) el.textContent = count ? '(' + count + ')' : ''; return count || 0; }
-async function exportArticlesIsanet() {
-  const { data, error } = await sb.from('articles').select('*').eq('a_exporter', true).order('nom'); if (error) return toast('Erreur : ' + error.message);
-  if (!data.length) return toast('Rien à exporter : tous les articles sont déjà dans Isanet');
-  const nv = data.filter(a => a.id.startsWith('bk-')).length;
-  if (!confirm(`${data.length} article${data.length > 1 ? 's' : ''} à envoyer dans Isanet (${nv} nouveau${nv > 1 ? 'x' : ''}, ${data.length - nv} modifié${data.length - nv > 1 ? 's' : ''}).\n\nLe fichier va se télécharger. Ensuite dans Isanet : Mes articles › Importer › Choisir un fichier › Importer.`)) return;
+async function nbExport(t) { const { count } = await sb.from(t).select('id', { count: 'exact', head: true }).eq('a_exporter', true); const el = $('#' + ISANET[t].badge); if (el) el.textContent = count ? '(' + count + ')' : ''; return count || 0; }
+async function exportIsanet(t) {
+  const cf = ISANET[t], { data, error } = await sb.from(t).select('*').eq('a_exporter', true).order('nom'); if (error) return toast('Erreur : ' + error.message);
+  if (!data.length) return toast(`Rien à exporter : tous les ${cf.titre}s sont déjà dans Isanet`);
+  const nv = data.filter(a => a.id.startsWith('bk-')).length, md = data.length - nv, s = n => n > 1 ? 's' : '';
+  if (!confirm(`${data.length} ${cf.titre}${s(data.length)} à envoyer dans Isanet (${nv} nouveau${nv > 1 ? 'x' : ''}, ${md} modifié${s(md)}).\n\nLe fichier va se télécharger. Ensuite dans Isanet : ${cf.menu} › Importer › Choisir un fichier › Importer.`)) return;
   try {
-    const X = await loadXLSX();
-    const rows = data.map(a => [a.id.startsWith('bk-') ? '' : a.id, a.nom || '', a.ref || '', a.description || '', a.type || 'Produit', a.pu_ht ?? '', a.pu_fournisseur ?? '', '', a.stock ?? '', a.tva ?? 20, '', '']);
-    const ws = X.utils.aoa_to_sheet([ISANET_ART, ...rows]); ws['!cols'] = ISANET_ART.map((h, k) => ({ wch: [10, 34, 14, 50][k] || 14 }));
-    const wb = X.utils.book_new(); X.utils.book_append_sheet(wb, ws, 'Articles');
-    X.writeFile(wb, `import-articles-BK-${iso(new Date())}.xlsx`);
-    const r = await sb.from('articles').update({ a_exporter: false }).in('id', data.map(a => a.id)); if (r.error) throw r.error;
-    toast('Fichier prêt : importez-le dans Isanet'); nbExport();
+    const X = await loadXLSX(), ws = X.utils.aoa_to_sheet([cf.head, ...data.map(cf.row)]), wb = X.utils.book_new();
+    ws['!cols'] = cf.head.map(h => ({ wch: Math.max(10, Math.min(40, h.length + 4)) })); X.utils.book_append_sheet(wb, ws, 'Export');
+    X.writeFile(wb, `import-${t}-BK-${iso(new Date())}.xlsx`);
+    const r = await sb.from(t).update({ a_exporter: false }).in('id', data.map(a => a.id)); if (r.error) throw r.error;
+    toast('Fichier prêt : importez-le dans Isanet'); nbExport(t);
   } catch (e) { toast('Erreur : ' + (e.message || e)); }
 }
