@@ -277,13 +277,24 @@ function closePanel() { const P = $('#panel'); P.classList.remove('on'); P.setAt
 $('#scrim').onclick = closePanel; document.addEventListener('keydown', e => { if (e.key === 'Escape') closePanel(); });
 const MIME = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', heic: 'image/heic', heif: 'image/heif', mov: 'video/quicktime', mp4: 'video/mp4', m4v: 'video/mp4', pdf: 'application/pdf', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
 /* Copie le fichier en mémoire tout de suite (une photo glissée depuis Messages ou WhatsApp peut disparaître juste après le dépôt) et corrige son type s'il est vide */
-async function fixFile(f) {
+async function fixFile(f, quiet) {
   if (!f) return null; const ext = (f.name.split('.').pop() || '').toLowerCase(), type = f.type || MIME[ext] || 'application/octet-stream';
   try { const buf = await f.arrayBuffer(); if (!buf.byteLength) throw new Error('vide'); const nm = !f.name || /^image\.(png|tiff?|jpe?g)$/i.test(f.name) ? 'photo-' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '-' + Math.random().toString(36).slice(2, 5) + '.' + (type.split('/')[1] || 'png').replace('jpeg', 'jpg') : f.name; return new File([buf], nm, { type }); }
-  catch (e) { toast('Cette photo ne peut pas être glissée depuis Messages : faites clic droit › Copier sur la photo, puis Cmd + V ici'); return null; }
+  catch (e) { if (!quiet) toast('Cette photo ne peut pas être glissée depuis Messages : faites clic droit › Copier sur la photo, puis Cmd + V ici'); return null; }
 }
 /* Coller (Cmd+V) une photo copiée depuis Messages, WhatsApp, Aperçu… dans le formulaire ouvert */
-document.addEventListener('paste', e => { const fl = [...(e.clipboardData?.files || [])]; if (!fl.length || !window.__bkPaste) return; if (window.__bkPaste(fl)) e.preventDefault(); });
+/* Messages (Mac) met dans le presse-papiers un lien vers son fichier, que Chrome n'a pas le droit de lire : on récupère alors l'image elle-même via l'API presse-papiers */
+async function clipImages() {
+  if (!navigator.clipboard || !navigator.clipboard.read) return [];
+  const out = []; for (const it of await navigator.clipboard.read()) { const t = it.types.find(x => x.startsWith('image/')); if (!t) continue; const b = await it.getType(t);
+    out.push(new File([b], 'photo-' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '-' + Math.random().toString(36).slice(2, 5) + '.' + (t.split('/')[1] || 'png'), { type: t })); }
+  return out;
+}
+async function pasteFiles(fl) { const ok = (await Promise.all(fl.map(f => fixFile(f, true)))).filter(Boolean); if (ok.length === fl.length && ok.length) return ok;
+  try { const c = await clipImages(); if (c.length) return ok.concat(c); } catch (e) { toast('Autorisez l’accès au presse-papiers (bouton « Autoriser » en haut de Chrome), puis refaites Cmd + V'); return ok; }
+  if (!ok.length) toast('Impossible de lire cette photo. Dans Messages : clic droit › Copier, puis Cmd + V ici'); return ok; }
+document.addEventListener('paste', e => { if (!window.__bkPaste) return; const fl = [...(e.clipboardData?.files || [])], img = [...(e.clipboardData?.items || [])].some(x => x.kind === 'file' || x.type.startsWith('image/'));
+  if (!fl.length && !img) return; e.preventDefault(); pasteFiles(fl).then(ok => { if (ok.length) window.__bkPaste(ok, true); }); });
 /* Une pièce jointe peut être partagée par toutes les dates d'une série : on ne supprime le fichier que s'il n'est plus utilisé */
 async function rmIfAlone(bucket, paths) { paths = [...new Set(paths)]; if (!paths.length) return; const { data } = await sb.from('pieces').select('path').in('path', paths); const used = new Set((data || []).map(x => x.path)); const free = paths.filter(p => !used.has(p)); if (free.length) await sb.storage.from(bucket).remove(free); }
 const kindOf = f => f.type.startsWith('image/') ? 'photo' : f.type.startsWith('video/') ? 'video' : f.type === 'application/pdf' ? 'pdf' : 'autre';
@@ -392,7 +403,8 @@ async function form(i, opts) {
     z.addEventListener('dragleave', () => { if (--dc <= 0) { dc = 0; z.classList.remove('drop'); } });
     z.addEventListener('drop', e => { e.preventDefault(); dc = 0; z.classList.remove('drop'); addFiles(k, e.dataTransfer.files); }); });
   let pasteK = 'tech'; ['tech', 'bur'].forEach(k => $('#pj-' + k).closest('.upl').addEventListener('pointerdown', () => { pasteK = k; }));
-  window.__bkPaste = fl => { if (!document.body.contains(f)) return false; addFiles(pasteK, fl); return true; };
+  window.__bkPaste = (fl, ready) => { if (!document.body.contains(f)) return false; ready ? addReady(pasteK, fl) : addFiles(pasteK, fl); return true; };
+  const addReady = (k, ok) => { add[k] = add[k].concat(ok); draw(k); toast(ok.length > 1 ? ok.length + ' photos ajoutées' : 'Photo ajoutée'); };
   $('#cc').onclick = closePanel;
   f.onsubmit = async e => {
     e.preventDefault(); const fd = new FormData(f), ts = fd.getAll('techs'); if (!ts.length) return toast('Choisissez au moins une personne');
