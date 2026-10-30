@@ -159,7 +159,7 @@ function planning() {
    <div class="seg"><button data-m="jour" class="${mode === 'jour' ? 'on' : ''}">Jour</button><button data-m="semaine" class="${mode === 'semaine' ? 'on' : ''}">Semaine</button></div>
    ${mode === 'semaine' ? `<label class="tgl"><input type="checkbox" id="we" ${showWE ? 'checked' : ''}> Sam. et dim.</label>` : ''}
    <button class="btn btn-line" id="npin">${ic('pin')} Rappel du jour</button><button class="btn btn-grad" id="nnew">+ Planifier</button></div>
-   <div class="people">${techs.map(t => `<button data-who="${t.id}" class="${hidden.has(t.id) ? 'off' : ''}" style="--c:${t.couleur}"><i></i>${E(t.nom)}${isBureau(t) ? ' <small>bureau</small>' : ''}</button>`).join('')}<span class="hint">Cliquez pour afficher ou masquer · double-clic dans le planning pour créer · clic droit sur une intervention pour la dupliquer</span></div>`;
+   <div class="people">${techs.map(t => `<button data-who="${t.id}" class="${hidden.has(t.id) ? 'off' : ''}" style="--c:${t.couleur}"><i></i>${E(t.nom)}${isBureau(t) ? ' <small>bureau</small>' : ''}</button>`).join('')}<span class="hint">Cliquez pour afficher ou masquer · glissez deux doigts ou ← → pour changer de semaine · double-clic dans le planning pour créer · clic droit sur une intervention pour la dupliquer</span></div>`;
   if (!techs.length) { $('#main').innerHTML = h + `<div class="empty">Aucun membre de l’équipe enregistré.</div>`; return; }
   const hours = [...Array(H1 - H0)].map((_, k) => `<div class="hr" style="height:${px}px"><span>${pad(H0 + k)}:00</span></div>`).join('');
   const nLanes = d => Math.max(1, vis.filter(t => inter.some(i => i.date === d && i.techs.includes(t.id) && !isAllDay(i))).length);
@@ -180,6 +180,17 @@ function planning() {
   const sc = $('.cal'); if (sc) { const first = Math.min(...inter.filter(i => !isAllDay(i)).map(i => mins(i.heure)), 8 * 60); sc.scrollTop = Math.max(0, (first - H0 * 60 - 30) / 60 * px); }
   const nav = async n => { if (mode === 'semaine') week = addDays(week, 7 * n); else { let x = addDays(new Date(day + 'T12:00'), n); if (!showWE) while ([0, 6].includes(x.getDay())) x = addDays(x, n); day = iso(x); } await loadPlanning(); planning(); };
   $('#prev').onclick = () => nav(-1); $('#next').onclick = () => nav(1);
+  /* Glisser deux doigts sur le trackpad (ou flèches ← → du clavier, ou balayage sur iPad) pour changer de semaine */
+  const cal = $('.cal'); let acc = 0, busy = false, tmw;
+  const go1 = async n => { if (busy) return; busy = true; acc = 0; await nav(n); setTimeout(() => { busy = false; }, 450); };
+  if (cal) {
+    cal.addEventListener('wheel', e => { if (Math.abs(e.deltaX) <= Math.abs(e.deltaY) * 1.2) return;
+      const max = cal.scrollWidth - cal.clientWidth; if (max > 2 && ((e.deltaX > 0 && cal.scrollLeft < max - 1) || (e.deltaX < 0 && cal.scrollLeft > 1))) return;
+      e.preventDefault(); acc += e.deltaX; clearTimeout(tmw); tmw = setTimeout(() => { acc = 0; }, 250);
+      if (Math.abs(acc) > 140) go1(acc > 0 ? 1 : -1); }, { passive: false });
+    let tx = null, ty = 0; cal.addEventListener('touchstart', e => { tx = e.touches[0].clientX; ty = e.touches[0].clientY; }, { passive: true });
+    cal.addEventListener('touchend', e => { if (tx === null) return; const dx = e.changedTouches[0].clientX - tx, dy = e.changedTouches[0].clientY - ty; tx = null; if (Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy) * 1.5) go1(dx < 0 ? 1 : -1); }); }
+  document.onkeydown = e => { if (view !== 'planning' || $('#panel.on, .ctx') || /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) return; if (e.key === 'ArrowRight') go1(1); else if (e.key === 'ArrowLeft') go1(-1); };
   $('#tod').onclick = async () => { week = monday(new Date()); day = iso(new Date()); await loadPlanning(); planning(); };
   document.querySelectorAll('[data-m]').forEach(b => b.onclick = async () => { mode = b.dataset.m; if (mode === 'jour' && (day < iso(week) || day > iso(addDays(week, 6)))) day = iso(week); await loadPlanning(); planning(); });
   if ($('#we')) $('#we').onchange = async e => { showWE = e.target.checked; saveUI(); await loadPlanning(); planning(); };
@@ -358,12 +369,12 @@ async function form(i, opts) {
     <label class="hr">De<input type="time" name="heure" value="${debut}" step="60"></label>
     <label class="hr">À<input type="time" name="fin" value="${finH}" step="60"></label>
     <div class="full"><div style="font-size:13px;font-weight:800;color:var(--mute);margin-bottom:6px">Qui ? <span style="font-weight:600">· plusieurs = équipe</span></div>${who(techs.filter(t => !isBureau(t)), 'Techniciens')}${who(techs.filter(isBureau), 'Bureau')}</div>
+    <label>Client (agence, syndic, particulier)<input name="client" value="${E(i.client)}"></label>
+    <label>Occupant<input name="occupant" value="${E(i.occupant)}"></label>
     <label class="full">Adresse<input name="adresse" value="${E(i.adresse)}" autocomplete="off" placeholder="Tapez le début de l’adresse, puis choisissez dans la liste"></label>
     <label class="full">Complément d’adresse (facultatif)<input name="complement" value="${E(i.complement || '')}" autocomplete="off" placeholder="Résidence, bâtiment, étage, n° d’appartement, code…"></label>
     <label>Code postal<input name="cp" value="${E(i.cp)}" inputmode="numeric" maxlength="5"></label>
     <label>Ville<input name="ville" value="${E(i.ville)}" list="villes"></label>
-    <label>Client (agence, syndic, particulier)<input name="client" value="${E(i.client)}"></label>
-    <label>Occupant<input name="occupant" value="${E(i.occupant)}"></label>
     <label class="full">Téléphone de l’occupant<input name="tel" type="tel" value="${E(i.tel)}"></label>
     <label class="full">Travaux à effectuer<textarea name="travaux" required>${E(i.travaux)}</textarea></label>
     <label class="full">${ic('package')} Matériel nécessaire <span style="font-weight:600">(une ligne par élément)</span><textarea name="materiel" placeholder="Ex. : Siphon PVC Ø40&#10;Flexible inox 50 cm">${E((i.materiel || []).join('\n'))}</textarea></label>
