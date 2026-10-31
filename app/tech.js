@@ -184,7 +184,7 @@ async function fiche() {
   const d = drafts[i.id] = drafts[i.id] || (await DB.get('draft-' + i.id).catch(() => null)) || { photos: [], commentaire: '' };
   const done = i.statut === 'controle' || i.statut === 'cloturee', others = i.techs.filter(x => x !== tech.id), step = { planifiee: 0, enroute: 1, encours: 2, controle: 3, cloturee: 3 }[i.statut];
   const smsBody = encodeURIComponent(`Bonjour, c’est ${tech.nom} de BK+ Plomberie. Je suis en route pour votre intervention, j’arrive dans une vingtaine de minutes.`);
-  const docs = [...i.pieces.map(p => ({ kind: p.type, name: p.nom, bucket: 'pieces', path: p.path })), ...((i.demande?.photos) || []).map(p => ({ kind: 'photo', name: p.label, bucket: 'demandes', path: p.path }))];
+  const docs = [...i.pieces.map(p => ({ kind: p.type, name: (p.prive ? '🔒 ' : '') + p.nom, bucket: p.prive ? 'bureau' : 'pieces', path: p.path })), ...((i.demande?.photos) || []).map(p => ({ kind: 'photo', name: p.label, bucket: 'demandes', path: p.path }))];
   const isJob = i.type === 'intervention';
   scr().innerHTML = topBar(`${i.epingle ? ic('pin') : hh(i.heure)} · ${E(i.ville || 'Tâche')}`, lbl(i.date), true) + previewBar() + `<div class="scroll">
     ${done ? '<div class="done-box">✓ Terminée et envoyée au bureau</div>' : ''}
@@ -220,7 +220,7 @@ async function fiche() {
   scr().querySelectorAll('[data-lb]').forEach(img => img.onclick = () => { lb.innerHTML = `<img src="${img.src}" alt=""><button aria-label="Fermer">×</button>`; lb.classList.add('on'); });
   if (docs.length) { const byB = {}; docs.forEach(x => (byB[x.bucket] = byB[x.bucket] || []).push(x.path)); const urls = {}; for (const b in byB) Object.assign(urls, await signedMap(b, byB[b]));
     docs.forEach((p, k) => { p.url = urls[p.path]; const m = scr().querySelector(`[data-dm="${k}"]`); if (m && p.kind === 'photo' && p.url) m.style.backgroundImage = `url('${p.url}')`; });
-    scr().querySelectorAll('[data-doc]').forEach(b => b.onclick = () => { const p = docs[+b.dataset.doc]; if (!p.url) return toast('Document disponible avec du réseau');
+    scr().querySelectorAll('[data-doc]').forEach(b => b.onclick = () => { const p = docs[+b.dataset.doc]; if (!p.url) return toast(online ? 'Document introuvable, prévenez le bureau' : 'Document disponible avec du réseau');
       if (p.kind === 'photo') { lb.innerHTML = `<img src="${p.url}" alt=""><button aria-label="Fermer">×</button>`; lb.classList.add('on'); }
       else if (p.kind === 'video') { lb.innerHTML = `<video src="${p.url}" controls autoplay playsinline style="max-width:100%;max-height:100%;border-radius:12px"></video><button aria-label="Fermer">×</button>`; lb.classList.add('on'); }
       else window.open(p.url, '_blank'); }); }
