@@ -90,7 +90,8 @@ function listen() {
 
 /* ================= Planning ================= */
 const H0 = 7, H1 = 20;                     // plage horaire affichée
-let showWE = false, hidden = new Set(), planKey = '';
+let showWE = false, hidden = new Set(), planKey = '', pxFit = 0;
+window.addEventListener('resize', () => { clearTimeout(window.__fitT); window.__fitT = setTimeout(() => { if (view === 'planning') { pxFit = 0; planning(); } }, 200); });
 try { showWE = localStorage.getItem('bk-we') === '1'; hidden = new Set(JSON.parse(localStorage.getItem('bk-hide') || '[]')); } catch (e) { }
 const saveUI = () => { try { localStorage.setItem('bk-we', showWE ? '1' : '0'); localStorage.setItem('bk-hide', JSON.stringify([...hidden])); } catch (e) { } };
 const nbDays = () => showWE ? 7 : 5;
@@ -152,7 +153,7 @@ function planning() {
   if (view !== 'planning') return;
   const today = iso(new Date()), nowM = new Date().getHours() * 60 + new Date().getMinutes();
   const days = mode === 'semaine' ? [...Array(weOn() ? 7 : 5)].map((_, k) => iso(addDays(week, k))) : [day];
-  const px = mode === 'semaine' ? 46 : 58, vis = visTechs();
+  const px = Math.max(mode === 'semaine' ? 46 : 58, pxFit), vis = visTechs();
   const title = mode === 'semaine' ? `Semaine du ${lbl(days[0])}` : lbl(day, true) + (ferie(day) ? ' · ' + ferie(day) : '');
   let h = `<div class="head"><h1>Planning</h1><span class="live"><i></i>En direct</span>
    <div class="weeknav"><button id="prev" aria-label="Précédent">‹</button><span>${E(title)}</span><button id="next" aria-label="Suivant">›</button><button class="today" id="tod">Aujourd’hui</button></div>
@@ -200,6 +201,8 @@ function planning() {
   document.querySelectorAll('[data-abs]').forEach(b => b.onclick = () => absenceForm(b.dataset.abs));
   document.querySelectorAll('[data-delabs]').forEach(b => b.onclick = async e => { e.stopPropagation(); if (!confirm('Retirer cette absence ?')) return; await sb.from('absences').delete().eq('id', b.dataset.delabs); await loadPlanning(); planning(); });
   bindDnD(px);
+  /* La grille des heures descend jusqu'en bas de la fenêtre (7h–20h), sans barre de défilement */
+  const hrs = $('.cal .hrs'); if (hrs && innerWidth > 900) { const ideal = Math.floor((innerHeight - hrs.getBoundingClientRect().top + ($('.cal').scrollTop || 0) - 18) / (H1 - H0)); if (ideal > px + 1 && ideal !== pxFit) { pxFit = ideal; planning(); } }
 }
 function allDay(d, who, single) {
   const pins = inter.filter(i => i.date === d && isAllDay(i) && i.techs.some(t => who.some(w => w.id === t))).sort(sortI);
@@ -318,8 +321,9 @@ async function detail(id, given) {
   const i = given || inter.find(x => x.id === id); if (!i) return;
   const [{ data: pieces }, dem] = await Promise.all([sb.from('pieces').select('*').eq('intervention_id', id).order('created_at'), i.demande_id ? sb.from('demandes').select('*').eq('id', i.demande_id).maybeSingle() : Promise.resolve({ data: null })]);
   const d = dem.data;
-  openPanel(`<header><div><span class="tag s-${i.statut}" style="margin:0">${STAT_I[i.statut]}</span>${i.epingle ? '<span class="tag t-aff">' + ic('pin') + ' Dans la journée</span>' : ''}<h2 style="margin-top:8px">${E(i.type === 'intervention' ? (i.adresse || i.ville || 'Intervention') : i.travaux)}</h2>
-    <div style="color:var(--mute);font-size:13.5px">${E(i.ville || '')} · ${lbl(i.date, true)}${i.epingle ? '' : ' · ' + hh(i.heure) + '–' + fin(i.heure, i.duree)}</div></div><button class="x" aria-label="Fermer">×</button></header>
+  openPanel(`<header><div><span class="tag s-${i.statut}" style="margin:0">${STAT_I[i.statut]}</span>${i.epingle ? '<span class="tag t-aff">' + ic('pin') + ' Dans la journée</span>' : ''}<h2 style="margin-top:8px">${E(i.type === 'intervention' ? ([i.client, i.occupant].filter(Boolean).join(' · ') || i.adresse || i.ville || 'Intervention') : i.travaux)}</h2>
+    ${i.type === 'intervention' && (i.client || i.occupant) ? `<div style="font-weight:700;font-size:14px;margin-top:2px">${E([i.adresse, [i.cp, i.ville].filter(Boolean).join(' ')].filter(Boolean).join(', '))}</div>` : ''}
+    <div style="color:var(--mute);font-size:13.5px">${E(i.client || i.occupant ? '' : (i.ville || '') + ' · ')}${lbl(i.date, true)}${i.epingle ? '' : ' · ' + hh(i.heure) + '–' + fin(i.heure, i.duree)}</div></div><button class="x" aria-label="Fermer">×</button></header>
   <div class="body">
     <div class="chips">${i.techs.map(t => `<span><i style="background:${T(t).couleur}"></i>${E(T(t).nom)}</span>`).join('')}${i.recurrent ? '<span>↻ Récurrente</span>' : ''}</div>
     ${i.type === 'intervention' ? `<dl class="kv"><dt>Client</dt><dd>${E(i.client || '—')}</dd><dt>Occupant</dt><dd>${E(i.occupant || '—')}</dd><dt>Téléphone</dt><dd>${i.tel ? `<a href="tel:${E(i.tel.replace(/\s/g, ''))}">${E(i.tel)}</a>` : '—'}</dd><dt>Adresse</dt><dd>${E([i.adresse, [i.cp, i.ville].filter(Boolean).join(' ')].filter(Boolean).join(', ') || '—')}${i.complement ? `<br><span style="color:var(--mute)">${E(i.complement)}</span>` : ''}</dd></dl>` : ''}

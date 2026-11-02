@@ -242,3 +242,24 @@ html,body{height:100%}body{background:var(--bg);overscroll-behavior:none}
 .who2 div{background:#fff;border:2px solid var(--line);border-radius:18px;padding:12px 16px}
 .who2 small{display:block;font-size:13px;font-weight:800;color:var(--mute);text-transform:uppercase;letter-spacing:.04em}
 .who2 b{font-size:22px;font-weight:800;line-height:1.2}
+.tabs:has(button:nth-child(3)) button{font-size:15px;height:52px;white-space:nowrap;padding:0 6px}
+.eqs{padding-bottom:30px}
+.eqleg{display:flex;flex-wrap:wrap;gap:6px 12px;margin:4px 2px 10px;font-size:13px;font-weight:700;color:var(--mute)}
+.eqleg i,.eqw i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px}
+.eqg{display:grid;background:#fff;border:1px solid var(--line);border-radius:16px;overflow:hidden}
+.eqh{font-size:12px;text-align:center;padding:6px 1px;border-bottom:1px solid var(--line);border-left:1px solid var(--line);line-height:1.15}
+.eqh b{display:block;text-transform:capitalize;font-size:12px}
+.eqh small{display:block;color:#B45309;font-weight:800}
+.eqh.td{background:var(--navy);color:#fff}.eqh.td small{color:#FCD34D}
+.eqax div{font-size:10px;color:var(--mute);text-align:right;padding-right:3px;border-top:1px solid var(--line);box-sizing:border-box}
+.eqd{position:relative;border-left:1px solid var(--line);background:repeating-linear-gradient(to bottom,transparent 0,transparent calc(var(--h,1px) - 1px),transparent 0)}
+.eqd.td{background-color:#F5F7FF}
+.eqe{position:absolute;border:0;border-left:3px solid var(--c);background:color-mix(in srgb,var(--c) 22%,#fff);border-radius:4px;padding:1px 2px;font-size:9.5px;font-weight:800;line-height:1.1;text-align:left;overflow:hidden;color:#0E1630;word-break:normal;overflow-wrap:anywhere}
+.eqe.controle,.eqe.cloturee{opacity:.55}
+.eqhint{text-align:center;font-size:13px;color:var(--mute);margin:10px 0 0}
+.eqcard{position:relative;background:#fff;border-radius:22px;padding:22px 20px;max-width:440px;width:100%;color:#0E1630}
+.eqcard small{font-weight:800;color:var(--mute)}
+.eqcard h3{font-size:21px;margin:6px 0 4px}
+.eqcard p{margin:4px 0;font-size:16px}
+.eqcard button{position:absolute!important;top:10px!important;right:10px!important;width:40px!important;height:40px!important;background:var(--soft,#eef0f6)!important;color:#0E1630!important;font-size:24px!important}
+.eqw{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:10px;font-weight:700}

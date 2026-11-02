@@ -161,7 +161,7 @@ function list() {
     ${tab === 'jour' && pins.length ? `<div class="pins"><h2>${ic('pin')} À faire aujourd’hui <span>${pins.length - pinsLeft.length}/${pins.length}</span></h2><p>Pas d’heure précise : quand vous avez un moment dans la journée.</p>${pins.map(pin).join('')}</div>` : ''}
     ${tab === 'jour' && todayJobs.length ? `<div class="prog"><span>${done} / ${todayJobs.length} interventions</span><div class="bar"><i style="width:${done / todayJobs.length * 100}%"></i></div></div>` : ''}
     ${tab === 'jour' && todayJobs.length && !next && !pinsLeft.length ? `<div class="done-box">${ic('check-circle')} Journée terminée, tout est envoyé au bureau.</div>` : ''}
-    <div class="tabs"><button data-tab="jour" class="${tab === 'jour' ? 'on' : ''}">Aujourd’hui</button><button data-tab="semaine" class="${tab === 'semaine' ? 'on' : ''}">Mes semaines</button></div>
+    <div class="tabs"><button data-tab="jour" class="${tab === 'jour' ? 'on' : ''}">Aujourd’hui</button><button data-tab="semaine" class="${tab === 'semaine' ? 'on' : ''}">Mes semaines</button>${preview ? `<button data-tab="equipe">Équipe</button>` : ''}</div>
     ${tab === 'semaine' ? `<div class="wkn"><button id="wkp" ${wk ? '' : 'disabled'} aria-label="Semaine précédente">‹</button><span>${wk === 0 ? 'Cette semaine' : wk === 1 ? 'Semaine prochaine' : 'Semaine du ' + lbl(iso(m0))}</span><button id="wkn" ${wk < NBW - 1 ? '' : 'disabled'} aria-label="Semaine suivante">›</button></div>` : ''}
     ${days.map(block).join('')}
     <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:24px"><button class="btn" id="mdp">Mon mot de passe</button><button class="btn" id="out">Se déconnecter</button></div>
@@ -289,7 +289,7 @@ function checkReminder() {
 }
 setInterval(checkReminder, 60000);
 
-function render() { if (!tech || !scr()) return; scr().classList.toggle('sunmode', sun); openId ? fiche() : list(); }
+function render() { if (!tech || !scr()) return; scr().classList.toggle('sunmode', sun); openId ? fiche() : tab === 'equipe' && preview ? equipe() : list(); }
 sb.auth.onAuthStateChange(ev => { if (ev === 'SIGNED_IN') start(); else if (ev === 'SIGNED_OUT') { started = false; tech = null; loginView(); } });
 start();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { });
@@ -301,4 +301,46 @@ function monMdp() {
   if (a.length < 8) return toast('Trop court : 8 caractères minimum');
   const b = prompt('Retapez le nouveau mot de passe :'); if (b !== a) return toast('Les deux mots de passe ne correspondent pas');
   sb.auth.updateUser({ password: a }).then(({ error }) => toast(error ? 'Impossible (réseau ?) : réessayez' : 'Mot de passe modifié'));
+}
+
+/* ---------- Vue équipe (accès bureau) : la semaine de toute l'équipe, comme sur l'ordinateur ---------- */
+let wkE = 0, eqData = null, eqKey = '';
+const ini = n => String(n || '?').trim().slice(0, 1).toUpperCase();
+async function equipe() {
+  const m0 = addDays(monday(new Date()), 7 * wkE), a = iso(m0), b = iso(addDays(m0, 6)), key = a;
+  const H0 = 7, H1 = 20, today = iso(new Date());
+  if (eqKey !== key || !eqData) { scr().innerHTML = topBar('Planning équipe', 'Semaine du ' + lbl(a), false) + previewBar() + '<div class="scroll"><div class="panel"><p>Chargement…</p></div></div>'; bindTop(); bindPreview();
+    const { data, error } = await sb.from('interventions').select('id,date,heure,duree,epingle,type,client,occupant,adresse,ville,travaux,statut,intervention_techs(tech_id)').gte('date', a).lte('date', b);
+    if (error) { toast('Pas de réseau : vue équipe indisponible'); tab = 'jour'; return list(); }
+    eqData = (data || []).map(i => ({ ...i, techs: i.intervention_techs.map(x => x.tech_id) })); eqKey = key; }
+  const all = eqData, days = [...Array(7)].map((_, k) => iso(addDays(m0, k))).filter((d, k) => k < 5 || all.some(i => i.date === d));
+  const lanes = d => team.filter(t => all.some(i => i.date === d && !i.epingle && i.heure && i.techs.includes(t.id)));
+  const top0 = 210, px = Math.max(34, Math.floor((window.innerHeight - top0) / (H1 - H0)));
+  const mm = t => { const [h, m] = String(t).split(':').map(Number); return h * 60 + (m || 0); };
+  const col = d => { const ls = lanes(d); return `<div class="eqd ${d === today ? 'td' : ''}" style="height:${(H1 - H0) * px}px;background-image:repeating-linear-gradient(to bottom,#E6E8EF 0 1px,transparent 1px ${px}px)">${ls.map((t, k) => all.filter(i => i.date === d && !i.epingle && i.heure && i.techs.includes(t.id)).map(i => {
+      const s0 = Math.max(mm(i.heure), H0 * 60), s1 = Math.min(mm(i.heure) + Math.round((+i.duree || 1) * 60), H1 * 60); if (s1 <= H0 * 60) return '';
+      return `<button class="eqe ${i.statut}" data-eq="${i.id}" style="top:${(s0 - H0 * 60) / 60 * px}px;height:${Math.max(14, (s1 - s0) / 60 * px - 2)}px;left:${k / ls.length * 100}%;width:calc(${100 / ls.length}% - 2px);--c:${t.couleur}">${ls.length <= 2 ? E((i.client || i.occupant || i.travaux || '').slice(0, 18)) : ''}</button>`; }).join('')).join('')}</div>`; };
+  const pins = d => all.filter(i => i.date === d && (i.epingle || !i.heure)).length;
+  scr().innerHTML = topBar('Planning équipe', 'Semaine du ' + lbl(a), false) + previewBar() + `<div class="scroll eqs">
+    <div class="tabs"><button data-tab="jour">Aujourd’hui</button><button data-tab="semaine">Mes semaines</button><button data-tab="equipe" class="on">Équipe</button></div>
+    <div class="wkn"><button id="ep" aria-label="Semaine précédente">‹</button><span>${wkE === 0 ? 'Cette semaine' : wkE === 1 ? 'Semaine prochaine' : 'Semaine du ' + lbl(a).replace(/^\S+ /, '')}</span><button id="en" aria-label="Semaine suivante">›</button></div>
+    <div class="eqleg">${team.map(t => `<span><i style="background:${t.couleur}"></i>${E(t.nom)}</span>`).join('')}</div>
+    <div class="eqg" style="grid-template-columns:30px repeat(${days.length},minmax(0,1fr))">
+      <div></div>${days.map(d => { const x = new Date(d + 'T12:00'); return `<div class="eqh ${d === today ? 'td' : ''}"><b>${x.toLocaleDateString('fr-FR', { weekday: 'short' }).replace('.', '')}</b> ${x.getDate()}${pins(d) ? `<small>${ic('pin')}${pins(d)}</small>` : ''}</div>`; }).join('')}
+      <div class="eqax">${[...Array(H1 - H0)].map((_, k) => `<div style="height:${px}px">${H0 + k}h</div>`).join('')}</div>${days.map(col).join('')}
+    </div><p class="eqhint">Glissez à gauche ou à droite pour changer de semaine · touchez une intervention pour le détail</p>
+    </div><div class="lb" id="eqlb"></div>`;
+  bindTop(); bindPreview();
+  scr().querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { tab = b.dataset.tab; wk = 0; render(); });
+  const go = n => { wkE = Math.max(-8, Math.min(26, wkE + n)); eqData = null; equipe(); };
+  $('#ep').onclick = () => go(-1); $('#en').onclick = () => go(1);
+  const g = scr().querySelector('.eqg'); let tx = null, ty = 0;
+  g.addEventListener('touchstart', e => { tx = e.touches[0].clientX; ty = e.touches[0].clientY; }, { passive: true });
+  g.addEventListener('touchend', e => { if (tx === null) return; const dx = e.changedTouches[0].clientX - tx, dy = e.changedTouches[0].clientY - ty; tx = null; if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) go(dx < 0 ? 1 : -1); });
+  const lb = $('#eqlb'); lb.onclick = e => { if (e.target === lb || e.target.dataset.x !== undefined) lb.classList.remove('on'); };
+  scr().querySelectorAll('[data-eq]').forEach(b => b.onclick = () => { const i = all.find(x => x.id === b.dataset.eq); if (!i) return;
+    lb.innerHTML = `<div class="eqcard"><button data-x aria-label="Fermer">×</button><small>${lbl(i.date)} · ${hh(i.heure)} – ${fin(i.heure, i.duree)}</small>
+      <h3>${E([i.client, i.occupant].filter(Boolean).join(' · ') || i.travaux || 'Intervention')}</h3><p>${E([i.adresse, i.ville].filter(Boolean).join(', '))}</p>
+      ${i.travaux ? `<p style="color:var(--mute)">${E(i.travaux.slice(0, 240))}</p>` : ''}<div class="eqw">${i.techs.map(t => `<span><i style="background:${T(t).couleur}"></i>${E(T(t).nom)}</span>`).join('')}</div></div>`;
+    lb.classList.add('on'); });
 }
