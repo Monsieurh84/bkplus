@@ -201,11 +201,11 @@ async function fiche() {
     ${i.materiel.length ? `<div class="panel"><h3>${ic('package')} Matériel à prendre</h3><ul class="mat">${i.materiel.map((m, k) => `<li><label><input type="checkbox" data-mat="${k}" ${(matChk[i.id] || {})[k] ? 'checked' : ''}>${E(m)}</label></li>`).join('')}</ul></div>` : ''}
     ${docs.length ? `<div class="panel"><h3>${ic('paperclip')} Documents${i.demande ? ' · photos du client' : ''}</h3><div class="docs">${docs.map((p, k) => `<button data-doc="${k}"><div class="m ${p.kind === 'video' ? 'v' : ''}" data-dm="${k}">${p.kind === 'pdf' ? ic('file') : p.kind === 'video' ? '' : ''}</div><span>${E(p.name)}</span></button>`).join('')}</div>${i.demande?.message ? `<p style="font-size:16px;margin-top:10px;color:var(--mute)">« ${E(i.demande.message)} »</p>` : ''}</div>` : ''}
     ${isJob ? `<div class="panel"><h3>${ic('camera')} Photos</h3>
-      ${done ? '' : `<label class="photo-btn">${ICON.cam}Prendre une photo<input type="file" accept="image/*" capture="environment" class="sr" id="cam"></label>`}
+      ${done ? '' : `<div class="pbtns"><label class="photo-btn">${ICON.cam}Prendre une photo<input type="file" accept="image/*" capture="environment" class="sr" id="cam"></label><label class="photo-btn alt">${ic('image')}Mes photos<input type="file" accept="image/*" multiple class="sr" id="gal"></label></div>`}
       <div class="thumbs">${d.photos.map((p, k) => `<figure><img src="${URL.createObjectURL(p.blob)}" alt="Photo ${k + 1}" data-lb>${done ? '' : `<button class="tg" data-tag="${k}">${p.tag || 'Avant / Après ?'}</button><button class="rm" data-rm="${k}" aria-label="Supprimer">×</button>`}</figure>`).join('')}</div></div>
     <div class="panel"><h3>${ic('pencil')} Commentaire</h3>${done ? `<p>${E(i.commentaire || '')}</p>` : `<div class="chips">${PHRASES.map(p => `<button data-ph="${E(p)}">+ ${E(p)}</button>`).join('')}</div><div class="cmt"><textarea id="cmt" placeholder="Ce qui a été fait, ce qui reste à prévoir…">${E(d.commentaire)}</textarea><button class="mic" id="mic">${ICON.mic}Dicter</button></div>`}</div>` : ''}
     ${isJob && i.statut === 'controle' ? `<div class="panel add"><h3>${ic('pencil')} Oublié quelque chose ?</h3><p style="color:var(--mute);margin:0 0 10px">Tant que le bureau n’a pas clôturé, vous pouvez encore ajouter des photos ou un commentaire.</p>
-      <label class="photo-btn">${ICON.cam}Ajouter une photo<input type="file" accept="image/*" capture="environment" class="sr" id="cam2"></label>
+      <div class="pbtns"><label class="photo-btn">${ICON.cam}Prendre une photo<input type="file" accept="image/*" capture="environment" class="sr" id="cam2"></label><label class="photo-btn alt">${ic('image')}Mes photos<input type="file" accept="image/*" multiple class="sr" id="gal2"></label></div>
       <div class="thumbs">${(addx[i.id] || { photos: [] }).photos.map((p, k) => `<figure><img src="${URL.createObjectURL(p.blob)}" alt=""><button class="rm" data-rm2="${k}" aria-label="Supprimer">×</button></figure>`).join('')}</div>
       <div class="cmt"><textarea id="cmt2" placeholder="Ce que vous avez oublié de dire…">${E((addx[i.id] || {}).commentaire || '')}</textarea></div>
       <button class="primary-step" style="background:var(--ok);margin-top:12px" id="send2">Envoyer au bureau</button></div>` : ''}
@@ -229,7 +229,7 @@ async function fiche() {
   const pd = $('#pindone'); if (pd) pd.onclick = async () => { i.statut = 'controle'; await enqueue({ kind: 'valider', iid: i.id, commentaire: 'Tâche faite à ' + nowHHMM(), photos: [] }); openId = null; render(); toast('✓ Tâche faite, le bureau est prévenu'); };
   if (i.statut === 'controle' && isJob && $('#send2')) { const x = addx[i.id] = addx[i.id] || { photos: [], commentaire: '' };
     $('#cmt2').oninput = e => { x.commentaire = e.target.value; };
-    $('#cam2').onchange = async e => { const f = e.target.files[0]; if (!f) return; x.photos.push({ blob: await shrink(f), tag: 'Ajout' }); const y = scr().querySelector('.scroll').scrollTop; await fiche(); scr().querySelector('.scroll').scrollTop = y; };
+    $('#cam2').onchange = $('#gal2').onchange = async e => { const fl = [...e.target.files]; if (!fl.length) return; for (const f of fl) { try { x.photos.push({ blob: await shrink(f), tag: 'Ajout' }); } catch (er) { } } const y = scr().querySelector('.scroll').scrollTop; await fiche(); scr().querySelector('.scroll').scrollTop = y; };
     scr().querySelectorAll('[data-rm2]').forEach(b => b.onclick = async () => { x.photos.splice(+b.dataset.rm2, 1); await fiche(); });
     $('#send2').onclick = async () => { if (!x.photos.length && x.commentaire.trim().length < 2) return toast('Ajoutez une photo ou un commentaire');
       await enqueue({ kind: 'completer', iid: i.id, commentaire: x.commentaire.trim(), photos: x.photos.map(p => ({ blob: p.blob, tag: p.tag })) });
@@ -238,9 +238,9 @@ async function fiche() {
   const saveDraft = () => DB.set('draft-' + i.id, d).catch(() => { });
   const upd = () => { const a = d.photos.length > 0, b = d.commentaire.trim().length > 1; $('#n1').className = a ? 'ok' : ''; $('#n1').textContent = (a ? '✓' : '○') + ' 1 photo minimum'; $('#n2').className = b ? 'ok' : ''; $('#n2').textContent = (b ? '✓' : '○') + ' Un commentaire'; $('#ok').classList.toggle('ready', a && b); if (a && b) $('#alert').classList.remove('show'); };
   upd();
-  $('#cam').onchange = async e => { const f = e.target.files[0]; if (!f) return; const blob = await shrink(f); d.photos.push({ blob, tag: d.photos.length ? 'Après' : 'Avant' }); await saveDraft();
+  $('#cam').onchange = $('#gal').onchange = async e => { const fl = [...e.target.files]; if (!fl.length) return; for (const f of fl) { try { d.photos.push({ blob: await shrink(f), tag: d.photos.length ? 'Après' : 'Avant' }); } catch (er) { toast('Une photo n’a pas pu être lue'); } } await saveDraft();
     if (i.statut === 'planifiee' || i.statut === 'enroute') { i.statut = 'encours'; i.debut_at = i.debut_at || new Date().toISOString(); enqueue({ kind: 'statut', iid: i.id, statut: 'encours' }); }
-    const y = scr().querySelector('.scroll').scrollTop; await fiche(); scr().querySelector('.scroll').scrollTop = y; toast('Photo enregistrée sur l’appareil'); };
+    const y = scr().querySelector('.scroll').scrollTop; await fiche(); scr().querySelector('.scroll').scrollTop = y; toast(fl.length > 1 ? fl.length + ' photos ajoutées' : 'Photo enregistrée sur l’appareil'); };
   scr().querySelectorAll('[data-rm]').forEach(b => b.onclick = async () => { const k = +b.dataset.rm, p = d.photos.splice(k, 1)[0]; await saveDraft(); await fiche(); toast('Photo supprimée', async () => { d.photos.splice(k, 0, p); await saveDraft(); fiche(); }); });
   scr().querySelectorAll('[data-tag]').forEach(b => b.onclick = () => { const p = d.photos[+b.dataset.tag]; p.tag = p.tag === 'Avant' ? 'Après' : p.tag === 'Après' ? 'Pendant' : 'Avant'; b.textContent = p.tag; saveDraft(); });
   const ta = $('#cmt'); ta.oninput = () => { d.commentaire = ta.value; upd(); saveDraft(); };
@@ -317,7 +317,7 @@ async function equipe() {
   const lanes = d => team.filter(t => all.some(i => i.date === d && !i.epingle && i.heure && i.techs.includes(t.id)));
   const top0 = 210, px = Math.max(34, Math.floor((window.innerHeight - top0) / (H1 - H0)));
   const mm = t => { const [h, m] = String(t).split(':').map(Number); return h * 60 + (m || 0); };
-  const col = d => { const ls = lanes(d); return `<div class="eqd ${d === today ? 'td' : ''}" style="height:${(H1 - H0) * px}px;background-image:repeating-linear-gradient(to bottom,#E6E8EF 0 1px,transparent 1px ${px}px)">${ls.map((t, k) => all.filter(i => i.date === d && !i.epingle && i.heure && i.techs.includes(t.id)).map(i => {
+  const col = d => { const ls = lanes(d); return `<div class="eqd ${d === today ? 'td' : ''}" data-day="${d}" style="height:${(H1 - H0) * px}px;background-image:repeating-linear-gradient(to bottom,#E6E8EF 0 1px,transparent 1px ${px}px)">${ls.map((t, k) => all.filter(i => i.date === d && !i.epingle && i.heure && i.techs.includes(t.id)).map(i => {
       const s0 = Math.max(mm(i.heure), H0 * 60), s1 = Math.min(mm(i.heure) + Math.round((+i.duree || 1) * 60), H1 * 60); if (s1 <= H0 * 60) return '';
       return `<button class="eqe ${i.statut}" data-eq="${i.id}" style="top:${(s0 - H0 * 60) / 60 * px}px;height:${Math.max(14, (s1 - s0) / 60 * px - 2)}px;left:${k / ls.length * 100}%;width:calc(${100 / ls.length}% - 2px);--c:${t.couleur}">${ls.length <= 2 ? E((i.client || i.occupant || i.travaux || '').slice(0, 18)) : ''}</button>`; }).join('')).join('')}</div>`; };
   const pins = d => all.filter(i => i.date === d && (i.epingle || !i.heure)).length;
@@ -328,7 +328,8 @@ async function equipe() {
     <div class="eqg" style="grid-template-columns:30px repeat(${days.length},minmax(0,1fr))">
       <div></div>${days.map(d => { const x = new Date(d + 'T12:00'); return `<div class="eqh ${d === today ? 'td' : ''}"><b>${x.toLocaleDateString('fr-FR', { weekday: 'short' }).replace('.', '')}</b> ${x.getDate()}${pins(d) ? `<small>${ic('pin')}${pins(d)}</small>` : ''}</div>`; }).join('')}
       <div class="eqax">${[...Array(H1 - H0)].map((_, k) => `<div style="height:${px}px">${H0 + k}h</div>`).join('')}</div>${days.map(col).join('')}
-    </div><p class="eqhint">Glissez à gauche ou à droite pour changer de semaine · touchez une intervention pour le détail</p>
+    </div><button class="primary-step" id="eqnew" style="margin-top:14px">+ Planifier une intervention</button>
+    <p class="eqhint">Touchez un créneau vide pour y planifier · glissez à gauche ou à droite pour changer de semaine</p>
     </div><div class="lb" id="eqlb"></div>`;
   bindTop(); bindPreview();
   scr().querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { tab = b.dataset.tab; wk = 0; render(); });
@@ -338,9 +339,44 @@ async function equipe() {
   g.addEventListener('touchstart', e => { tx = e.touches[0].clientX; ty = e.touches[0].clientY; }, { passive: true });
   g.addEventListener('touchend', e => { if (tx === null) return; const dx = e.changedTouches[0].clientX - tx, dy = e.changedTouches[0].clientY - ty; tx = null; if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) go(dx < 0 ? 1 : -1); });
   const lb = $('#eqlb'); lb.onclick = e => { if (e.target === lb || e.target.dataset.x !== undefined) lb.classList.remove('on'); };
+  $('#eqnew').onclick = () => quickNew(days.includes(today) ? today : days[0], '08:00');
+  scr().querySelectorAll('.eqd').forEach(c => c.onclick = e => { if (e.target.closest('[data-eq]')) return; const r = c.getBoundingClientRect(), m = H0 * 60 + Math.floor((e.clientY - r.top) / px * 4) * 15;
+    quickNew(c.dataset.day, String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0')); });
   scr().querySelectorAll('[data-eq]').forEach(b => b.onclick = () => { const i = all.find(x => x.id === b.dataset.eq); if (!i) return;
     lb.innerHTML = `<div class="eqcard"><button data-x aria-label="Fermer">×</button><small>${lbl(i.date)} · ${hh(i.heure)} – ${fin(i.heure, i.duree)}</small>
       <h3>${E([i.client, i.occupant].filter(Boolean).join(' · ') || i.travaux || 'Intervention')}</h3><p>${E([i.adresse, i.ville].filter(Boolean).join(', '))}</p>
       ${i.travaux ? `<p style="color:var(--mute)">${E(i.travaux.slice(0, 240))}</p>` : ''}<div class="eqw">${i.techs.map(t => `<span><i style="background:${T(t).couleur}"></i>${E(T(t).nom)}</span>`).join('')}</div></div>`;
     lb.classList.add('on'); });
+}
+
+/* Planifier depuis le téléphone (bureau) */
+function quickNew(date, heure) {
+  const lb = $('#eqlb'), [h, m] = heure.split(':').map(Number), fin2 = String(Math.min(h + 1, 19)).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+  lb.innerHTML = `<form class="eqcard eqf" id="qf"><button type="button" data-x aria-label="Fermer">×</button><h3>Planifier</h3>
+    <label>Date<input type="date" name="date" value="${date}" required></label>
+    <div class="r2"><label>De<input type="time" name="h1" value="${heure}" step="60" required></label><label>À<input type="time" name="h2" value="${fin2}" step="60" required></label></div>
+    <div class="qwho">${team.map(t => `<label><input type="checkbox" name="t" value="${t.id}"><i style="background:${t.couleur}"></i>${E(t.nom)}</label>`).join('')}</div>
+    <div class="r2"><label>Client<input name="client" autocomplete="off"></label><label>Occupant<input name="occupant" autocomplete="off"></label></div>
+    <label>Téléphone<input name="tel" type="tel"></label>
+    <label>Adresse<input name="adresse" autocomplete="off" placeholder="Tapez le début, puis choisissez"><div class="qac" hidden></div></label>
+    <label>Complément<input name="complement" placeholder="Résidence, bâtiment…"></label>
+    <div class="r2"><label>Code postal<input name="cp" inputmode="numeric" maxlength="5"></label><label>Ville<input name="ville"></label></div>
+    <label>Travaux à effectuer<textarea name="travaux" required></textarea></label>
+    <button class="primary-step" type="submit" id="qsv">Planifier</button></form>`;
+  lb.classList.add('on'); lb.scrollTop = 0;
+  const f = $('#qf'), box = f.querySelector('.qac'); let tm, seq = 0;
+  f.adresse.oninput = () => { clearTimeout(tm); const q = f.adresse.value.trim(); if (q.length < 4) return box.hidden = true;
+    tm = setTimeout(async () => { const my = ++seq; let r = [];
+      try { const j = await fetch('https://data.geopf.fr/geocodage/search?index=address&limit=5&lat=43.514&lon=4.988&autocomplete=1&q=' + encodeURIComponent(q)).then(x => x.json()); r = (j.features || []).map(x => x.properties); } catch (e) { }
+      if (my !== seq) return; box.innerHTML = r.map((a, k) => `<button type="button" data-k="${k}"><b>${E(a.name)}</b><small>${E(a.postcode + ' ' + a.city)}</small></button>`).join(''); box.hidden = !r.length;
+      box.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { const a = r[+b.dataset.k]; f.adresse.value = a.type === 'municipality' ? '' : a.name; f.cp.value = a.postcode || ''; f.ville.value = a.city || ''; box.hidden = true; f.complement.focus(); }); }, 250); };
+  f.onsubmit = async e => { e.preventDefault(); const fd = new FormData(f), ts = fd.getAll('t'); if (!ts.length) return toast('Choisissez au moins une personne');
+    const mm = t => { const [a, b] = t.split(':').map(Number); return a * 60 + b; }, d1 = mm(fd.get('h1')), d2 = mm(fd.get('h2')); if (d2 <= d1) return toast('L’heure de fin doit être après le début');
+    const btn = $('#qsv'); btn.disabled = true; btn.textContent = 'Enregistrement…';
+    const row = { type: 'intervention', date: fd.get('date'), heure: fd.get('h1'), duree: Math.round((d2 - d1) / 60 * 10000) / 10000, epingle: false, statut: 'planifiee', client: fd.get('client'), occupant: fd.get('occupant'), tel: fd.get('tel'), adresse: fd.get('adresse'), complement: fd.get('complement') || null, cp: fd.get('cp'), ville: fd.get('ville'), travaux: fd.get('travaux'), materiel: [], recurrent: false, created_by: me.id, updated_by: me.id };
+    const r = await sb.from('interventions').insert(row).select('id').single();
+    if (r.error) { btn.disabled = false; btn.textContent = 'Planifier'; return toast('Erreur : ' + r.error.message); }
+    const r2 = await sb.from('intervention_techs').insert(ts.map(t => ({ intervention_id: r.data.id, tech_id: t })));
+    if (r2.error) return toast('Erreur : ' + r2.error.message);
+    lb.classList.remove('on'); eqData = null; equipe(); toast('Planifié pour ' + ts.map(t => T(t).nom).join(', ')); };
 }

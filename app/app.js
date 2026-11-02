@@ -159,7 +159,7 @@ function planning() {
    <div class="weeknav"><button id="prev" aria-label="Précédent">‹</button><span>${E(title)}</span><button id="next" aria-label="Suivant">›</button><button class="today" id="tod">Aujourd’hui</button></div>
    <div class="seg"><button data-m="jour" class="${mode === 'jour' ? 'on' : ''}">Jour</button><button data-m="semaine" class="${mode === 'semaine' ? 'on' : ''}">Semaine</button></div>
    ${mode === 'semaine' ? `<label class="tgl"><input type="checkbox" id="we" ${showWE ? 'checked' : ''}> Sam. et dim.</label>` : ''}
-   <button class="btn btn-line" id="npin">${ic('pin')} Rappel du jour</button><button class="btn btn-grad" id="nnew">+ Planifier</button></div>
+   <button class="btn btn-line" id="bkup" title="Télécharge tout le planning dans un fichier Excel">${ic('download')} Sauvegarde</button><button class="btn btn-line" id="npin">${ic('pin')} Rappel du jour</button><button class="btn btn-grad" id="nnew">+ Planifier</button></div>
    <div class="people">${techs.map(t => `<button data-who="${t.id}" class="${hidden.has(t.id) ? 'off' : ''}" style="--c:${t.couleur}"><i></i>${E(t.nom)}${isBureau(t) ? ' <small>bureau</small>' : ''}</button>`).join('')}<span class="hint">Cliquez pour afficher ou masquer · glissez deux doigts ou ← → pour changer de semaine · double-clic dans le planning pour créer · clic droit sur une intervention pour la dupliquer</span></div>`;
   if (!techs.length) { $('#main').innerHTML = h + `<div class="empty">Aucun membre de l’équipe enregistré.</div>`; return; }
   const hours = [...Array(H1 - H0)].map((_, k) => `<div class="hr" style="height:${px}px"><span>${pad(H0 + k)}:00</span></div>`).join('');
@@ -197,6 +197,7 @@ function planning() {
   document.querySelectorAll('[data-m]').forEach(b => b.onclick = async () => { mode = b.dataset.m; if (mode === 'jour' && (day < iso(week) || day > iso(addDays(week, 6)))) day = iso(week); await loadPlanning(); planning(); });
   if ($('#we')) $('#we').onchange = async e => { showWE = e.target.checked; saveUI(); await loadPlanning(); planning(); };
   document.querySelectorAll('[data-who]').forEach(b => b.onclick = () => { const id = b.dataset.who; hidden.has(id) ? hidden.delete(id) : hidden.add(id); saveUI(); planning(); });
+  $('#bkup').onclick = sauvegarde;
   $('#nnew').onclick = () => form(); $('#npin').onclick = () => form(null, { epingle: true, pre: { date: mode === 'jour' ? day : iso(new Date()) } });
   document.querySelectorAll('[data-abs]').forEach(b => b.onclick = () => absenceForm(b.dataset.abs));
   document.querySelectorAll('[data-delabs]').forEach(b => b.onclick = async e => { e.stopPropagation(); if (!confirm('Retirer cette absence ?')) return; await sb.from('absences').delete().eq('id', b.dataset.delabs); await loadPlanning(); planning(); });
@@ -564,4 +565,16 @@ async function equipe() {
     $('#nm-' + u.id).innerHTML = `<div class="newpw"><span>Nouveau mot de passe : <b>${E(mdp)}</b></span><button class="btn btn-grad" type="button">${ic('clipboard')} Copier le message à envoyer</button></div>`;
     $('#nm-' + u.id).querySelector('button').onclick = async () => { try { await navigator.clipboard.writeText(msg); toast('Message copié : collez-le dans un SMS ou WhatsApp'); } catch (e) { prompt('Copiez ce message :', msg); } };
   });
+}
+
+/* Sauvegarde complète du planning dans un fichier Excel (en plus des sauvegardes automatiques de la base) */
+async function sauvegarde() {
+  toast('Préparation de la sauvegarde…'); const rows = []; let from = 0;
+  for (;;) { const { data, error } = await sb.from('interventions').select('*, intervention_techs(tech_id)').order('date').order('heure').range(from, from + 999); if (error) return toast('Erreur : ' + error.message); rows.push(...data); if (data.length < 1000) break; from += 1000; }
+  const ST = { planifiee: 'Planifiée', enroute: 'En route', encours: 'En cours', controle: 'À contrôler', cloturee: 'Clôturée' };
+  const head = ['Date', 'Début', 'Fin', 'Rappel du jour', 'Type', 'Qui', 'Client', 'Occupant', 'Téléphone', 'Adresse', 'Complément', 'Code postal', 'Ville', 'Travaux', 'Matériel', 'Statut', 'Commentaire technicien', 'Validée par', 'Terminée le'];
+  const data = rows.map(i => [i.date, i.epingle ? '' : hh(i.heure), i.epingle ? '' : fin(i.heure, i.duree), i.epingle ? 'oui' : '', i.type, names(i.intervention_techs.map(x => x.tech_id)), i.client || '', i.occupant || '', i.tel || '', i.adresse || '', i.complement || '', i.cp || '', i.ville || '', i.travaux || '', (i.materiel || []).join(' / '), ST[i.statut] || i.statut, i.commentaire || '', i.valide_par ? T(i.valide_par).nom : '', i.fin_at ? new Date(i.fin_at).toLocaleString('fr-FR') : '']);
+  try { const X = await loadXLSX(), ws = X.utils.aoa_to_sheet([head, ...data]), wb = X.utils.book_new(); ws['!cols'] = head.map((h, k) => ({ wch: [11, 7, 7, 8, 12, 18, 22, 18, 14, 30, 22, 8, 16, 50, 30, 12, 40, 12, 18][k] })); ws['!autofilter'] = { ref: 'A1:S1' };
+    X.utils.book_append_sheet(wb, ws, 'Planning'); X.writeFile(wb, `BK-planning-sauvegarde-${iso(new Date())}.xlsx`); toast(rows.length + ' interventions sauvegardées'); }
+  catch (e) { toast('Erreur : ' + (e.message || e)); }
 }
