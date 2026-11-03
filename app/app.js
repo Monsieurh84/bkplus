@@ -208,7 +208,7 @@ function planning() {
 function allDay(d, who, single) {
   const pins = inter.filter(i => i.date === d && isAllDay(i) && i.techs.some(t => who.some(w => w.id === t))).sort(sortI);
   const abs = absences.filter(a => a.date === d && who.some(w => w.id === a.tech_id));
-  return `<div class="ad" data-date="${d}" ${single ? `data-tech="${who[0].id}"` : ''}>${abs.map(a => `<span class="abl" style="--c:${T(a.tech_id).couleur}">${ic('calendar-x')} ${single ? '' : E(T(a.tech_id).nom) + ' · '}${E(a.motif)}<button data-delabs="${a.id}" aria-label="Retirer l’absence">×</button></span>`).join('')}
+  return `<div class="ad" data-date="${d}" ${single ? `data-tech="${who[0].id}"` : ''}>${!single && ferie(d) ? `<span class="ferb">${ic('calendar')} ${E(ferie(d))}</span>` : ''}${abs.map(a => `<span class="abl" style="--c:${T(a.tech_id).couleur}">${ic('calendar-x')} ${single ? '' : E(T(a.tech_id).nom) + ' · '}${E(a.motif)}<button data-delabs="${a.id}" aria-label="Retirer l’absence">×</button></span>`).join('')}
     ${pins.map(i => `<div class="pinr" draggable="true" data-id="${i.id}" data-tech="${single ? who[0].id : i.techs[0]}" style="--c:${T(i.techs[0]).couleur};--bg:${tint(T(i.techs[0]).couleur, .14)}">${ic('pin')}<span>${E(i.travaux || '')}</span>${single ? '' : `<em>${E(names(i.techs))}</em>`}</div>`).join('')}</div>`;
 }
 function bindDnD(px) {

@@ -318,3 +318,6 @@ html,body{height:100%}body{background:var(--bg);overscroll-behavior:none}
 .thumbs.sent img{background:#EEF0F5;min-height:90px}
 .thumbs.sent figcaption{position:absolute;left:6px;bottom:6px;background:rgba(14,22,48,.75);color:#fff;font-size:12px;font-weight:800;border-radius:8px;padding:2px 7px}
 .thumbs.sent figcaption:empty{display:none}
+.mfer{display:flex;align-items:center;gap:8px;background:#FFF4E5;color:#B45309;border-radius:12px;padding:10px 12px;font-weight:800;margin:6px 0}
+.mfer svg{width:18px;height:18px}
+.mfd{width:6px;height:6px;border-radius:50%;background:#F59E0B}

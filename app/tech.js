@@ -430,7 +430,7 @@ async function equipeMois() {
   const all = moData, nW = Math.round((g1 - g0) / 864e5 / 7);
   const bar = d => { const its = all.filter(i => i.date === d), segs = its.flatMap(i => i.techs.length ? i.techs : ['?']).slice(0, 8); return segs.length ? `<span class="mbar">${segs.map(t => `<i style="background:${T(t).couleur}"></i>`).join('')}</span>` : ''; };
   const cells = [...Array(nW * 7)].map((_, k) => { const d = iso(addDays(g0, k)), x = new Date(d + 'T12:00'), out = x.getMonth() !== first.getMonth(), we = [0, 6].includes(x.getDay());
-    return `<button class="mday ${out ? 'out' : ''} ${we ? 'we' : ''} ${d === today ? 'td' : ''} ${d === selD ? 'sel' : ''} ${ferie(d) ? 'fer' : ''}" data-d="${d}"><b>${x.getDate()}</b>${out ? '' : bar(d)}</button>`; }).join('');
+    return `<button class="mday ${out ? 'out' : ''} ${we ? 'we' : ''} ${d === today ? 'td' : ''} ${d === selD ? 'sel' : ''} ${ferie(d) ? 'fer' : ''}" data-d="${d}"><b>${x.getDate()}</b>${out ? '' : bar(d)}${!out && ferie(d) ? '<span class="mfd"></span>' : ''}</button>`; }).join('');
   const its = all.filter(i => i.date === selD).sort((x, y) => (y.epingle - x.epingle) || String(x.heure || '').localeCompare(String(y.heure || '')));
   const strip = i => i.techs.length > 1 ? `linear-gradient(${i.techs.map((t, k) => `${T(t).couleur} ${k / i.techs.length * 100}% ${(k + 1) / i.techs.length * 100}%`).join(',')})` : T(i.techs[0]).couleur;
   scr().innerHTML = topBar('Planning équipe', title, false) + previewBar() + `<div class="scroll eqs">
@@ -439,6 +439,7 @@ async function equipeMois() {
     <div class="wkn"><button id="mp" aria-label="Mois précédent">‹</button><span>${title}</span><button id="mn" aria-label="Mois suivant">›</button></div>
     <div class="mgrid">${['L', 'M', 'M', 'J', 'V', 'S', 'D'].map(x => `<span class="mh">${x}</span>`).join('')}${cells}</div>
     <div class="mlist"><h3>${lbl(selD)}${ferie(selD) ? ` <span class="fer">${E(ferie(selD))}</span>` : ''}</h3>
+      ${ferie(selD) ? `<div class="mfer">${ic('calendar')} Jour férié · ${E(ferie(selD))}</div>` : ''}
       ${its.length ? its.map(i => `<button class="mit" data-eq="${i.id}" style="--s:${strip(i)}"><span class="b"><b>${E([i.client, i.occupant].filter(Boolean).join(' · ') || i.travaux || 'Intervention')}</b><small>${E([i.adresse, i.ville].filter(Boolean).join(', ') || i.techs.map(t => T(t).nom).join(', '))}</small><em>${E(i.techs.map(t => T(t).nom).join(' + '))}</em></span><span class="t">${i.epingle || !i.heure ? ic('pin') : hh(i.heure) + '<br>' + fin(i.heure, i.duree)}</span></button>`).join('') : '<p class="mempty">Rien de prévu ce jour-là.</p>'}
     </div>
     <button class="primary-step" id="eqnew" style="margin-top:14px">+ Planifier le ${new Date(selD + 'T12:00').getDate()}</button>
