@@ -323,7 +323,7 @@ async function equipe() {
   const m0 = addDays(monday(new Date()), 7 * wkE), a = iso(m0), b = iso(addDays(m0, 6)), key = a;
   const H0 = 7, H1 = 20, today = iso(new Date());
   if (eqKey !== key || !eqData) { scr().innerHTML = topBar('Planning équipe', 'Semaine du ' + lbl(a), false) + previewBar() + '<div class="scroll"><div class="panel"><p>Chargement…</p></div></div>'; bindTop(); bindPreview();
-    const { data, error } = await sb.from('interventions').select('id,date,heure,duree,epingle,type,client,occupant,tel,adresse,complement,cp,ville,travaux,statut,intervention_techs(tech_id)').gte('date', a).lte('date', b);
+    const { data, error } = await sb.from('interventions').select('id,date,heure,duree,epingle,type,client,occupant,tel,adresse,complement,cp,ville,travaux,statut,commentaire,photos,valide_par,fin_at,intervention_techs(tech_id),pieces(nom,type,path,prive)').gte('date', a).lte('date', b);
     if (error) { toast('Pas de réseau : vue équipe indisponible'); tab = 'jour'; return list(); }
     eqData = (data || []).map(i => ({ ...i, techs: i.intervention_techs.map(x => x.tech_id) })); eqKey = key; }
   const all = eqData, days = [...Array(7)].map((_, k) => iso(addDays(m0, k))).filter((d, k) => k < 5 || all.some(i => i.date === d));
@@ -361,12 +361,7 @@ async function equipe() {
   $('#eqnew').onclick = () => quickNew(days.includes(today) ? today : days[0], '08:00');
   scr().querySelectorAll('.eqd').forEach(c => c.onclick = e => { if (e.target.closest('[data-eq]')) return; const r = c.getBoundingClientRect(), m = H0 * 60 + Math.floor((e.clientY - r.top) / px * 4) * 15;
     quickNew(c.dataset.day, String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0')); });
-  scr().querySelectorAll('[data-eq]').forEach(b => b.onclick = () => { const i = all.find(x => x.id === b.dataset.eq); if (!i) return;
-    lb.innerHTML = `<div class="eqcard"><button data-x aria-label="Fermer">×</button><small>${lbl(i.date)} · ${hh(i.heure)} – ${fin(i.heure, i.duree)}</small>
-      <h3>${E([i.client, i.occupant].filter(Boolean).join(' · ') || i.travaux || 'Intervention')}</h3><p>${E([i.adresse, i.ville].filter(Boolean).join(', '))}</p>
-      ${i.travaux ? `<p style="color:var(--mute)">${E(i.travaux.slice(0, 240))}</p>` : ''}<div class="eqw">${i.techs.map(t => `<span><i style="background:${T(t).couleur}"></i>${E(T(t).nom)}</span>`).join('')}</div>
-      ${i.tel ? `<a class="eqtel" href="${telUrl(i.tel)}">${ICON.phone} ${E(i.tel)}</a>` : ''}<button class="primary-step" id="eqed" style="margin-top:14px">Modifier</button></div>`;
-    lb.classList.add('on'); $('#eqed').onclick = () => quickNew(i.date, String(i.heure || '08:00').slice(0, 5), i); });
+  scr().querySelectorAll('[data-eq]').forEach(b => b.onclick = () => { const i = all.find(x => x.id === b.dataset.eq); if (i) eqCard(i, lb); });
 }
 
 /* Planifier depuis le téléphone (bureau) */
@@ -411,12 +406,21 @@ function quickNew(date, heure, ex) {
 
 /* Vue mois façon Agenda Apple : grille du mois + liste du jour choisi */
 const telLink = t => t ? `<a class="eqtel" href="${telUrl(t)}">${ICON.phone} ${E(t)}</a>` : '';
+function eqZoom(html) { let z = $('#eqz'); if (!z) { z = document.createElement('div'); z.id = 'eqz'; z.className = 'lb'; scr().appendChild(z); }
+  z.innerHTML = html + '<button aria-label="Fermer">×</button>'; z.classList.add('on'); z.onclick = () => z.classList.remove('on'); }
 function eqCard(i, lb) {
   lb.innerHTML = `<div class="eqcard"><button data-x aria-label="Fermer">×</button><small>${lbl(i.date)}${i.epingle || !i.heure ? ' · dans la journée' : ' · ' + hh(i.heure) + ' – ' + fin(i.heure, i.duree)}</small>
-    <h3>${E([i.client, i.occupant].filter(Boolean).join(' · ') || i.travaux || 'Intervention')}</h3><p>${E([[i.adresse, i.complement].filter(Boolean).join(', '), [i.cp, i.ville].filter(Boolean).join(' ')].filter(Boolean).join(' · '))}</p>
+    <h3>${E([i.client, i.occupant].filter(Boolean).join(' · ') || i.travaux || 'Intervention')}</h3>${i.adresse || i.ville ? `<a class="eqmap" href="https://maps.apple.com/?q=${encodeURIComponent(fullAddr(i) + ', France')}">${ICON.route}<span>${E([[i.adresse, i.complement].filter(Boolean).join(', '), [i.cp, i.ville].filter(Boolean).join(' ')].filter(Boolean).join(' · '))}<small>Voir dans Plans · accès, stationnement</small></span></a>` : ''}
     ${i.travaux ? `<p style="color:var(--mute)">${E(i.travaux.slice(0, 300))}</p>` : ''}<div class="eqw">${i.techs.map(t => `<span><i style="background:${T(t).couleur}"></i>${E(T(t).nom)}</span>`).join('')}</div>
-    ${telLink(i.tel)}<button class="primary-step" id="eqed" style="margin-top:14px">Modifier</button></div>`;
-  lb.classList.add('on'); $('#eqed').onclick = () => quickNew(i.date, String(i.heure || '08:00').slice(0, 5), i);
+    ${telLink(i.tel)}
+    ${i.commentaire || (i.photos || []).length ? `<div class="eqret"><h4>${ic('check-circle')} Retour ${i.valide_par ? 'de ' + E(T(i.valide_par).nom) : 'du technicien'}</h4>${i.commentaire ? `<p style="white-space:pre-line">${E(i.commentaire)}</p>` : ''}
+      <div class="eqph">${(i.photos || []).map(p => `<img alt="${E(p.tag || 'Photo')}" data-b="retours" data-ph="${E(p.path)}">`).join('')}</div></div>` : ''}
+    ${(i.pieces || []).length ? `<div class="eqret"><h4>${ic('paperclip')} Pièces jointes</h4><div class="eqph">${i.pieces.map(p => p.type === 'photo' ? `<img alt="${E(p.nom)}" data-b="${p.prive ? 'bureau' : 'pieces'}" data-ph="${E(p.path)}">` : `<a class="eqdoc" data-b="${p.prive ? 'bureau' : 'pieces'}" data-doc2="${E(p.path)}">${ic('file')}<span>${E((p.prive ? '🔒 ' : '') + p.nom)}</span></a>`).join('')}</div></div>` : ''}
+    <button class="primary-step" id="eqed" style="margin-top:14px">Modifier</button></div>`;
+  lb.classList.add('on'); lb.scrollTop = 0; $('#eqed').onclick = () => quickNew(i.date, String(i.heure || '08:00').slice(0, 5), i);
+  const els = [...lb.querySelectorAll('[data-ph],[data-doc2]')], byB = {}; els.forEach(x => (byB[x.dataset.b] = byB[x.dataset.b] || []).push(x.dataset.ph || x.dataset.doc2));
+  (async () => { const urls = {}; for (const bk in byB) Object.assign(urls, await signedMap(bk, byB[bk]));
+    els.forEach(x => { const u = urls[x.dataset.ph || x.dataset.doc2]; if (!u) return; if (x.tagName === 'IMG') { x.src = u; x.onclick = ev => { ev.stopPropagation(); eqZoom(`<img src="${u}" alt="">`); }; } else x.onclick = ev => { ev.stopPropagation(); window.open(u, '_blank'); }; }); })();
 }
 async function equipeMois() {
   const now = new Date(), first = new Date(now.getFullYear(), now.getMonth() + moE, 1, 12), last = new Date(first.getFullYear(), first.getMonth() + 1, 0, 12);
@@ -424,7 +428,7 @@ async function equipeMois() {
   if (!selD || selD < iso(first) || selD > iso(last)) selD = moE === 0 ? today : iso(first);
   const title = first.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }).replace(/^./, c => c.toUpperCase());
   if (moKey !== a || !moData) { scr().innerHTML = topBar('Planning équipe', title, false) + previewBar() + '<div class="scroll"><div class="panel"><p>Chargement…</p></div></div>'; bindTop(); bindPreview();
-    const { data, error } = await sb.from('interventions').select('id,date,heure,duree,epingle,type,client,occupant,tel,adresse,complement,cp,ville,travaux,statut,intervention_techs(tech_id)').gte('date', a).lte('date', b);
+    const { data, error } = await sb.from('interventions').select('id,date,heure,duree,epingle,type,client,occupant,tel,adresse,complement,cp,ville,travaux,statut,commentaire,photos,valide_par,fin_at,intervention_techs(tech_id),pieces(nom,type,path,prive)').gte('date', a).lte('date', b);
     if (error) { toast('Pas de réseau : vue équipe indisponible'); tab = 'jour'; return list(); }
     moData = (data || []).map(i => ({ ...i, techs: i.intervention_techs.map(x => x.tech_id) })); moKey = a; }
   const all = moData, nW = Math.round((g1 - g0) / 864e5 / 7);
