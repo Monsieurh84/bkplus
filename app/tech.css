@@ -332,3 +332,13 @@ html,body{height:100%}body{background:var(--bg);overscroll-behavior:none}
 .eqmap{display:flex;gap:10px;align-items:flex-start;margin:8px 0 4px;padding:12px;border:2px solid var(--line);border-radius:14px;color:#0E1630;text-decoration:none;font-weight:700;font-size:16px}
 .eqmap svg{width:22px;height:22px;flex:none;color:var(--navy)}
 .eqmap small{display:block;color:var(--navy);font-size:13px;font-weight:800;margin-top:3px}
+.st.attente{background:#EEF1F5;color:#475569}.st.reprendre{background:#FDECEC;color:#DC2626}
+.bnote{background:#DC2626;color:#fff;border-radius:20px;padding:14px 14px 10px;margin-bottom:14px;animation:shake .4s}
+.bnote h2{display:flex;align-items:center;gap:8px;font-size:19px;margin:0 0 10px;color:#fff}.bnote h2 .i{width:22px;height:22px}
+.bnote button{display:block;width:100%;text-align:left;background:#fff;color:var(--ink);border:0;border-radius:14px;padding:12px 14px;margin-bottom:8px;font:inherit}
+.bnote button b{display:block;color:#DC2626;font-size:16px}.bnote button span{display:block;font-weight:700;font-size:16px;margin-top:2px}.bnote button em{display:block;font-style:normal;color:var(--mute);font-size:15px;margin-top:4px}
+.job.alrt{box-shadow:0 0 0 3px #DC2626}
+.bmsg{background:#FFF7ED;border:2px solid #FDBA74;border-radius:18px;padding:14px 16px;margin-bottom:14px}
+.bmsg.rep{background:#FEF2F2;border-color:#FCA5A5}
+.bmsg small{display:block;font-weight:800;color:#C2410C;font-size:14px}.bmsg.rep small{color:#DC2626}
+.bmsg p{margin:6px 0 0;font-size:18px;font-weight:600;white-space:pre-line}

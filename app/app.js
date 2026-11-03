@@ -14,8 +14,8 @@ const fdate = d => new Date(d).toLocaleString('fr-FR', { weekday: 'short', day: 
 function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('on'); clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('on'), 3000); }
 
 const STAT_D = { nouvelle: ['Nouvelle', 't-new'], affaire: ['En affaire', 't-aff'], planifiee: ['Planifiée', 't-pla'], archivee: ['Archivée', 't-arc'] };
-const STAT_I = { planifiee: 'Planifiée', enroute: 'En route', encours: 'En cours', controle: 'À contrôler', cloturee: 'Clôturée' };
-const SC = { planifiee: '#2239A9', enroute: '#6D28D9', encours: '#B45309', controle: '#C2410C', cloturee: '#0E9F6E' };
+const STAT_I = { planifiee: 'Planifiée', enroute: 'En route', encours: 'En cours', controle: 'À contrôler', attente: 'En attente', reprendre: 'À reprendre', cloturee: 'Clôturée' };
+const SC = { planifiee: '#2239A9', enroute: '#6D28D9', encours: '#B45309', controle: '#C2410C', attente: '#64748B', reprendre: '#DC2626', cloturee: '#0E9F6E' };
 
 let me = null, view = 'planning', techs = [], demandes = [], filtre = 'nouvelle', chan = null;
 let mode = 'semaine', week = monday(new Date()), day = iso(new Date()), inter = [], absences = [];
@@ -132,7 +132,7 @@ function ev(i, t, px, col, cols) {
   return `<div class="ev ${i.statut === 'cloturee' ? 'cl' : ''} ${short ? 'sh' : ''}" draggable="true" data-id="${i.id}" data-tech="${t}" title="${E(hh(i.heure) + '–' + fin(i.heure, i.duree) + ' · ' + title + (i.adresse ? ' · ' + i.adresse : ''))}"
     style="top:${top}px;height:${h - 2}px;left:calc(${col / cols * 100}% + 1px);width:calc(${100 / cols}% - 2px);--c:${c};--bg:${tint(c, .16)};--sc:${SC[i.statut]}">
     <b><i class="sd"></i>${E(title)}</b>${short ? '' : `<span>${hh(i.heure)}–${fin(i.heure, i.duree)}${i.type === 'intervention' && i.ville ? ' · ' + E(i.ville) : ''}</span>`}
-    ${h > 64 && i.type === 'intervention' ? `<span class="tr">${E(i.travaux || '')}</span>` : ''}${i.techs.length > 1 && h > 52 ? `<span class="avs">${avatars(i.techs)}</span>` : ''}<span class="ic2">${icoOf(i)}</span></div>`;
+    ${h > 64 && i.type === 'intervention' ? `<span class="tr">${E(i.travaux || '')}</span>` : ''}${i.techs.length > 1 && h > 52 ? `<span class="avs">${avatars(i.techs)}</span>` : ''}<span class="ic2">${icoOf(i)}</span>${i.note_bureau && !i.note_lue ? '<span class="nb" title="Message pas encore lu par le technicien">✉</span>' : ''}<i class="rz" title="Glisser pour changer la durée"></i></div>`;
 }
 /* Répartit les interventions qui se chevauchent dans une même colonne */
 function layout(list) {
@@ -160,11 +160,11 @@ function planning() {
    <div class="seg"><button data-m="jour" class="${mode === 'jour' ? 'on' : ''}">Jour</button><button data-m="semaine" class="${mode === 'semaine' ? 'on' : ''}">Semaine</button></div>
    ${mode === 'semaine' ? `<label class="tgl"><input type="checkbox" id="we" ${showWE ? 'checked' : ''}> Sam. et dim.</label>` : ''}
    <button class="btn btn-line" id="bkup" title="Télécharge tout le planning dans un fichier Excel">${ic('download')} Sauvegarde</button><button class="btn btn-line" id="npin">${ic('pin')} Rappel du jour</button><button class="btn btn-grad" id="nnew">+ Planifier</button></div>
-   <div class="people">${techs.map(t => `<button data-who="${t.id}" class="${hidden.has(t.id) ? 'off' : ''}" style="--c:${t.couleur}"><i></i>${E(t.nom)}${isBureau(t) ? ' <small>bureau</small>' : ''}</button>`).join('')}<span class="hint">Cliquez pour afficher ou masquer · glissez deux doigts ou ← → pour changer de semaine · double-clic sur un créneau vide pour planifier · clic sur une intervention pour la modifier · clic droit pour la fiche (photos) ou dupliquer</span></div>`;
+   <div class="people">${techs.map(t => `<button data-who="${t.id}" class="${hidden.has(t.id) ? 'off' : ''}" style="--c:${t.couleur}"><i></i>${E(t.nom)}${isBureau(t) ? ' <small>bureau</small>' : ''}</button>`).join('')}<span class="hint">Cliquez pour afficher ou masquer · glissez deux doigts ou ← → pour changer de semaine · double-clic sur un créneau vide pour planifier · clic sur une intervention pour voir la fiche, double-clic pour la modifier · tirez le bas d’une intervention pour changer sa durée</span></div>`;
   if (!techs.length) { $('#main').innerHTML = h + `<div class="empty">Aucun membre de l’équipe enregistré.</div>`; return; }
   const hours = [...Array(H1 - H0)].map((_, k) => `<div class="hr" style="height:${px}px"><span>${pad(H0 + k)}:00</span></div>`).join('');
   const nLanes = d => Math.max(1, vis.filter(t => inter.some(i => i.date === d && i.techs.includes(t.id) && !isAllDay(i))).length);
-  const colsTpl = mode === 'semaine' ? '46px ' + days.map(d => `minmax(${Math.max(days.length > 5 ? 84 : 100, nLanes(d) * 46)}px,1fr)`).join(' ') : `56px repeat(${vis.length},minmax(130px,1fr))`;
+  const colsTpl = mode === 'semaine' ? '46px ' + days.map(d => `minmax(0,${Math.max(2, nLanes(d))}fr)`).join(' ') : `56px repeat(${vis.length},minmax(0,1fr))`;
   h += `<div class="cal ${mode}" style="--px:${px}px;grid-template-columns:${colsTpl}">`;
   if (mode === 'semaine') {
     h += `<div class="ch ax"></div>${days.map(d => `<div class="ch ${d === today ? 'td' : ''} ${ferie(d) ? 'fer' : ''}"><b>${lbl(d)}</b>${ferie(d) ? `<small class="fl">${E(ferie(d))}</small>` : ''}</div>`).join('')}`;
@@ -205,18 +205,37 @@ function planning() {
   /* La grille des heures descend jusqu'en bas de la fenêtre (7h–20h), sans barre de défilement */
   const hrs = $('.cal .hrs'); if (hrs && innerWidth > 900) { const ideal = Math.floor((innerHeight - hrs.getBoundingClientRect().top + ($('.cal').scrollTop || 0) - 18) / (H1 - H0)); if (ideal > px + 1 && ideal !== pxFit) { pxFit = ideal; planning(); } }
 }
+const pinLbl = i => [...new Set([i.travaux, i.client, i.occupant].map(x => (x || '').trim()).filter(Boolean))].join(' · ') || 'Rappel';
 function allDay(d, who, single) {
   const pins = inter.filter(i => i.date === d && isAllDay(i) && i.techs.some(t => who.some(w => w.id === t))).sort(sortI);
   const abs = absences.filter(a => a.date === d && who.some(w => w.id === a.tech_id));
   return `<div class="ad" data-date="${d}" ${single ? `data-tech="${who[0].id}"` : ''}>${!single && ferie(d) ? `<span class="ferb">${ic('calendar')} ${E(ferie(d))}</span>` : ''}${abs.map(a => `<span class="abl" style="--c:${T(a.tech_id).couleur}">${ic('calendar-x')} ${single ? '' : E(T(a.tech_id).nom) + ' · '}${E(a.motif)}<button data-delabs="${a.id}" aria-label="Retirer l’absence">×</button></span>`).join('')}
-    ${pins.map(i => `<div class="pinr" draggable="true" data-id="${i.id}" data-tech="${single ? who[0].id : i.techs[0]}" style="--c:${T(i.techs[0]).couleur};--bg:${tint(T(i.techs[0]).couleur, .14)}">${ic('pin')}<span>${E(i.travaux || '')}</span>${single ? '' : `<em>${E(names(i.techs))}</em>`}</div>`).join('')}</div>`;
+    ${pins.map(i => `<div class="pinr" draggable="true" data-id="${i.id}" data-tech="${single ? who[0].id : i.techs[0]}" style="--c:${T(i.techs[0]).couleur};--bg:${tint(T(i.techs[0]).couleur, .14)}">${ic('pin')}<span>${single ? '' : `<em>${E(names(i.techs))}</em> `}${E(pinLbl(i))}</span></div>`).join('')}</div>`;
+}
+/* Agrandir / rétrécir une intervention à la souris (poignée du bas), par pas de 15 minutes */
+let rzEnd = 0, clk = 0;
+function resizeEv(e, c, px) {
+  e.preventDefault(); e.stopPropagation(); const i = inter.find(x => x.id === c.dataset.id); if (!i) return;
+  const y0 = e.clientY, h0 = c.offsetHeight, s = mins(i.heure), d0 = Math.round((+i.duree || 1) * 60); let d = d0;
+  c.draggable = false; c.classList.add('rzing'); document.body.classList.add('rzbody');
+  const tip = document.createElement('div'); tip.className = 'rztip'; c.appendChild(tip);
+  const show = () => { tip.textContent = hh(hm(s)) + ' – ' + hh(hm(s + d)) + ' · ' + (d >= 60 ? Math.floor(d / 60) + ' h' + (d % 60 ? ' ' + pad(d % 60) : '') : d + ' min'); };
+  const mv = x => { d = Math.max(15, Math.min(H1 * 60 - s, d0 + Math.round((x.clientY - y0) / px * 60 / 15) * 15)); c.style.height = Math.max(18, d / 60 * px - 2) + 'px'; show(); };
+  const up = async () => { document.removeEventListener('mousemove', mv); document.removeEventListener('mouseup', up); rzEnd = Date.now(); c.classList.remove('rzing'); document.body.classList.remove('rzbody'); tip.remove(); c.draggable = true;
+    if (d === d0) return; const duree = Math.round(d / 60 * 10000) / 10000; i.duree = duree;
+    const { error } = await sb.from('interventions').update({ duree }).eq('id', i.id); if (error) { toast('Erreur : ' + error.message); }
+    else toast((i.client || i.occupant || i.travaux || 'Intervention') + ' : ' + hh(hm(s)) + '–' + hh(hm(s + d)));
+    await loadPlanning(); planning(); };
+  show(); document.addEventListener('mousemove', mv); document.addEventListener('mouseup', up);
 }
 function bindDnD(px) {
   let grab = 0;
   document.querySelectorAll('.ev,.pinr').forEach(c => {
-    c.onclick = e => { e.stopPropagation(); const i = inter.find(x => x.id === c.dataset.id); if (i) form(i); };
+    c.onclick = e => { e.stopPropagation(); if (Date.now() - rzEnd < 400 || e.detail > 1) return; clearTimeout(clk); clk = setTimeout(() => { const i = inter.find(x => x.id === c.dataset.id); if (i) detail(i.id); }, 240); };
+    c.ondblclick = e => { e.stopPropagation(); clearTimeout(clk); const i = inter.find(x => x.id === c.dataset.id); if (i) form(i); };
+    const rz = c.querySelector('.rz'); if (rz) rz.onmousedown = e => resizeEv(e, c, px);
     c.oncontextmenu = e => { e.preventDefault(); ctxMenu(e, inter.find(x => x.id === c.dataset.id)); };
-    c.ondragstart = e => { grab = e.offsetY || 0; c.classList.add('dragging'); e.dataTransfer.setData('text/plain', c.dataset.id + '|' + c.dataset.tech); };
+    c.ondragstart = e => { if (c.classList.contains('rzing')) return e.preventDefault(); grab = e.offsetY || 0; c.classList.add('dragging'); e.dataTransfer.setData('text/plain', c.dataset.id + '|' + c.dataset.tech); };
     c.ondragend = () => c.classList.remove('dragging');
   });
   const target = (el, e) => { const ln = el.closest('.ln'); return ln && ln.dataset.tech ? ln.dataset.tech : null; };
@@ -247,10 +266,11 @@ function ctxMenu(e, i) {
   if (!i) return; document.querySelectorAll('.ctx').forEach(x => x.remove());
   const m = document.createElement('div'); m.className = 'ctx';
   m.innerHTML = `<b>${E(i.type === 'intervention' ? (i.client || i.ville || 'Intervention') : i.travaux).slice(0, 40)}</b>
-    <button data-a="fi">${ic('eye')} Voir la fiche (photos, retour)</button><button data-a="dup">${ic('clipboard')} Dupliquer…</button><button data-a="ed">${ic('pencil')} Modifier</button><button data-a="p7">${ic('repeat')} Même chose la semaine suivante</button><button data-a="del" class="red">Supprimer</button>`;
+    <button data-a="fi">${ic('eye')} Voir la fiche (photos, retour)</button><button data-a="rep">↺ À reprendre…</button><button data-a="dup">${ic('clipboard')} Dupliquer…</button><button data-a="ed">${ic('pencil')} Modifier</button><button data-a="p7">${ic('repeat')} Même chose la semaine suivante</button><button data-a="del" class="red">Supprimer</button>`;
   document.body.appendChild(m); const w = 250; m.style.left = Math.min(e.clientX, innerWidth - w - 8) + 'px'; m.style.top = Math.min(e.clientY, innerHeight - m.offsetHeight - 8) + 'px';
   const close = () => { m.remove(); document.removeEventListener('mousedown', out); }; const out = x => { if (!m.contains(x.target)) close(); }; setTimeout(() => document.addEventListener('mousedown', out), 0);
   m.querySelector('[data-a=fi]').onclick = () => { close(); detail(i.id); };
+  m.querySelector('[data-a=rep]').onclick = () => { close(); aReprendre(i); };
   m.querySelector('[data-a=dup]').onclick = () => { close(); duplicate(i); };
   m.querySelector('[data-a=ed]').onclick = () => { close(); form(i); };
   m.querySelector('[data-a=p7]').onclick = () => { close(); duplicate(i, iso(addDays(new Date(i.date + 'T12:00'), 7))); };
@@ -341,7 +361,7 @@ document.addEventListener('dragstart', e => { const a = e.target.closest && e.ta
   try { e.dataTransfer.setData('DownloadURL', `${mime}:${n.replace(/:/g, '-')}:${new URL(src, location.href).href}`); } catch (x) { } });
 /* Visionneuse intégrée : photos, vidéos et PDF s'ouvrent dans l'application */
 function viewer(url, path, name) {
-  let v = $('#viewer'); if (!v) { v = document.createElement('div'); v.id = 'viewer'; document.body.appendChild(v); v.onclick = e => { if (e.target === v || e.target.closest('[data-vx]')) v.classList.remove('on'); }; document.addEventListener('keydown', e => { if (e.key === 'Escape') v.classList.remove('on'); }); }
+  let v = $('#viewer'); if (!v) { v = document.createElement('div'); v.id = 'viewer'; document.body.appendChild(v); v.onclick = e => { if (e.target === v || e.target.classList.contains('vbody') || e.target.classList.contains('vload') || e.target.closest('[data-vx]')) { v.classList.remove('on'); const m = v.querySelector('video'); if (m) m.pause(); } }; document.addEventListener('keydown', e => { if (e.key === 'Escape') v.classList.remove('on'); }); }
   const ext = String(path || name || '').split('?')[0].split('.').pop().toLowerCase(), img = /^(jpe?g|png|webp|gif|heic|heif)$/.test(ext), vid = /^(mp4|mov|m4v|webm)$/.test(ext), pdf = ext === 'pdf';
   v.innerHTML = `<div class="vbar"><b>${E(name || '')}</b>${img ? `<button class="btn btn-line" data-vc>${ic('clipboard')} Copier la photo</button>` : ''}<button class="btn btn-line" data-vd>${ic('download')} Télécharger</button><button class="btn btn-line" data-vx>Fermer ×</button></div><div class="vbody">${img ? '<p class="vload">Chargement…</p>' : vid ? `<video src="${url}" controls autoplay playsinline></video>` : pdf ? `<iframe src="${url}#toolbar=1" title="${E(name || '')}"></iframe>` : `<p class="vload">Aperçu indisponible pour ce type de fichier. Utilisez « Télécharger ».</p>`}</div>`;
   v.classList.add('on');
@@ -372,9 +392,13 @@ async function detail(id, given) {
     ${(pieces || []).filter(p => !p.prive).length ? `<div class="box"><h4>${ic('paperclip')} Pièces jointes pour le technicien</h4><div class="ph" id="pj">${pieces.filter(p => !p.prive).map(p => `<a target="_blank" rel="noopener" data-p="${E(p.path)}">${p.type === 'photo' ? '<img alt="">' : `<span class="ic">${p.type === 'video' ? ic('film') : ic('file')}</span>`}${E(p.nom)}</a>`).join('')}</div></div>` : ''}
     ${d ? `<div class="box"><h4>${ic('camera')} Demande du site ${E(d.ref)}</h4><div style="margin-bottom:8px">${E(d.message || '')}</div><div class="ph" id="dph">${d.photos.map(p => `<a target="_blank" rel="noopener" data-dp="${E(p.path)}"><img alt="">${E(p.label)}</a>`).join('')}</div></div>` : ''}
     ${i.commentaire || (i.photos || []).length ? `<div class="box" style="border-color:#BFE8D6;background:#F3FBF7"><h4>${ic('check-circle')} Validée par ${i.valide_par ? `<i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${T(i.valide_par).couleur}"></i> ${E(T(i.valide_par).nom)}` : 'le technicien'}${i.fin_at ? ' · ' + fdate(i.fin_at) : ''}</h4><div style="white-space:pre-line">${E(i.commentaire || '')}</div>${(i.photos || []).length ? `<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-line" id="rpall" type="button">${ic('download')} Télécharger les ${i.photos.length} photo${i.photos.length > 1 ? 's' : ''}</button><span style="font-size:12.5px;color:var(--mute);align-self:center">ou glissez une photo directement dans votre mail</span></div><div class="ph" id="rph" style="margin-top:10px">${i.photos.map(p => `<a target="_blank" rel="noopener" data-rp="${E(p.path)}"><img alt="">${E(p.tag || 'Photo')}</a>`).join('')}</div>` : ''}</div>` : ''}
-    <label style="font-size:13px;font-weight:800;color:var(--mute)">Statut<select id="st" style="display:block;width:100%;margin-top:6px;border:2px solid var(--line);border-radius:10px;padding:10px">${Object.entries(STAT_I).map(([k, v]) => `<option value="${k}" ${k === i.statut ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+    <div class="box note ${i.note_bureau ? (i.note_lue ? 'lu' : 'nonlu') : ''}"><h4>${ic('message')} Message pour ${i.techs.length > 1 ? 'les techniciens' : 'le technicien'} <small>(reçu directement sur son application)</small></h4>
+      ${i.note_bureau ? `<div class="nlast"><div style="white-space:pre-line">${E(i.note_bureau)}</div><small>Envoyé ${i.note_at ? fdate(i.note_at) : ''} · ${i.note_lue ? '✓ Lu par le technicien' : 'Pas encore lu'}</small></div>` : ''}
+      <textarea id="nbw" rows="3" placeholder="Ex. : Merci de repasser chez l’occupant pour resserrer le raccord, il reste une goutte."></textarea>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn btn-line" id="nbs" type="button">${ic('message')} Envoyer le message</button><button class="btn btn-line" id="nbr" type="button" style="color:#DC2626;border-color:#FCA5A5">↺ Envoyer et mettre « À reprendre »</button></div></div>
+    <label style="font-size:13px;font-weight:800;color:var(--mute)">Statut<select id="st" style="display:block;width:100%;margin-top:6px;border:2px solid var(--line);border-radius:10px;padding:10px">${[...new Set([i.statut, 'attente', 'reprendre', 'cloturee'])].map(k => `<option value="${k}" ${k === i.statut ? 'selected' : ''}>${STAT_I[k]}</option>`).join('')}</select></label>
   </div>
-  <footer>${i.statut === 'controle' ? '<button class="btn btn-grad" id="clo" style="background:var(--ok,#0E9F6E)">✓ Clôturer</button>' : ''}<button class="btn ${i.statut === 'controle' ? 'btn-line' : 'btn-grad'}" id="ed">Modifier</button><button class="btn btn-line" id="dup">Dupliquer</button><button class="btn btn-line" id="p7">+7 jours</button><button class="btn btn-red" id="del" style="margin-left:auto">Supprimer</button></footer>`);
+  <footer>${['controle', 'attente', 'reprendre'].includes(i.statut) ? '<button class="btn btn-grad" id="clo" style="background:var(--ok,#0E9F6E)">✓ Clôturer</button>' : ''}${i.statut === 'controle' ? '<button class="btn btn-line" id="rep" style="color:#DC2626">↺ À reprendre</button><button class="btn btn-line" id="att">En attente</button>' : ''}<button class="btn ${['controle', 'attente', 'reprendre'].includes(i.statut) ? 'btn-line' : 'btn-grad'}" id="ed">Modifier</button><button class="btn btn-line" id="dup">Dupliquer</button><button class="btn btn-line" id="p7">+7 jours</button><button class="btn btn-red" id="del" style="margin-left:auto">Supprimer</button></footer>`);
   const urls = await signed('pieces', (pieces || []).filter(p => !p.prive).map(p => p.path));
   signed('bureau', (pieces || []).filter(p => p.prive).map(p => p.path)).then(ub => document.querySelectorAll('#pjb [data-pb]').forEach(a => { const u = ub[a.dataset.pb]; if (u) { a.href = u; setThumb(a, u, a.dataset.pb); } }));
   document.querySelectorAll('#pj [data-p]').forEach(a => { const u = urls[a.dataset.p]; if (u) { a.href = u; setThumb(a, u, a.dataset.p); } });
@@ -382,7 +406,13 @@ async function detail(id, given) {
   if ((i.photos || []).length) signed('retours', i.photos.map(p => p.path)).then(u3 => { document.querySelectorAll('#rph [data-rp]').forEach(a => { const u = u3[a.dataset.rp]; if (u) { a.href = u; setThumb(a, u, a.dataset.rp); } });
     const b = $('#rpall'); if (b) b.onclick = async () => { b.disabled = true; let k = 0; for (const p of i.photos) { const u = u3[p.path]; if (u) { k++; await dlFile(u, p.path, `${(i.client || i.occupant || 'intervention').replace(/[^\w\- ]+/g, '').trim()}-${i.date}-${k}${(p.tag ? '-' + p.tag : '')}.jpg`); await new Promise(r => setTimeout(r, 350)); } } b.disabled = false; toast(k + ' photo' + (k > 1 ? 's' : '') + ' téléchargée' + (k > 1 ? 's' : '') + ' (dossier Téléchargements)'); }; });
   if ($('#clo')) $('#clo').onclick = () => cloturer(id);
-  $('#st').onchange = async e => { const { error } = await sb.from('interventions').update({ statut: e.target.value }).eq('id', id); if (error) return toast('Erreur : ' + error.message); await refreshView(); toast('Statut mis à jour'); };
+  $('#st').onchange = async e => { const v = e.target.value; if (v === 'reprendre') { if (!(await aReprendre(i, $('#nbw').value))) e.target.value = i.statut; return; }
+    if (v === 'cloturee') return cloturer(id);
+    const { error } = await sb.from('interventions').update({ statut: v }).eq('id', id); if (error) return toast('Erreur : ' + error.message); i.statut = v; await refreshView(); detail(id); toast('Statut : ' + STAT_I[v]); };
+  $('#nbs').onclick = async () => { const t = $('#nbw').value.trim(); if (t.length < 2) return toast('Écrivez le message'); await noteTech(i, t); detail(id); };
+  $('#nbr').onclick = async () => { if (await aReprendre(i, $('#nbw').value)) detail(id); };
+  if ($('#rep')) $('#rep').onclick = async () => { if (await aReprendre(i, $('#nbw').value)) detail(id); };
+  if ($('#att')) $('#att').onclick = async () => { const { error } = await sb.from('interventions').update({ statut: 'attente' }).eq('id', id); if (error) return toast('Erreur : ' + error.message); i.statut = 'attente'; await refreshView(); detail(id); toast('Mise en attente'); };
   $('#ed').onclick = () => form(i); $('#dup').onclick = () => duplicate(i);
   $('#p7').onclick = async () => { await sb.from('interventions').update({ date: iso(addDays(new Date(i.date + 'T12:00'), 7)) }).eq('id', id); closePanel(); await refreshView(); toast('Reprogrammée la semaine suivante'); };
   $('#del').onclick = async () => { let ids = [id];
@@ -450,10 +480,12 @@ async function form(i, opts) {
   f.fin.onchange = () => { dur = mins(f.fin.value) - mins(f.heure.value); };
   const icon = (t, n) => t === 'photo' ? '<span class="ic">' + ic('image') + '</span>' : `<span class="ic">${t === 'video' ? ic('film') : ic('file')}</span>`;
   const draw = k => { const ex = existing.filter(p => !!p.prive === (k === 'bur') && !removed.includes(p.id));
-    $('#pj-' + k).innerHTML = ex.map(p => `<a>${icon(p.type)}${E(p.nom)}<button type="button" class="rm" data-rme="${p.id}">×</button></a>`).join('') + add[k].map((x, n) => `<a>${kindOf(x) === 'photo' ? `<img src="${URL.createObjectURL(x)}" alt="">` : icon(kindOf(x))}${E(x.name)}<button type="button" class="rm" data-rma="${k}:${n}">×</button></a>`).join('') || '<span style="font-size:13px;color:var(--mute)">Aucun.</span>';
-    $('#pj-' + k).querySelectorAll('[data-rme]').forEach(b => b.onclick = () => { removed.push(b.dataset.rme); draw(k); });
+    $('#pj-' + k).innerHTML = ex.map(p => `<a data-${p.prive ? 'pb' : 'p'}="${E(p.path)}" ${exU[p.path] ? `href="${exU[p.path]}"` : ''}>${p.type === 'photo' ? '<img alt="">' : icon(p.type)}${E(p.nom)}<button type="button" class="rm" data-rme="${p.id}">×</button></a>`).join('') + add[k].map((x, n) => `<a>${kindOf(x) === 'photo' ? `<img src="${URL.createObjectURL(x)}" alt="">` : icon(kindOf(x))}${E(x.name)}<button type="button" class="rm" data-rma="${k}:${n}">×</button></a>`).join('') || '<span style="font-size:13px;color:var(--mute)">Aucun.</span>';
+    $('#pj-' + k).querySelectorAll('a[href]').forEach(a => setThumb(a, a.getAttribute('href'), a.dataset.p || a.dataset.pb));
+    $('#pj-' + k).querySelectorAll('[data-rme]').forEach(b => b.onclick = e => { e.preventDefault(); e.stopPropagation(); removed.push(b.dataset.rme); draw(k); });
     $('#pj-' + k).querySelectorAll('[data-rma]').forEach(b => b.onclick = () => { const [kk, n] = b.dataset.rma.split(':'); add[kk].splice(+n, 1); draw(kk); }); };
   const addFiles = async (k, list) => { const all = (await Promise.all([...list].map(fixFile))).filter(Boolean), big = all.filter(x => x.size > 50 * 1024 * 1024); if (big.length) toast('Fichier trop lourd (50 Mo max) : ' + big[0].name); const ok = all.filter(x => x.size <= 50 * 1024 * 1024); add[k] = add[k].concat(ok); draw(k); if (ok.length) toast(ok.length > 1 ? ok.length + ' fichiers ajoutés' : 'Fichier ajouté : ' + ok[0].name); };
+  const exU = {}; ['pieces', 'bureau'].forEach(bk => { const ps = existing.filter(p => !!p.prive === (bk === 'bureau')).map(p => p.path); if (ps.length) signed(bk, ps).then(u => { Object.assign(exU, u); draw(bk === 'bureau' ? 'bur' : 'tech'); }); });
   ['tech', 'bur'].forEach(k => { draw(k); $('#in-' + k).onchange = e => { addFiles(k, e.target.files); e.target.value = ''; };
     const z = $('#pj-' + k).closest('.upl'); let dc = 0;
     z.addEventListener('dragenter', e => { e.preventDefault(); dc++; z.classList.add('drop'); });
@@ -555,6 +587,17 @@ if (/type=recovery/.test(location.hash)) newPasswordView(); else start();
 let ctrl = [];
 async function badgeC() { const { count } = await sb.from('interventions').select('id', { count: 'exact', head: true }).eq('statut', 'controle'); const c = $('#cc'); if (c) c.textContent = count || ''; }
 async function refreshView() { badgeC(); if (view === 'controle') await listControle(); else if (view === 'recherche') await listRecherche(); else { await loadPlanning(); planning(); } }
+/* Message du bureau : le technicien le reçoit en direct sur son application */
+async function noteTech(i, t, extra) {
+  const row = { note_bureau: t, note_at: new Date().toISOString(), note_lue: false, ...(extra || {}) };
+  const { error } = await sb.from('interventions').update(row).eq('id', i.id); if (error) { toast('Erreur : ' + error.message); return false; }
+  Object.assign(i, row); await refreshView(); toast(extra && extra.statut === 'reprendre' ? '↺ À reprendre · ' + names(i.techs) + ' est prévenu sur son application' : 'Message envoyé à ' + names(i.techs)); return true;
+}
+async function aReprendre(i, txt) {
+  let t = (txt || '').trim(); if (t.length < 2) t = (prompt('À reprendre : quel message pour ' + names(i.techs) + ' ?\n(il le reçoit directement sur son application)', '') || '').trim();
+  if (t.length < 2) { toast('Écrivez ce qu’il faut reprendre'); return false; }
+  return noteTech(i, t, { statut: 'reprendre' });
+}
 async function cloturer(id) {
   const { error } = await sb.from('interventions').update({ statut: 'cloturee' }).eq('id', id);
   if (error) return toast('Erreur : ' + error.message);

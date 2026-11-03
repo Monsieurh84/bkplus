@@ -75,15 +75,30 @@ async function load() {
   const a = iso(monday(new Date())), b = iso(addDays(monday(new Date()), 7 * NBW - 1));
   const { data, error } = await sb.from('interventions').select('*, mine:intervention_techs!inner(tech_id), pieces(*), demande:demandes(ref,message,photos)').eq('mine.tech_id', tech.id).gte('date', a).lte('date', b);
   if (error) throw error;
+  const { data: ex } = await sb.from('interventions').select('*, mine:intervention_techs!inner(tech_id), pieces(*), demande:demandes(ref,message,photos)').eq('mine.tech_id', tech.id).or('statut.eq.reprendre,note_lue.eq.false');
+  (ex || []).forEach(x => { if (!data.some(y => y.id === x.id)) data.push(x); });
   const ids = (data || []).map(i => i.id);
   const { data: it } = ids.length ? await sb.from('intervention_techs').select('*').in('intervention_id', ids) : { data: [] };
   items = (data || []).map(i => ({ ...i, techs: (it || []).filter(x => x.intervention_id === i.id).map(x => x.tech_id) }));
   await DB.set('cache', { team, tech, items, at: Date.now() });
+  return alertNew();
+}
+/* Alerte : intervention à reprendre ou nouveau message du bureau */
+const needsMe = i => i.statut === 'reprendre' || (i.note_bureau && !i.note_lue);
+let seenA = null;
+function alertNew() {
+  const keys = items.filter(needsMe).map(i => i.id + '|' + i.statut + '|' + (i.note_at || ''));
+  if (seenA === null) { seenA = new Set(keys); return false; }
+  const fresh = items.filter(needsMe).filter(i => !seenA.has(i.id + '|' + i.statut + '|' + (i.note_at || ''))); keys.forEach(k => seenA.add(k)); if (!fresh.length) return false;
+  const txt = fresh.map(i => (i.statut === 'reprendre' ? '↺ À reprendre : ' : '✉ Message : ') + (who(i) || i.adresse || i.travaux || '') + (i.note_bureau ? ' · « ' + i.note_bureau.slice(0, 80) + ' »' : '')).join('\n');
+  try { navigator.vibrate && navigator.vibrate([300, 120, 300, 120, 300]); } catch (e) { }
+  try { if ('Notification' in window && Notification.permission === 'granted') new Notification('BK+ · Message du bureau', { body: txt, icon: '../icon-180.png', tag: 'bk-note' }); } catch (e) { }
+  toast(fresh.length > 1 ? fresh.length + ' messages du bureau' : txt.split('\n')[0]); return true;
 }
 let chan = null;
 function subscribe() {
   if (chan) sb.removeChannel(chan);
-  let tm; const re = () => { clearTimeout(tm); tm = setTimeout(async () => { try { await load(); if (!openId) render(); if (Date.now() - lastLocal > 8000) toast('Planning mis à jour par le bureau'); } catch (e) { } }, 600); };
+  let tm; const re = () => { clearTimeout(tm); tm = setTimeout(async () => { try { const al = await load(); if (!openId) render(); if (!al && Date.now() - lastLocal > 8000) toast('Planning mis à jour par le bureau'); } catch (e) { } }, 600); };
   chan = sb.channel('tech-' + tech.id).on('postgres_changes', { event: '*', schema: 'public', table: 'interventions' }, re).on('postgres_changes', { event: '*', schema: 'public', table: 'intervention_techs' }, re).subscribe();
 }
 
@@ -144,17 +159,19 @@ function list() {
   const pins = mine.filter(i => i.date === today && i.epingle), pinsLeft = pins.filter(i => i.statut !== 'controle');
   const done = todayJobs.filter(i => i.statut === 'controle').length, next = todayJobs.find(i => i.statut !== 'controle');
   const m0 = addDays(monday(new Date()), 7 * wk), days = tab === 'jour' ? [today] : [...Array(7)].map((_, k) => iso(addDays(m0, k))).filter((d, k) => k < 5 || mine.some(i => i.date === d));
-  const job = i => `<button class="job ${i.type !== 'intervention' ? 'int' : ''} ${i.statut === 'controle' ? 'done' : ''}" data-id="${i.id}" style="--sc:${stripe(i.techs)}">
+  const job = i => `<button class="job ${i.type !== 'intervention' ? 'int' : ''} ${i.statut === 'controle' || i.statut === 'attente' ? 'done' : ''} ${needsMe(i) ? 'alrt' : ''}" data-id="${i.id}" style="--sc:${stripe(i.techs)}">
       <div class="h">${hh(i.heure)}<small>${fin(i.heure, i.duree)}</small></div>
       <div class="b"><div class="ad">${E(i.type === 'intervention' ? (who(i) || i.adresse || i.ville) : i.travaux)}</div><div class="vi">${E(i.type === 'intervention' ? (who(i) ? [i.adresse, i.ville].filter(Boolean).join(', ') : i.ville) : (i.type === 'interne' ? 'Interne' : 'Tâche'))}${i.pieces.length ? ' · ' + ic('paperclip') : ''}${i.statut === 'controle' ? ' · ✓ Terminée' : ''}</div>${i.techs.length > 1 ? `<div class="teamline"><span class="avs">${avatars(i.techs)}</span>${E(i.techs.map(x => T(x).nom).join(' + '))}</div>` : ''}</div>
-      ${i.type === 'intervention' ? `<span class="st ${i.statut}">${i.statut === 'controle' ? 'Terminée' : { planifiee: 'Planifiée', enroute: 'En route', encours: 'En cours' }[i.statut] || ''}</span>` : ''}<span class="chev">›</span></button>`;
+      ${i.type === 'intervention' ? `<span class="st ${i.statut}">${i.statut === 'controle' ? 'Terminée' : { planifiee: 'Planifiée', enroute: 'En route', encours: 'En cours', attente: 'En attente', reprendre: 'À reprendre' }[i.statut] || ''}</span>` : ''}<span class="chev">›</span></button>`;
   const pin = i => { const ok = i.statut === 'controle', others = i.techs.filter(x => x !== tech.id);
     return `<div class="pin ${ok ? 'ok' : ''}"><div class="pt">${ok ? '✓ ' : ''}${E(i.travaux)}</div><div class="pm">${E(fullAddr(i))}${others.length ? ` · avec <span class="avs">${avatars(others)}</span> ${E(others.map(x => T(x).nom).join(', '))}` : ''}</div>
       ${ok ? '<div class="pm" style="color:var(--ok);font-weight:800">Fait ✓</div>' : `<div class="pa">${i.adresse ? `<button data-nav="${i.id}">${ICON.route}Itinéraire</button>` : ''}<button class="pdone" data-pin="${i.id}">✓ C’est fait</button></div>`}</div>`; };
   const block = d => { const it = timed.filter(i => i.date === d).sort((a, b) => (a.heure || '').localeCompare(b.heure || '')), pd = mine.filter(i => i.date === d && i.epingle);
     return (tab === 'semaine' ? `<div class="daytitle">${lbl(d)}${d === today ? ' · aujourd’hui' : ''}</div>` : '') + (tab === 'semaine' && pd.length ? pd.map(i => `<div class="pin mini"><div class="pt">${ic('pin')} ${E(i.travaux)}</div></div>`).join('') : '') +
       (it.length ? it.map(job).join('') : (pd.length && tab === 'semaine' ? '' : `<div class="panel"><p style="color:var(--mute)">Rien de prévu.</p></div>`)); };
+  const al = items.filter(needsMe).sort((a, b) => (b.note_at || '').localeCompare(a.note_at || ''));
   scr().innerHTML = topBar(`Bonjour ${E(tech.nom)} `, lbl(today), false) + previewBar() + `<div class="scroll">
+    ${al.length ? `<div class="bnote" role="alert"><h2>${ic('message')} Le bureau vous demande</h2>${al.map(i => `<button data-id="${i.id}"><b>${i.statut === 'reprendre' ? '↺ À reprendre' : '✉ Nouveau message'}</b><span>${E(who(i) || i.adresse || i.travaux || '')} · ${lbl(i.date)}</span>${i.note_bureau ? `<em>« ${E(i.note_bureau.slice(0, 140))} »</em>` : ''}</button>`).join('')}</div>` : ''}
     ${tab === 'jour' && reminderOn && pinsLeft.length ? `<div class="remind" role="alert">${ic('alarm')} <div><b>Avant la fin de journée</b>Il reste ${pinsLeft.length} tâche${pinsLeft.length > 1 ? 's' : ''} à faire aujourd’hui.</div></div>` : ''}
     ${tab === 'jour' && next ? `<div class="next"><div class="lbl">${next.statut === 'planifiee' ? 'Prochaine intervention' : 'En ce moment'} · ${hh(next.heure)}</div><div class="ad">${E(who(next) || next.adresse || next.ville)}</div><div class="vi">${E(who(next) ? [next.adresse, next.ville].filter(Boolean).join(', ') : next.ville)}</div>
       <div class="row2">${next.tel ? `<a href="${telUrl(next.tel)}">${ICON.phone}Appeler</a>` : '<span></span>'}<button data-nav="${next.id}">${ICON.route}Itinéraire</button><button class="go" data-id="${next.id}">${ICON.open}Ouvrir</button></div></div>` : ''}
@@ -182,12 +199,15 @@ async function signedMap(bucket, paths) { if (!paths.length || !online) return {
 async function fiche() {
   const i = items.find(x => x.id === openId); if (!i) { openId = null; return list(); }
   const d = drafts[i.id] = drafts[i.id] || (await DB.get('draft-' + i.id).catch(() => null)) || { photos: [], commentaire: '' };
-  const done = i.statut === 'controle' || i.statut === 'cloturee', others = i.techs.filter(x => x !== tech.id), step = { planifiee: 0, enroute: 1, encours: 2, controle: 3, cloturee: 3 }[i.statut];
+  const done = ['controle', 'cloturee', 'attente'].includes(i.statut), rep = i.statut === 'reprendre', others = i.techs.filter(x => x !== tech.id), step = { planifiee: 0, enroute: 1, encours: 2, reprendre: 2, controle: 3, attente: 3, cloturee: 3 }[i.statut];
+  if (i.note_bureau && !i.note_lue && !preview && online) { i.note_lue = true; sb.rpc('tech_note_lue', { p_id: i.id }).then(() => DB.set('cache', { team, tech, items, at: Date.now() })); }
   const smsBody = encodeURIComponent(`Bonjour, c’est ${tech.nom} de BK+ Plomberie. Je suis en route pour votre intervention, j’arrive dans une vingtaine de minutes.`);
   const docs = [...i.pieces.map(p => ({ kind: p.type, name: (p.prive ? '🔒 ' : '') + p.nom, bucket: p.prive ? 'bureau' : 'pieces', path: p.path })), ...((i.demande?.photos) || []).map(p => ({ kind: 'photo', name: p.label, bucket: 'demandes', path: p.path }))];
   const isJob = i.type === 'intervention';
   scr().innerHTML = topBar(`${i.epingle ? ic('pin') : hh(i.heure)} · ${E(i.ville || 'Tâche')}`, lbl(i.date), true) + previewBar() + `<div class="scroll">
-    ${done ? '<div class="done-box">✓ Terminée et envoyée au bureau</div>' : ''}
+    ${i.note_bureau ? `<div class="bmsg ${rep ? 'rep' : ''}"><small>${rep ? '↺ À reprendre · message du bureau' : 'Message du bureau'}${i.note_at ? ' · ' + new Date(i.note_at).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}</small><p>${E(i.note_bureau)}</p></div>` : ''}
+    ${rep && !i.note_bureau ? '<div class="bmsg rep"><small>↺ À reprendre</small><p>Le bureau vous demande de reprendre cette intervention.</p></div>' : ''}
+    ${done ? `<div class="done-box">${i.statut === 'attente' ? '⏸ En attente côté bureau' : '✓ Terminée et envoyée au bureau'}</div>` : ''}
     ${isJob ? `<div class="step"><div class="${step >= 0 ? 'on' : ''}">Prévue</div><div class="${step >= 1 ? 'on' : ''}">En route</div><div class="${step >= 2 ? 'on' : ''}">Sur place</div><div class="${step >= 3 ? 'on' : ''}">Terminée</div></div>` : ''}
     ${isJob && who(i) ? `<div class="who2">${i.client ? `<div><small>Client</small><b>${E(i.client)}</b></div>` : ''}${i.occupant ? `<div><small>Occupant</small><b>${E(i.occupant)}</b></div>` : ''}</div>` : ''}
     <div class="addr"><div class="a">${E(isJob ? (i.adresse || i.ville) : i.travaux)}</div><div class="v">${E(isJob ? [i.cp, i.ville].filter(Boolean).join(' ') : fullAddr(i))}</div>${isJob && i.complement ? `<div class="v" style="font-weight:700">${E(i.complement)}</div>` : ''}</div>
@@ -202,10 +222,10 @@ async function fiche() {
     ${docs.length ? `<div class="panel"><h3>${ic('paperclip')} Documents${i.demande ? ' · photos du client' : ''}</h3><div class="docs">${docs.map((p, k) => `<button data-doc="${k}"><div class="m ${p.kind === 'video' ? 'v' : ''}" data-dm="${k}">${p.kind === 'pdf' ? ic('file') : p.kind === 'video' ? '' : ''}</div><span>${E(p.name)}</span></button>`).join('')}</div>${i.demande?.message ? `<p style="font-size:16px;margin-top:10px;color:var(--mute)">« ${E(i.demande.message)} »</p>` : ''}</div>` : ''}
     ${isJob ? `<div class="panel"><h3>${ic('camera')} Photos</h3>
       ${done ? '' : `<div class="pbtns"><label class="photo-btn">${ICON.cam}Prendre une photo<input type="file" accept="image/*" capture="environment" class="sr" id="cam"></label><label class="photo-btn alt">${ic('image')}Mes photos<input type="file" accept="image/*" multiple class="sr" id="gal"></label></div>`}
-      ${done && (i.photos || []).length ? `<div class="thumbs sent">${i.photos.map((p, k) => `<figure><img alt="Photo ${k + 1}" data-rph="${E(p.path)}" data-lb><figcaption>${E(p.tag || '')}</figcaption></figure>`).join('')}</div>` : ''}
+      ${rep && (i.photos || []).length ? '<p style="color:var(--mute);margin:0 0 6px">Déjà envoyées :</p>' : ''}${(done || rep) && (i.photos || []).length ? `<div class="thumbs sent">${i.photos.map((p, k) => `<figure><img alt="Photo ${k + 1}" data-rph="${E(p.path)}" data-lb><figcaption>${E(p.tag || '')}</figcaption></figure>`).join('')}</div>` : ''}
       ${done && !(i.photos || []).length ? '<p style="color:var(--mute)">Aucune photo envoyée.</p>' : ''}
       <div class="thumbs">${d.photos.map((p, k) => `<figure><img src="${URL.createObjectURL(p.blob)}" alt="Photo ${k + 1}" data-lb>${done ? '' : `<button class="tg" data-tag="${k}">${p.tag || 'Avant / Après ?'}</button><button class="rm" data-rm="${k}" aria-label="Supprimer">×</button>`}</figure>`).join('')}</div></div>
-    <div class="panel"><h3>${ic('pencil')} Commentaire</h3>${done ? `<p>${E(i.commentaire || '')}</p>` : `<div class="chips">${PHRASES.map(p => `<button data-ph="${E(p)}">+ ${E(p)}</button>`).join('')}</div><div class="cmt"><textarea id="cmt" placeholder="Ce qui a été fait, ce qui reste à prévoir…">${E(d.commentaire)}</textarea><button class="mic" id="mic">${ICON.mic}Dicter</button></div>`}</div>` : ''}
+    <div class="panel"><h3>${ic('pencil')} Commentaire${rep ? ' de la reprise' : ''}</h3>${rep && i.commentaire ? `<p style="color:var(--mute);white-space:pre-line;font-size:15px">Avant : ${E(i.commentaire)}</p>` : ''}${done ? `<p>${E(i.commentaire || '')}</p>` : `<div class="chips">${PHRASES.map(p => `<button data-ph="${E(p)}">+ ${E(p)}</button>`).join('')}</div><div class="cmt"><textarea id="cmt" placeholder="Ce qui a été fait, ce qui reste à prévoir…">${E(d.commentaire)}</textarea><button class="mic" id="mic">${ICON.mic}Dicter</button></div>`}</div>` : ''}
     ${isJob && i.statut === 'controle' ? `<div class="panel add"><h3>${ic('pencil')} Oublié quelque chose ?</h3><p style="color:var(--mute);margin:0 0 10px">Tant que le bureau n’a pas clôturé, vous pouvez encore ajouter des photos ou un commentaire.</p>
       <div class="pbtns"><label class="photo-btn">${ICON.cam}Prendre une photo<input type="file" accept="image/*" capture="environment" class="sr" id="cam2"></label><label class="photo-btn alt">${ic('image')}Mes photos<input type="file" accept="image/*" multiple class="sr" id="gal2"></label></div>
       <div class="thumbs">${(addx[i.id] || { photos: [] }).photos.map((p, k) => `<figure><img src="${URL.createObjectURL(p.blob)}" alt=""><button class="rm" data-rm2="${k}" aria-label="Supprimer">×</button></figure>`).join('')}</div>
@@ -254,7 +274,7 @@ async function fiche() {
     const miss = []; if (!d.photos.length) miss.push('au moins une photo'); if (d.commentaire.trim().length < 2) miss.push('un commentaire');
     if (miss.length) { const a = $('#alert'); a.classList.remove('show'); void a.offsetWidth; a.textContent = 'Ajoutez ' + miss.join(' et ') + ' pour valider.'; a.classList.add('show'); return; }
     const job = { kind: 'valider', iid: i.id, commentaire: d.commentaire.trim(), photos: d.photos.map(p => ({ blob: p.blob, tag: p.tag })) };
-    i.statut = 'controle'; i.commentaire = job.commentaire; delete drafts[i.id]; DB.del('draft-' + i.id); openId = null;
+    i.statut = 'controle'; i.note_lue = true; i.commentaire = job.commentaire; delete drafts[i.id]; DB.del('draft-' + i.id); openId = null;
     await enqueue(job); render();
     toast(online ? '✓ Envoyée au bureau' : '✓ Gardée sur l’appareil · partira au retour du réseau');
   };

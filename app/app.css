@@ -253,3 +253,17 @@ label.linked::after{content:"✓ fiche client liée";font-size:11.5px;font-weigh
 .kv a.plans:hover{text-decoration:underline}
 .kv a.plans svg{width:15px;height:15px;flex:none}
 .kv a.gmaps{font-size:12px;color:var(--mute);margin-left:6px}
+.s-attente{background:#EEF1F5;color:#475569}.s-reprendre{background:#FDECEC;color:#DC2626}
+.ev .rz{position:absolute;left:0;right:0;bottom:-1px;height:7px;cursor:ns-resize;z-index:3}
+.ev:hover .rz::after{content:'';position:absolute;left:50%;bottom:2px;width:18px;height:3px;margin-left:-9px;border-radius:2px;background:var(--c);opacity:.7}
+.ev.rzing{z-index:9;box-shadow:0 6px 18px rgba(14,22,48,.25);overflow:visible}
+body.rzbody,body.rzbody *{cursor:ns-resize!important;user-select:none}
+.rztip{position:absolute;left:0;bottom:-24px;white-space:nowrap;background:#0E1630;color:#fff;font-size:11.5px;font-weight:700;padding:3px 7px;border-radius:6px;pointer-events:none;z-index:10}
+.ev .nb{position:absolute;right:3px;top:2px;font-size:11px;color:#DC2626}
+.pinr span em{font-style:normal;font-weight:800;color:var(--c)}
+.box.note textarea{width:100%;border:2px solid var(--line);border-radius:10px;padding:9px;font:inherit;resize:vertical}
+.box.note .nlast{background:#fff;border:1px solid var(--line);border-radius:10px;padding:9px 11px;margin-bottom:8px}
+.box.note .nlast small{display:block;color:var(--mute);margin-top:4px;font-size:12px}
+.box.note.nonlu .nlast small{color:#DC2626;font-weight:700}.box.note.lu .nlast small{color:var(--ok,#0E9F6E);font-weight:700}
+.cal .ch{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:0;border-bottom:1px solid var(--line);border-radius:0;display:block;cursor:default}.cal .ch:hover{box-shadow:none;border-color:var(--line)}.cal .ch.who{display:flex}
+#viewer .vbody{cursor:zoom-out}#viewer .vbody img,#viewer .vbody video,#viewer .vbody iframe{cursor:default}
