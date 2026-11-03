@@ -160,7 +160,7 @@ function planning() {
    <div class="seg"><button data-m="jour" class="${mode === 'jour' ? 'on' : ''}">Jour</button><button data-m="semaine" class="${mode === 'semaine' ? 'on' : ''}">Semaine</button></div>
    ${mode === 'semaine' ? `<label class="tgl"><input type="checkbox" id="we" ${showWE ? 'checked' : ''}> Sam. et dim.</label>` : ''}
    <button class="btn btn-line" id="bkup" title="Télécharge tout le planning dans un fichier Excel">${ic('download')} Sauvegarde</button><button class="btn btn-line" id="npin">${ic('pin')} Rappel du jour</button><button class="btn btn-grad" id="nnew">+ Planifier</button></div>
-   <div class="people">${techs.map(t => `<button data-who="${t.id}" class="${hidden.has(t.id) ? 'off' : ''}" style="--c:${t.couleur}"><i></i>${E(t.nom)}${isBureau(t) ? ' <small>bureau</small>' : ''}</button>`).join('')}<span class="hint">Cliquez pour afficher ou masquer · glissez deux doigts ou ← → pour changer de semaine · double-clic dans le planning pour créer · clic droit sur une intervention pour la dupliquer</span></div>`;
+   <div class="people">${techs.map(t => `<button data-who="${t.id}" class="${hidden.has(t.id) ? 'off' : ''}" style="--c:${t.couleur}"><i></i>${E(t.nom)}${isBureau(t) ? ' <small>bureau</small>' : ''}</button>`).join('')}<span class="hint">Cliquez pour afficher ou masquer · glissez deux doigts ou ← → pour changer de semaine · double-clic sur un créneau vide pour planifier · clic sur une intervention pour la modifier · clic droit pour la fiche (photos) ou dupliquer</span></div>`;
   if (!techs.length) { $('#main').innerHTML = h + `<div class="empty">Aucun membre de l’équipe enregistré.</div>`; return; }
   const hours = [...Array(H1 - H0)].map((_, k) => `<div class="hr" style="height:${px}px"><span>${pad(H0 + k)}:00</span></div>`).join('');
   const nLanes = d => Math.max(1, vis.filter(t => inter.some(i => i.date === d && i.techs.includes(t.id) && !isAllDay(i))).length);
@@ -214,7 +214,7 @@ function allDay(d, who, single) {
 function bindDnD(px) {
   let grab = 0;
   document.querySelectorAll('.ev,.pinr').forEach(c => {
-    c.onclick = e => { e.stopPropagation(); const i = inter.find(x => x.id === c.dataset.id); if (i) detail(i.id); };
+    c.onclick = e => { e.stopPropagation(); const i = inter.find(x => x.id === c.dataset.id); if (i) form(i); };
     c.oncontextmenu = e => { e.preventDefault(); ctxMenu(e, inter.find(x => x.id === c.dataset.id)); };
     c.ondragstart = e => { grab = e.offsetY || 0; c.classList.add('dragging'); e.dataTransfer.setData('text/plain', c.dataset.id + '|' + c.dataset.tech); };
     c.ondragend = () => c.classList.remove('dragging');
@@ -238,18 +238,19 @@ function bindDnD(px) {
     };
   });
   document.querySelectorAll('.dc').forEach(z => z.ondblclick = e => {
-    if (e.target.closest('.ev')) return; const r = z.getBoundingClientRect(); const m = H0 * 60 + Math.floor(((e.clientY - r.top) / px * 60) / 30) * 30;
+    if (e.target.closest('.ev')) return; const r = z.getBoundingClientRect(); const m = H0 * 60 + Math.floor(((e.clientY - r.top) / px * 60) / 15) * 15;
     const t = target(e.target) || (mode === 'jour' ? null : null); const ln = e.target.closest('.ln');
-    form(null, { pre: { date: z.dataset.date, heure: hm(m), techs: ln && ln.dataset.tech ? [ln.dataset.tech] : [] } });
+    form(null, { pre: { date: z.dataset.date, heure: hm(m), duree: 1, techs: ln && ln.dataset.tech ? [ln.dataset.tech] : [] } });
   });
 }
 function ctxMenu(e, i) {
   if (!i) return; document.querySelectorAll('.ctx').forEach(x => x.remove());
   const m = document.createElement('div'); m.className = 'ctx';
   m.innerHTML = `<b>${E(i.type === 'intervention' ? (i.client || i.ville || 'Intervention') : i.travaux).slice(0, 40)}</b>
-    <button data-a="dup">${ic('clipboard')} Dupliquer…</button><button data-a="ed">${ic('pencil')} Modifier</button><button data-a="p7">${ic('repeat')} Même chose la semaine suivante</button><button data-a="del" class="red">Supprimer</button>`;
+    <button data-a="fi">${ic('eye')} Voir la fiche (photos, retour)</button><button data-a="dup">${ic('clipboard')} Dupliquer…</button><button data-a="ed">${ic('pencil')} Modifier</button><button data-a="p7">${ic('repeat')} Même chose la semaine suivante</button><button data-a="del" class="red">Supprimer</button>`;
   document.body.appendChild(m); const w = 250; m.style.left = Math.min(e.clientX, innerWidth - w - 8) + 'px'; m.style.top = Math.min(e.clientY, innerHeight - m.offsetHeight - 8) + 'px';
   const close = () => { m.remove(); document.removeEventListener('mousedown', out); }; const out = x => { if (!m.contains(x.target)) close(); }; setTimeout(() => document.addEventListener('mousedown', out), 0);
+  m.querySelector('[data-a=fi]').onclick = () => { close(); detail(i.id); };
   m.querySelector('[data-a=dup]').onclick = () => { close(); duplicate(i); };
   m.querySelector('[data-a=ed]').onclick = () => { close(); form(i); };
   m.querySelector('[data-a=p7]').onclick = () => { close(); duplicate(i, iso(addDays(new Date(i.date + 'T12:00'), 7))); };
@@ -397,13 +398,13 @@ async function detail(id, given) {
 /* ================= Formulaire intervention ================= */
 async function form(i, opts) {
   opts = opts || {}; const isNew = !i || !i.id;
-  i = { type: opts.epingle ? 'tache' : 'intervention', date: mode === 'jour' ? day : iso(new Date()), heure: '09:00', duree: 2, epingle: !!opts.epingle, statut: 'planifiee', client: '', occupant: '', tel: '', adresse: '', complement: '', cp: '', ville: '', travaux: '', materiel: [], recurrent: false, techs: [], demande_id: null, ...(i || {}), ...(opts.pre || {}) };
+  i = { type: opts.epingle ? 'tache' : 'intervention', date: mode === 'jour' ? day : iso(new Date()), heure: '09:00', duree: 1, epingle: !!opts.epingle, statut: 'planifiee', client: '', occupant: '', tel: '', adresse: '', complement: '', cp: '', ville: '', travaux: '', materiel: [], recurrent: false, techs: [], demande_id: null, ...(i || {}), ...(opts.pre || {}) };
   let existing = []; if (!isNew) { const { data } = await sb.from('pieces').select('*').eq('intervention_id', i.id); existing = data || []; }
   const add = { tech: [], bur: [] }; let removed = [];
   const debut = (i.heure || '09:00').slice(0, 5), finH = hm(Math.min(mins(debut) + Math.round((+i.duree || 1) * 60), 23 * 60 + 45));
   const who = (list, label) => list.length ? `<div class="whog"><small>${label}</small><div class="checks">${list.map(t => `<label><input type="checkbox" name="techs" value="${t.id}" ${i.techs.includes(t.id) ? 'checked' : ''}><i style="width:10px;height:10px;border-radius:50%;background:${t.couleur};display:inline-block"></i>${E(t.nom)}</label>`).join('')}</div></div>` : '';
   const upl = (k, title, help) => `<div class="full upl ${k === 'bur' ? 'priv' : ''}"><div class="ut">${title} <span>${help}</span></div><div class="ph" id="pj-${k}"></div><div class="dz"><label class="btn btn-line">+ Ajouter des fichiers<input type="file" id="in-${k}" multiple accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx" class="sr"></label><button type="button" class="btn btn-line" data-clip="${k}">${ic('paperclip')} Coller la photo copiée</button><span>ou glissez-les ici</span></div></div>`;
-  openPanel(`<header><h2>${isNew ? (i.epingle ? ic('pin') + ' Rappel dans la journée' : opts.ctx && /^Copie/.test(opts.ctx) ? 'Dupliquer l’intervention' : 'Planifier') : 'Modifier'}</h2><button class="x" aria-label="Fermer">×</button></header>
+  openPanel(`<header><h2>${isNew ? (i.epingle ? ic('pin') + ' Rappel dans la journée' : opts.ctx && /^Copie/.test(opts.ctx) ? 'Dupliquer l’intervention' : 'Planifier') : 'Modifier'}</h2>${isNew ? '' : `<button type="button" class="btn btn-line" id="tofi" style="margin-left:auto;margin-right:8px">${ic('eye')} Fiche, photos, retour</button>`}<button class="x" aria-label="Fermer">×</button></header>
   <form class="body" id="f"><div class="form">
     ${opts.ctx ? `<div class="full box" style="background:var(--soft);border:0"><b>${E(opts.ctx)}</b></div>` : ''}
     ${opts.demande ? `<div class="full box" style="background:var(--soft);border:0"><b>${ic('camera')} Depuis la demande ${E(opts.demande.ref)}</b> · ${E(opts.demande.service)}. Ses photos seront visibles par le technicien.</div>` : ''}
@@ -429,7 +430,7 @@ async function form(i, opts) {
     : (i.serie ? `<p class="full" style="margin:0;color:var(--mute);font-size:13px">↻ Fait partie d’une série : seule cette date est modifiée.</p>` : '')}
   </div><datalist id="villes">${['Istres', 'Miramas', 'Martigues', 'Fos-sur-Mer', 'Port-de-Bouc', 'Saint-Chamas', 'Cornillon-Confoux', 'Grans', 'Salon-de-Provence', 'Vitrolles', 'Marignane', 'Sausset-les-Pins', 'Port-Saint-Louis-du-Rhône', 'Aix-en-Provence', 'Marseille'].map(v => `<option value="${v}">`).join('')}</datalist></form>
   <footer><button class="btn btn-grad" form="f" type="submit" id="sv">${isNew ? 'Planifier' : 'Enregistrer'}</button><button class="btn btn-line" type="button" id="cc">Annuler</button></footer>`);
-  const f = $('#f'); acIntervention(f, i); acAdresse(f);
+  const f = $('#f'); acIntervention(f, i); acAdresse(f); if ($('#tofi')) $('#tofi').onclick = () => detail(i.id);
   const occ = () => { const rp = f.rep ? f.rep.value : '', start = f.date.value; if (!rp || !start) return [start];
     const end = f.jusqu.value, out = [], d0 = new Date(start + 'T12:00'), lim = end ? new Date(end + 'T12:00') : null;
     if (!lim || lim < d0) return [start];
