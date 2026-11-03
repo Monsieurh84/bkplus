@@ -285,3 +285,32 @@ html,body{height:100%}body{background:var(--bg);overscroll-behavior:none}
 .pbtns .photo-btn{height:90px;font-size:18px;flex-direction:column;gap:4px}
 .pbtns .photo-btn.alt{border-style:solid;border-color:var(--line);background:#fff;color:var(--navy)}
 .pbtns .photo-btn svg{width:30px;height:30px}
+.eqseg{display:flex;background:#fff;border:2px solid var(--line);border-radius:14px;padding:3px;margin:0 0 10px}
+.eqseg button{flex:1;border:0;background:none;border-radius:10px;height:40px;font-size:15px;font-weight:800;color:var(--mute)}
+.eqseg button.on{background:var(--navy);color:#fff}
+.mgrid{display:grid;grid-template-columns:repeat(7,1fr);background:#fff;border-radius:18px;padding:8px 4px;border:1px solid var(--line)}
+.mh{text-align:center;font-size:12px;font-weight:800;color:var(--mute);padding:2px 0 6px}
+.mday{border:0;background:none;display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 0 8px;border-top:1px solid #EEF0F5;min-height:58px}
+.mday b{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:#0E1630}
+.mday.we b,.mday.out b{color:#A0A6B8}
+.mday.out{opacity:.5}
+.mday.fer b{color:#B45309}
+.mday.td b{background:#EF4444;color:#fff}
+.mday.sel:not(.td) b{background:#0E1630;color:#fff}
+.mbar{display:flex;gap:1px;height:6px;width:82%;max-width:40px;border-radius:3px;overflow:hidden}
+.mbar i{flex:1;min-width:3px}
+.mlist{margin-top:14px;background:#fff;border-radius:18px;border:1px solid var(--line);padding:6px 14px}
+.mlist h3{font-size:15px;color:var(--mute);margin:10px 0 4px;font-weight:800}
+.mlist .fer,.eqday .fer{color:#B45309;font-size:13px;margin-left:6px}
+.mit{display:flex;width:100%;border:0;background:none;text-align:left;padding:12px 0 12px 14px;border-bottom:1px solid #EEF0F5;position:relative;gap:10px;align-items:center}
+.mit:last-child{border-bottom:0}
+.mit::before{content:'';position:absolute;left:0;top:12px;bottom:12px;width:5px;border-radius:3px;background:var(--s)}
+.mit .b{flex:1;min-width:0}
+.mit b{display:block;font-size:18px;color:#0E1630;line-height:1.2}
+.mit small{display:block;color:var(--mute);font-size:15px;margin-top:2px}
+.mit em{display:block;font-style:normal;font-size:13px;font-weight:700;color:var(--mute);margin-top:2px}
+.mit .t{text-align:right;font-size:16px;font-weight:700;color:#0E1630;line-height:1.35;white-space:nowrap}
+.mempty{color:var(--mute);margin:8px 0 12px}
+.eqtel{display:inline-flex;align-items:center;gap:6px;margin-top:10px;font-weight:800;color:var(--navy);font-size:17px}
+.eqtel svg{width:18px;height:18px}
+.eqh.fer{color:#B45309}

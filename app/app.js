@@ -111,7 +111,7 @@ const FER = {};
 function feries(y) { if (FER[y]) return FER[y];
   const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451), mo = Math.floor((h + l - 7 * m + 114) / 31), da = ((h + l - 7 * m + 114) % 31) + 1;
   const P = new Date(y, mo - 1, da, 12), o = {};
-  [['01-01', 'Jour de l’an'], ['05-01', 'Fête du Travail'], ['05-08', 'Victoire 1945'], ['07-14', 'Fête nationale'], ['08-15', 'Assomption'], ['11-01', 'Toussaint'], ['11-11', 'Armistice'], ['12-25', 'Noël']].forEach(([md, n]) => o[y + '-' + md] = n);
+  [['01-01', 'Jour de l’an'], ['12-24', 'Veille de Noël'], ['12-31', 'Saint-Sylvestre'], ['05-01', 'Fête du Travail'], ['05-08', 'Victoire 1945'], ['07-14', 'Fête nationale'], ['08-15', 'Assomption'], ['11-01', 'Toussaint'], ['11-11', 'Armistice'], ['12-25', 'Noël']].forEach(([md, n]) => o[y + '-' + md] = n);
   o[iso(addDays(P, 1))] = 'Lundi de Pâques'; o[iso(addDays(P, 39))] = 'Ascension'; o[iso(addDays(P, 50))] = 'Lundi de Pentecôte';
   return FER[y] = o; }
 const ferie = d => feries(+d.slice(0, 4))[d] || '';
@@ -288,13 +288,16 @@ async function listRecherche() {
 }
 
 /* ================= Panneau ================= */
-function openPanel(html) { const P = $('#panel'); P.classList.remove('wide'); P.innerHTML = html; P.classList.add('on'); P.setAttribute('aria-hidden', 'false'); $('#scrim').classList.add('on'); P.querySelector('.x').onclick = closePanel; }
+/* Empêche Chrome de proposer « Enregistrer l'adresse » / remplissage automatique dans les formulaires de l'appli */
+function noFill(root) { root.querySelectorAll('form').forEach(f => f.setAttribute('autocomplete', 'off')); root.querySelectorAll('input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=date]):not([type=time]),textarea').forEach(x => { if (x.type !== 'password') x.setAttribute('autocomplete', 'bk-' + (x.name || 'x')); }); }
+function openPanel(html) { const P = $('#panel'); P.classList.remove('wide'); P.innerHTML = html; noFill(P); P.classList.add('on'); P.setAttribute('aria-hidden', 'false'); $('#scrim').classList.add('on'); P.querySelector('.x').onclick = closePanel; }
 function closePanel() { const P = $('#panel'); P.classList.remove('on'); P.setAttribute('aria-hidden', 'true'); $('#scrim').classList.remove('on'); }
 $('#scrim').onclick = closePanel; document.addEventListener('keydown', e => { if (e.key === 'Escape') closePanel(); });
 const MIME = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', heic: 'image/heic', heif: 'image/heif', mov: 'video/quicktime', mp4: 'video/mp4', m4v: 'video/mp4', pdf: 'application/pdf', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
 /* Copie le fichier en mémoire tout de suite (une photo glissée depuis Messages ou WhatsApp peut disparaître juste après le dépôt) et corrige son type s'il est vide */
 async function fixFile(f, quiet) {
   if (!f) return null; const ext = (f.name.split('.').pop() || '').toLowerCase(), type = f.type || MIME[ext] || 'application/octet-stream';
+  if (/heic|heif/.test(type) || /^(heic|heif)$/.test(ext)) { try { const j = await heicToJpeg(f); return new File([j], (f.name || 'photo').replace(/\.(heic|heif)$/i, '') + '.jpg', { type: 'image/jpeg' }); } catch (e) { } }
   try { const buf = await f.arrayBuffer(); if (!buf.byteLength) throw new Error('vide'); const nm = !f.name || /^image\.(png|tiff?|jpe?g)$/i.test(f.name) ? 'photo-' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '-' + Math.random().toString(36).slice(2, 5) + '.' + (type.split('/')[1] || 'png').replace('jpeg', 'jpg') : f.name; return new File([buf], nm, { type }); }
   catch (e) { if (!quiet) toast('Cette photo ne peut pas être glissée depuis Messages : faites clic droit › Copier sur la photo, puis Cmd + V ici'); return null; }
 }
@@ -313,6 +316,24 @@ async function pasteFiles(fl) { const ok = (await Promise.all(fl.map(f => fixFil
 document.addEventListener('paste', e => { if (!window.__bkPaste) return; const fl = [...(e.clipboardData?.files || [])], img = [...(e.clipboardData?.items || [])].some(x => x.kind === 'file' || x.type.startsWith('image/'));
   jlog('cmdv', { types: [...(e.clipboardData?.types || [])], items: [...(e.clipboardData?.items || [])].map(x => x.kind + ':' + x.type), files: fl.map(f => f.name + '|' + f.type + '|' + f.size) });
   if (!fl.length && !img) return; e.preventDefault(); pasteFiles(fl).then(ok => { if (ok.length) window.__bkPaste(ok, true); }); });
+/* Photos HEIC (iPhone) : Chrome ne sait pas les afficher, on les convertit à la volée */
+const isHeic = n => /\.(heic|heif)$/i.test(String(n || '').split('?')[0]);
+let heicP = null; const HEICJS = ['https://cdnjs.cloudflare.com/ajax/libs/heic2any/0.0.4/heic2any.min.js', 'https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js'];
+const loadHeic = () => heicP || (heicP = new Promise((ok, ko) => { if (window.heic2any) return ok(window.heic2any); let k = 0; const nx = () => { if (k >= HEICJS.length) { heicP = null; return ko(new Error('convertisseur HEIC indisponible')); } const sc = document.createElement('script'); sc.src = HEICJS[k++]; sc.onload = () => ok(window.heic2any); sc.onerror = nx; document.head.appendChild(sc); }; nx(); }));
+const heicCache = {};
+async function heicToJpeg(blob) { const h = await loadHeic(); const r = await h({ blob, toType: 'image/jpeg', quality: .85 }); return Array.isArray(r) ? r[0] : r; }
+async function viewUrl(u, path) { if (!isHeic(path)) return u; if (heicCache[path]) return heicCache[path]; const b = await fetch(u).then(r => r.blob()); return heicCache[path] = URL.createObjectURL(await heicToJpeg(b)); }
+function setThumb(a, u, path) { const im = a.querySelector('img'); if (!im) return; if (!isHeic(path)) { im.src = u; return; } viewUrl(u, path).then(x => { im.src = x; }).catch(() => { im.replaceWith(Object.assign(document.createElement('span'), { className: 'ic', innerHTML: ic('image') })); }); }
+/* Visionneuse intégrée : photos, vidéos et PDF s'ouvrent dans l'application */
+function viewer(url, path, name) {
+  let v = $('#viewer'); if (!v) { v = document.createElement('div'); v.id = 'viewer'; document.body.appendChild(v); v.onclick = e => { if (e.target === v || e.target.closest('[data-vx]')) v.classList.remove('on'); }; document.addEventListener('keydown', e => { if (e.key === 'Escape') v.classList.remove('on'); }); }
+  const ext = String(path || name || '').split('?')[0].split('.').pop().toLowerCase(), img = /^(jpe?g|png|webp|gif|heic|heif)$/.test(ext), vid = /^(mp4|mov|m4v|webm)$/.test(ext), pdf = ext === 'pdf';
+  v.innerHTML = `<div class="vbar"><b>${E(name || '')}</b><a class="btn btn-line" href="${url}" download="${E(name || '')}" target="_blank" rel="noopener">${ic('download')} Télécharger</a><button class="btn btn-line" data-vx>Fermer ×</button></div><div class="vbody">${img ? '<p class="vload">Chargement…</p>' : vid ? `<video src="${url}" controls autoplay playsinline></video>` : pdf ? `<iframe src="${url}#toolbar=1" title="${E(name || '')}"></iframe>` : `<p class="vload">Aperçu indisponible pour ce type de fichier. Utilisez « Télécharger ».</p>`}</div>`;
+  v.classList.add('on');
+  if (img) viewUrl(url, path).then(x => { const b = v.querySelector('.vbody'); if (b) b.innerHTML = `<img src="${x}" alt="${E(name || '')}">`; }).catch(e => { const b = v.querySelector('.vbody'); if (b) b.innerHTML = '<p class="vload">Impossible d’afficher cette photo (' + E(e.message || e) + '). Utilisez « Télécharger ».</p>'; });
+}
+document.addEventListener('click', e => { const a = e.target.closest('#panel .ph a[href]'); if (!a || e.target.closest('.rm') || e.metaKey || e.ctrlKey) return; const h = a.getAttribute('href'); if (!h || h === '#') return; e.preventDefault();
+  viewer(h, a.dataset.p || a.dataset.pb || a.dataset.dp || a.dataset.rp || h, (a.textContent || '').trim()); });
 /* Une pièce jointe peut être partagée par toutes les dates d'une série : on ne supprime le fichier que s'il n'est plus utilisé */
 async function rmIfAlone(bucket, paths) { paths = [...new Set(paths)]; if (!paths.length) return; const { data } = await sb.from('pieces').select('path').in('path', paths); const used = new Set((data || []).map(x => x.path)); const free = paths.filter(p => !used.has(p)); if (free.length) await sb.storage.from(bucket).remove(free); }
 const kindOf = f => f.type.startsWith('image/') ? 'photo' : f.type.startsWith('video/') ? 'video' : f.type === 'application/pdf' ? 'pdf' : 'autre';
@@ -338,8 +359,8 @@ async function detail(id, given) {
   </div>
   <footer>${i.statut === 'controle' ? '<button class="btn btn-grad" id="clo" style="background:var(--ok,#0E9F6E)">✓ Clôturer</button>' : ''}<button class="btn ${i.statut === 'controle' ? 'btn-line' : 'btn-grad'}" id="ed">Modifier</button><button class="btn btn-line" id="dup">Dupliquer</button><button class="btn btn-line" id="p7">+7 jours</button><button class="btn btn-red" id="del" style="margin-left:auto">Supprimer</button></footer>`);
   const urls = await signed('pieces', (pieces || []).filter(p => !p.prive).map(p => p.path));
-  signed('bureau', (pieces || []).filter(p => p.prive).map(p => p.path)).then(ub => document.querySelectorAll('#pjb [data-pb]').forEach(a => { const u = ub[a.dataset.pb]; if (u) { a.href = u; const im = a.querySelector('img'); if (im) im.src = u; } }));
-  document.querySelectorAll('#pj [data-p]').forEach(a => { const u = urls[a.dataset.p]; if (u) { a.href = u; const im = a.querySelector('img'); if (im) im.src = u; } });
+  signed('bureau', (pieces || []).filter(p => p.prive).map(p => p.path)).then(ub => document.querySelectorAll('#pjb [data-pb]').forEach(a => { const u = ub[a.dataset.pb]; if (u) { a.href = u; setThumb(a, u, a.dataset.pb); } }));
+  document.querySelectorAll('#pj [data-p]').forEach(a => { const u = urls[a.dataset.p]; if (u) { a.href = u; setThumb(a, u, a.dataset.p); } });
   if (d) { const u2 = await signed('demandes', d.photos.map(p => p.path)); document.querySelectorAll('#dph [data-dp]').forEach(a => { const u = u2[a.dataset.dp]; if (u) { a.href = u; a.querySelector('img').src = u; } }); }
   if ((i.photos || []).length) signed('retours', i.photos.map(p => p.path)).then(u3 => document.querySelectorAll('#rph [data-rp]').forEach(a => { const u = u3[a.dataset.rp]; if (u) { a.href = u; a.querySelector('img').src = u; } }));
   if ($('#clo')) $('#clo').onclick = () => cloturer(id);
@@ -382,7 +403,7 @@ async function form(i, opts) {
     <label>Code postal<input name="cp" value="${E(i.cp)}" inputmode="numeric" maxlength="5"></label>
     <label>Ville<input name="ville" value="${E(i.ville)}" list="villes"></label>
     <label class="full">Téléphone de l’occupant<input name="tel" type="tel" value="${E(i.tel)}"></label>
-    <label class="full">Travaux à effectuer<textarea name="travaux" required>${E(i.travaux)}</textarea></label>
+    <label class="full">Travaux à effectuer<textarea name="travaux">${E(i.travaux)}</textarea></label>
     <label class="full">${ic('package')} Matériel nécessaire <span style="font-weight:600">(une ligne par élément)</span><textarea name="materiel" placeholder="Ex. : Siphon PVC Ø40&#10;Flexible inox 50 cm">${E((i.materiel || []).join('\n'))}</textarea></label>
     ${upl('tech', ic('paperclip') + ' Pièces jointes pour le technicien', '(photos, vidéos, PDF · facultatif)')}
     ${upl('bur', ic('file') + ' Devis et documents du bureau', '(visibles uniquement par le bureau, jamais par les techniciens)')}

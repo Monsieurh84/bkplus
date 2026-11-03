@@ -303,14 +303,23 @@ function monMdp() {
   sb.auth.updateUser({ password: a }).then(({ error }) => toast(error ? 'Impossible (réseau ?) : réessayez' : 'Mot de passe modifié'));
 }
 
+const FER = {};
+function feries(y) { if (FER[y]) return FER[y];
+  const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451), mo = Math.floor((h + l - 7 * m + 114) / 31), da = ((h + l - 7 * m + 114) % 31) + 1;
+  const P = new Date(y, mo - 1, da, 12), o = {};
+  [['01-01', 'Jour de l’an'], ['05-01', 'Fête du Travail'], ['05-08', 'Victoire 1945'], ['07-14', 'Fête nationale'], ['08-15', 'Assomption'], ['11-01', 'Toussaint'], ['11-11', 'Armistice'], ['12-24', 'Veille de Noël'], ['12-25', 'Noël'], ['12-31', 'Saint-Sylvestre']].forEach(([md, n]) => o[y + '-' + md] = n);
+  o[iso(addDays(P, 1))] = 'Lundi de Pâques'; o[iso(addDays(P, 39))] = 'Ascension'; o[iso(addDays(P, 50))] = 'Lundi de Pentecôte'; return FER[y] = o; }
+const ferie = d => feries(+d.slice(0, 4))[d] || '';
 /* ---------- Vue équipe (accès bureau) : la semaine de toute l'équipe, comme sur l'ordinateur ---------- */
-let wkE = 0, eqData = null, eqKey = '';
+let wkE = 0, eqData = null, eqKey = '', eqMode = 'mois', moE = 0, selD = null, moData = null, moKey = '';
+try { eqMode = localStorage.getItem('bk-eqm') || 'mois'; if (eqMode === 'liste') eqMode = 'mois'; } catch (e) { }
 const ini = n => String(n || '?').trim().slice(0, 1).toUpperCase();
 async function equipe() {
+  if (eqMode === 'mois') return equipeMois();
   const m0 = addDays(monday(new Date()), 7 * wkE), a = iso(m0), b = iso(addDays(m0, 6)), key = a;
   const H0 = 7, H1 = 20, today = iso(new Date());
   if (eqKey !== key || !eqData) { scr().innerHTML = topBar('Planning équipe', 'Semaine du ' + lbl(a), false) + previewBar() + '<div class="scroll"><div class="panel"><p>Chargement…</p></div></div>'; bindTop(); bindPreview();
-    const { data, error } = await sb.from('interventions').select('id,date,heure,duree,epingle,type,client,occupant,adresse,ville,travaux,statut,intervention_techs(tech_id)').gte('date', a).lte('date', b);
+    const { data, error } = await sb.from('interventions').select('id,date,heure,duree,epingle,type,client,occupant,tel,adresse,complement,cp,ville,travaux,statut,intervention_techs(tech_id)').gte('date', a).lte('date', b);
     if (error) { toast('Pas de réseau : vue équipe indisponible'); tab = 'jour'; return list(); }
     eqData = (data || []).map(i => ({ ...i, techs: i.intervention_techs.map(x => x.tech_id) })); eqKey = key; }
   const all = eqData, days = [...Array(7)].map((_, k) => iso(addDays(m0, k))).filter((d, k) => k < 5 || all.some(i => i.date === d));
@@ -324,59 +333,122 @@ async function equipe() {
   scr().innerHTML = topBar('Planning équipe', 'Semaine du ' + lbl(a), false) + previewBar() + `<div class="scroll eqs">
     <div class="tabs"><button data-tab="jour">Aujourd’hui</button><button data-tab="semaine">Mes semaines</button><button data-tab="equipe" class="on">Équipe</button></div>
     <div class="wkn"><button id="ep" aria-label="Semaine précédente">‹</button><span>${wkE === 0 ? 'Cette semaine' : wkE === 1 ? 'Semaine prochaine' : 'Semaine du ' + lbl(a).replace(/^\S+ /, '')}</span><button id="en" aria-label="Semaine suivante">›</button></div>
+    <div class="eqseg"><button data-em="mois">Mois</button><button data-em="grille" class="${eqMode === 'grille' ? 'on' : ''}">Grille semaine</button></div>
+    ${false ? days.map(d => { const its = all.filter(i => i.date === d), x = new Date(d + 'T12:00'), fr = ferie(d);
+      return `<div class="eqday ${d === today ? 'td' : ''}"><h3>${lbl(d)}${d === today ? ' · aujourd’hui' : ''}${fr ? `<span class="fer">${E(fr)}</span>` : ''}</h3>
+        ${team.map(t => { const mi = its.filter(i => i.techs.includes(t.id)).sort((a, b) => (b.epingle - a.epingle) || String(a.heure || '').localeCompare(String(b.heure || '')));
+          return `<div class="eqp" style="--c:${t.couleur}"><div class="nm"><i></i>${E(t.nom)}${mi.length ? '' : ' <small>libre</small>'}</div>${mi.map(i => `<button class="eqit ${i.statut}" data-eq="${i.id}"><span class="t">${i.epingle || !i.heure ? ic('pin') : hh(i.heure) + '<small>' + fin(i.heure, i.duree) + '</small>'}</span><span class="b"><b>${E([i.client, i.occupant].filter(Boolean).join(' · ') || i.travaux || 'Intervention')}</b><small>${E([i.adresse, i.ville].filter(Boolean).join(', ') || (i.travaux || '').slice(0, 60))}</small></span></button>`).join('')}</div>`; }).join('')}</div>`; }).join('') : `
     <div class="eqleg">${team.map(t => `<span><i style="background:${t.couleur}"></i>${E(t.nom)}</span>`).join('')}</div>
     <div class="eqg" style="grid-template-columns:30px repeat(${days.length},minmax(0,1fr))">
-      <div></div>${days.map(d => { const x = new Date(d + 'T12:00'); return `<div class="eqh ${d === today ? 'td' : ''}"><b>${x.toLocaleDateString('fr-FR', { weekday: 'short' }).replace('.', '')}</b> ${x.getDate()}${pins(d) ? `<small>${ic('pin')}${pins(d)}</small>` : ''}</div>`; }).join('')}
+      <div></div>${days.map(d => { const x = new Date(d + 'T12:00'); return `<div class="eqh ${d === today ? 'td' : ''} ${ferie(d) ? 'fer' : ''}" title="${E(ferie(d))}"><b>${x.toLocaleDateString('fr-FR', { weekday: 'short' }).replace('.', '')}</b> ${x.getDate()}${pins(d) ? `<small>${ic('pin')}${pins(d)}</small>` : ''}</div>`; }).join('')}
       <div class="eqax">${[...Array(H1 - H0)].map((_, k) => `<div style="height:${px}px">${H0 + k}h</div>`).join('')}</div>${days.map(col).join('')}
-    </div><button class="primary-step" id="eqnew" style="margin-top:14px">+ Planifier une intervention</button>
+    </div>`}<button class="primary-step" id="eqnew" style="margin-top:14px">+ Planifier une intervention</button>
     <p class="eqhint">Touchez un créneau vide pour y planifier · glissez à gauche ou à droite pour changer de semaine</p>
     </div><div class="lb" id="eqlb"></div>`;
   bindTop(); bindPreview();
   scr().querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { tab = b.dataset.tab; wk = 0; render(); });
   const go = n => { wkE = Math.max(-8, Math.min(26, wkE + n)); eqData = null; equipe(); };
   $('#ep').onclick = () => go(-1); $('#en').onclick = () => go(1);
-  const g = scr().querySelector('.eqg'); let tx = null, ty = 0;
+  const g = scr().querySelector('.eqs'); let tx = null, ty = 0;
   g.addEventListener('touchstart', e => { tx = e.touches[0].clientX; ty = e.touches[0].clientY; }, { passive: true });
   g.addEventListener('touchend', e => { if (tx === null) return; const dx = e.changedTouches[0].clientX - tx, dy = e.changedTouches[0].clientY - ty; tx = null; if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) go(dx < 0 ? 1 : -1); });
   const lb = $('#eqlb'); lb.onclick = e => { if (e.target === lb || e.target.dataset.x !== undefined) lb.classList.remove('on'); };
+  scr().querySelectorAll('[data-em]').forEach(b => b.onclick = () => { eqMode = b.dataset.em; try { localStorage.setItem('bk-eqm', eqMode); } catch (e) { } equipe(); });
   $('#eqnew').onclick = () => quickNew(days.includes(today) ? today : days[0], '08:00');
   scr().querySelectorAll('.eqd').forEach(c => c.onclick = e => { if (e.target.closest('[data-eq]')) return; const r = c.getBoundingClientRect(), m = H0 * 60 + Math.floor((e.clientY - r.top) / px * 4) * 15;
     quickNew(c.dataset.day, String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0')); });
   scr().querySelectorAll('[data-eq]').forEach(b => b.onclick = () => { const i = all.find(x => x.id === b.dataset.eq); if (!i) return;
     lb.innerHTML = `<div class="eqcard"><button data-x aria-label="Fermer">×</button><small>${lbl(i.date)} · ${hh(i.heure)} – ${fin(i.heure, i.duree)}</small>
       <h3>${E([i.client, i.occupant].filter(Boolean).join(' · ') || i.travaux || 'Intervention')}</h3><p>${E([i.adresse, i.ville].filter(Boolean).join(', '))}</p>
-      ${i.travaux ? `<p style="color:var(--mute)">${E(i.travaux.slice(0, 240))}</p>` : ''}<div class="eqw">${i.techs.map(t => `<span><i style="background:${T(t).couleur}"></i>${E(T(t).nom)}</span>`).join('')}</div></div>`;
-    lb.classList.add('on'); });
+      ${i.travaux ? `<p style="color:var(--mute)">${E(i.travaux.slice(0, 240))}</p>` : ''}<div class="eqw">${i.techs.map(t => `<span><i style="background:${T(t).couleur}"></i>${E(T(t).nom)}</span>`).join('')}</div>
+      ${i.tel ? `<a class="eqtel" href="${telUrl(i.tel)}">${ICON.phone} ${E(i.tel)}</a>` : ''}<button class="primary-step" id="eqed" style="margin-top:14px">Modifier</button></div>`;
+    lb.classList.add('on'); $('#eqed').onclick = () => quickNew(i.date, String(i.heure || '08:00').slice(0, 5), i); });
 }
 
 /* Planifier depuis le téléphone (bureau) */
-function quickNew(date, heure) {
-  const lb = $('#eqlb'), [h, m] = heure.split(':').map(Number), fin2 = String(Math.min(h + 1, 19)).padStart(2, '0') + ':' + String(m).padStart(2, '0');
-  lb.innerHTML = `<form class="eqcard eqf" id="qf"><button type="button" data-x aria-label="Fermer">×</button><h3>Planifier</h3>
+function quickNew(date, heure, ex) {
+  const lb = $('#eqlb'), [h, m] = heure.split(':').map(Number), dm = ex && ex.heure ? h * 60 + m + Math.round((+ex.duree || 1) * 60) : Math.min(h + 1, 19) * 60 + m, fin2 = String(Math.floor(dm / 60)).padStart(2, '0') + ':' + String(dm % 60).padStart(2, '0'), v = k => E(ex && ex[k] || '');
+  lb.innerHTML = `<form class="eqcard eqf" id="qf"><button type="button" data-x aria-label="Fermer">×</button><h3>${ex ? 'Modifier' : 'Planifier'}</h3>
     <label>Date<input type="date" name="date" value="${date}" required></label>
     <div class="r2"><label>De<input type="time" name="h1" value="${heure}" step="60" required></label><label>À<input type="time" name="h2" value="${fin2}" step="60" required></label></div>
-    <div class="qwho">${team.map(t => `<label><input type="checkbox" name="t" value="${t.id}"><i style="background:${t.couleur}"></i>${E(t.nom)}</label>`).join('')}</div>
-    <div class="r2"><label>Client<input name="client" autocomplete="off"></label><label>Occupant<input name="occupant" autocomplete="off"></label></div>
-    <label>Téléphone<input name="tel" type="tel"></label>
-    <label>Adresse<input name="adresse" autocomplete="off" placeholder="Tapez le début, puis choisissez"><div class="qac" hidden></div></label>
-    <label>Complément<input name="complement" placeholder="Résidence, bâtiment…"></label>
-    <div class="r2"><label>Code postal<input name="cp" inputmode="numeric" maxlength="5"></label><label>Ville<input name="ville"></label></div>
-    <label>Travaux à effectuer<textarea name="travaux" required></textarea></label>
-    <button class="primary-step" type="submit" id="qsv">Planifier</button></form>`;
+    <div class="qwho">${team.map(t => `<label><input type="checkbox" name="t" value="${t.id}" ${ex && ex.techs.includes(t.id) ? 'checked' : ''}><i style="background:${t.couleur}"></i>${E(t.nom)}</label>`).join('')}</div>
+    <div class="r2"><label>Client<input name="client" autocomplete="off" value="${v('client')}"></label><label>Occupant<input name="occupant" autocomplete="off" value="${v('occupant')}"></label></div>
+    <label>Téléphone<input name="tel" type="tel" value="${v('tel')}"></label>
+    <label>Adresse<input name="adresse" autocomplete="off" value="${v('adresse')}" placeholder="Tapez le début, puis choisissez"><div class="qac" hidden></div></label>
+    <label>Complément<input name="complement" value="${v('complement')}" placeholder="Résidence, bâtiment…"></label>
+    <div class="r2"><label>Code postal<input name="cp" inputmode="numeric" maxlength="5" value="${v('cp')}"></label><label>Ville<input name="ville" value="${v('ville')}"></label></div>
+    <label>Travaux à effectuer<textarea name="travaux">${v('travaux')}</textarea></label>
+    <button class="primary-step" type="submit" id="qsv">${ex ? 'Enregistrer' : 'Planifier'}</button></form>`;
   lb.classList.add('on'); lb.scrollTop = 0;
+  lb.querySelectorAll('input:not([type=checkbox]):not([type=date]):not([type=time]),textarea').forEach(x => x.setAttribute('autocomplete', 'bk-' + x.name)); $('#qf').setAttribute('autocomplete', 'off');
   const f = $('#qf'), box = f.querySelector('.qac'); let tm, seq = 0;
   f.adresse.oninput = () => { clearTimeout(tm); const q = f.adresse.value.trim(); if (q.length < 4) return box.hidden = true;
     tm = setTimeout(async () => { const my = ++seq; let r = [];
       try { const j = await fetch('https://data.geopf.fr/geocodage/search?index=address&limit=5&lat=43.514&lon=4.988&autocomplete=1&q=' + encodeURIComponent(q)).then(x => x.json()); r = (j.features || []).map(x => x.properties); } catch (e) { }
-      if (my !== seq) return; box.innerHTML = r.map((a, k) => `<button type="button" data-k="${k}"><b>${E(a.name)}</b><small>${E(a.postcode + ' ' + a.city)}</small></button>`).join(''); box.hidden = !r.length;
-      box.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { const a = r[+b.dataset.k]; f.adresse.value = a.type === 'municipality' ? '' : a.name; f.cp.value = a.postcode || ''; f.ville.value = a.city || ''; box.hidden = true; f.complement.focus(); }); }, 250); };
+      if (my !== seq) return; const n = ((q.match(/^\s*(\d+\s*(?:bis|ter|quater|[a-d])?)\b[\s,]*/i) || [])[1] || '').trim(), nm = a => a.type === 'street' && n && !/^\d/.test(a.name || '') ? n + ' ' + a.name : a.name;
+      box.innerHTML = r.map((a, k) => `<button type="button" data-k="${k}"><b>${E(nm(a))}</b><small>${E(a.postcode + ' ' + a.city)}</small></button>`).join(''); box.hidden = !r.length;
+      box.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { const a = r[+b.dataset.k]; f.adresse.value = a.type === 'municipality' ? '' : nm(a); f.cp.value = a.postcode || ''; f.ville.value = a.city || ''; box.hidden = true; f.complement.focus(); }); }, 250); };
   f.onsubmit = async e => { e.preventDefault(); const fd = new FormData(f), ts = fd.getAll('t'); if (!ts.length) return toast('Choisissez au moins une personne');
     const mm = t => { const [a, b] = t.split(':').map(Number); return a * 60 + b; }, d1 = mm(fd.get('h1')), d2 = mm(fd.get('h2')); if (d2 <= d1) return toast('L’heure de fin doit être après le début');
     const btn = $('#qsv'); btn.disabled = true; btn.textContent = 'Enregistrement…';
+    if (ex) { const up = { date: fd.get('date'), heure: ex.epingle ? null : fd.get('h1'), duree: ex.epingle ? 0 : Math.round((d2 - d1) / 60 * 10000) / 10000, client: fd.get('client'), occupant: fd.get('occupant'), tel: fd.get('tel'), adresse: fd.get('adresse'), complement: fd.get('complement') || null, cp: fd.get('cp'), ville: fd.get('ville'), travaux: fd.get('travaux'), updated_by: me.id };
+      const r = await sb.from('interventions').update(up).eq('id', ex.id); if (r.error) { btn.disabled = false; btn.textContent = 'Enregistrer'; return toast('Erreur : ' + r.error.message); }
+      const plus = ts.filter(t => !ex.techs.includes(t)), moins = ex.techs.filter(t => !ts.includes(t));
+      if (plus.length) await sb.from('intervention_techs').insert(plus.map(t => ({ intervention_id: ex.id, tech_id: t })));
+      for (const t of moins) await sb.from('intervention_techs').delete().match({ intervention_id: ex.id, tech_id: t });
+      lb.classList.remove('on'); eqData = null; moData = null; equipe(); return toast('Intervention enregistrée'); }
     const row = { type: 'intervention', date: fd.get('date'), heure: fd.get('h1'), duree: Math.round((d2 - d1) / 60 * 10000) / 10000, epingle: false, statut: 'planifiee', client: fd.get('client'), occupant: fd.get('occupant'), tel: fd.get('tel'), adresse: fd.get('adresse'), complement: fd.get('complement') || null, cp: fd.get('cp'), ville: fd.get('ville'), travaux: fd.get('travaux'), materiel: [], recurrent: false, created_by: me.id, updated_by: me.id };
     const r = await sb.from('interventions').insert(row).select('id').single();
     if (r.error) { btn.disabled = false; btn.textContent = 'Planifier'; return toast('Erreur : ' + r.error.message); }
     const r2 = await sb.from('intervention_techs').insert(ts.map(t => ({ intervention_id: r.data.id, tech_id: t })));
     if (r2.error) return toast('Erreur : ' + r2.error.message);
-    lb.classList.remove('on'); eqData = null; equipe(); toast('Planifié pour ' + ts.map(t => T(t).nom).join(', ')); };
+    lb.classList.remove('on'); eqData = null; moData = null; equipe(); toast('Planifié pour ' + ts.map(t => T(t).nom).join(', ')); };
+}
+
+/* Vue mois façon Agenda Apple : grille du mois + liste du jour choisi */
+const telLink = t => t ? `<a class="eqtel" href="${telUrl(t)}">${ICON.phone} ${E(t)}</a>` : '';
+function eqCard(i, lb) {
+  lb.innerHTML = `<div class="eqcard"><button data-x aria-label="Fermer">×</button><small>${lbl(i.date)}${i.epingle || !i.heure ? ' · dans la journée' : ' · ' + hh(i.heure) + ' – ' + fin(i.heure, i.duree)}</small>
+    <h3>${E([i.client, i.occupant].filter(Boolean).join(' · ') || i.travaux || 'Intervention')}</h3><p>${E([[i.adresse, i.complement].filter(Boolean).join(', '), [i.cp, i.ville].filter(Boolean).join(' ')].filter(Boolean).join(' · '))}</p>
+    ${i.travaux ? `<p style="color:var(--mute)">${E(i.travaux.slice(0, 300))}</p>` : ''}<div class="eqw">${i.techs.map(t => `<span><i style="background:${T(t).couleur}"></i>${E(T(t).nom)}</span>`).join('')}</div>
+    ${telLink(i.tel)}<button class="primary-step" id="eqed" style="margin-top:14px">Modifier</button></div>`;
+  lb.classList.add('on'); $('#eqed').onclick = () => quickNew(i.date, String(i.heure || '08:00').slice(0, 5), i);
+}
+async function equipeMois() {
+  const now = new Date(), first = new Date(now.getFullYear(), now.getMonth() + moE, 1, 12), last = new Date(first.getFullYear(), first.getMonth() + 1, 0, 12);
+  const g0 = monday(first), g1 = addDays(monday(last), 6), a = iso(g0), b = iso(g1), today = iso(now);
+  if (!selD || selD < iso(first) || selD > iso(last)) selD = moE === 0 ? today : iso(first);
+  const title = first.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }).replace(/^./, c => c.toUpperCase());
+  if (moKey !== a || !moData) { scr().innerHTML = topBar('Planning équipe', title, false) + previewBar() + '<div class="scroll"><div class="panel"><p>Chargement…</p></div></div>'; bindTop(); bindPreview();
+    const { data, error } = await sb.from('interventions').select('id,date,heure,duree,epingle,type,client,occupant,tel,adresse,complement,cp,ville,travaux,statut,intervention_techs(tech_id)').gte('date', a).lte('date', b);
+    if (error) { toast('Pas de réseau : vue équipe indisponible'); tab = 'jour'; return list(); }
+    moData = (data || []).map(i => ({ ...i, techs: i.intervention_techs.map(x => x.tech_id) })); moKey = a; }
+  const all = moData, nW = Math.round((g1 - g0) / 864e5 / 7);
+  const bar = d => { const its = all.filter(i => i.date === d), segs = its.flatMap(i => i.techs.length ? i.techs : ['?']).slice(0, 8); return segs.length ? `<span class="mbar">${segs.map(t => `<i style="background:${T(t).couleur}"></i>`).join('')}</span>` : ''; };
+  const cells = [...Array(nW * 7)].map((_, k) => { const d = iso(addDays(g0, k)), x = new Date(d + 'T12:00'), out = x.getMonth() !== first.getMonth(), we = [0, 6].includes(x.getDay());
+    return `<button class="mday ${out ? 'out' : ''} ${we ? 'we' : ''} ${d === today ? 'td' : ''} ${d === selD ? 'sel' : ''} ${ferie(d) ? 'fer' : ''}" data-d="${d}"><b>${x.getDate()}</b>${out ? '' : bar(d)}</button>`; }).join('');
+  const its = all.filter(i => i.date === selD).sort((x, y) => (y.epingle - x.epingle) || String(x.heure || '').localeCompare(String(y.heure || '')));
+  const strip = i => i.techs.length > 1 ? `linear-gradient(${i.techs.map((t, k) => `${T(t).couleur} ${k / i.techs.length * 100}% ${(k + 1) / i.techs.length * 100}%`).join(',')})` : T(i.techs[0]).couleur;
+  scr().innerHTML = topBar('Planning équipe', title, false) + previewBar() + `<div class="scroll eqs">
+    <div class="tabs"><button data-tab="jour">Aujourd’hui</button><button data-tab="semaine">Mes semaines</button><button data-tab="equipe" class="on">Équipe</button></div>
+    <div class="eqseg"><button data-em="mois" class="on">Mois</button><button data-em="grille">Grille semaine</button></div>
+    <div class="wkn"><button id="mp" aria-label="Mois précédent">‹</button><span>${title}</span><button id="mn" aria-label="Mois suivant">›</button></div>
+    <div class="mgrid">${['L', 'M', 'M', 'J', 'V', 'S', 'D'].map(x => `<span class="mh">${x}</span>`).join('')}${cells}</div>
+    <div class="mlist"><h3>${lbl(selD)}${ferie(selD) ? ` <span class="fer">${E(ferie(selD))}</span>` : ''}</h3>
+      ${its.length ? its.map(i => `<button class="mit" data-eq="${i.id}" style="--s:${strip(i)}"><span class="b"><b>${E([i.client, i.occupant].filter(Boolean).join(' · ') || i.travaux || 'Intervention')}</b><small>${E([i.adresse, i.ville].filter(Boolean).join(', ') || i.techs.map(t => T(t).nom).join(', '))}</small><em>${E(i.techs.map(t => T(t).nom).join(' + '))}</em></span><span class="t">${i.epingle || !i.heure ? ic('pin') : hh(i.heure) + '<br>' + fin(i.heure, i.duree)}</span></button>`).join('') : '<p class="mempty">Rien de prévu ce jour-là.</p>'}
+    </div>
+    <button class="primary-step" id="eqnew" style="margin-top:14px">+ Planifier le ${new Date(selD + 'T12:00').getDate()}</button>
+    </div><div class="lb" id="eqlb"></div>`;
+  bindTop(); bindPreview();
+  scr().querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { tab = b.dataset.tab; wk = 0; render(); });
+  scr().querySelectorAll('[data-em]').forEach(b => b.onclick = () => { eqMode = b.dataset.em; try { localStorage.setItem('bk-eqm', eqMode); } catch (e) { } equipe(); });
+  const goM = n => { moE += n; moData = null; selD = null; equipeMois(); };
+  $('#mp').onclick = () => goM(-1); $('#mn').onclick = () => goM(1);
+  scr().querySelectorAll('[data-d]').forEach(b => b.onclick = () => { const d = b.dataset.d; if (d < iso(first)) return goM(-1); if (d > iso(last)) return goM(1); selD = d; const y = scr().querySelector('.scroll').scrollTop; equipeMois().then(() => { scr().querySelector('.scroll').scrollTop = y; }); });
+  const g = scr().querySelector('.mgrid'); let tx = null, ty = 0;
+  g.addEventListener('touchstart', e => { tx = e.touches[0].clientX; ty = e.touches[0].clientY; }, { passive: true });
+  g.addEventListener('touchend', e => { if (tx === null) return; const dx = e.changedTouches[0].clientX - tx, dy = e.changedTouches[0].clientY - ty; tx = null; if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) goM(dx < 0 ? 1 : -1); });
+  const lb = $('#eqlb'); lb.onclick = e => { if (e.target === lb || e.target.dataset.x !== undefined) lb.classList.remove('on'); };
+  $('#eqnew').onclick = () => quickNew(selD, '08:00');
+  scr().querySelectorAll('[data-eq]').forEach(b => b.onclick = () => { const i = all.find(x => x.id === b.dataset.eq); if (i) eqCard(i, lb); });
 }

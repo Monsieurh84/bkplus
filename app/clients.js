@@ -18,7 +18,7 @@ function searchArticles(q, limit, type) {
 
 /* ---------- Autocomplétion réutilisable ---------- */
 function attachAC(input, fetcher, render, onPick) {
-  if (!input || input.dataset.ac) return; input.dataset.ac = '1'; input.setAttribute('autocomplete', 'off');
+  if (!input || input.dataset.ac) return; input.dataset.ac = '1'; input.setAttribute('autocomplete', 'bk-' + (input.name || 'ac'));
   const box = document.createElement('div'); box.className = 'ac'; box.hidden = true;
   input.insertAdjacentElement('afterend', box); input.parentElement.classList.add('acw');
   let items = [], sel = -1, tm = null, seq = 0;
@@ -39,8 +39,19 @@ const clientLine = c => `<b>${E(c.nom)}</b>${c.type === 'entreprise' ? ' <i clas
 const articleLine = a => `<b>${E(a.nom)}</b><small>${a.ref ? E(a.ref) + ' · ' : ''}${E(a.type)} · ${a.pu_ht != null ? eur(a.pu_ht) + ' HT' : 'sans prix'} · TVA ${String(a.tva).replace('.', ',')} %</small>`;
 
 /* Formulaire d'intervention : choisir un client remplit l'adresse */
+/* Mémoire des adresses : adresses déjà utilisées pour ce client dans le planning */
+async function searchPast(q) {
+  const { data } = await sb.from('interventions').select('client,occupant,tel,adresse,complement,cp,ville,date').ilike('client', pat(q).replace(/\*/g, '%')).not('adresse', 'is', null).order('date', { ascending: false }).limit(60);
+  const seen = new Set(), out = [];
+  for (const x of data || []) { const k = (x.client + '|' + x.adresse + '|' + (x.complement || '')).toLowerCase().replace(/\s+/g, ' '); if (!x.adresse || seen.has(k)) continue; seen.add(k); out.push({ ...x, past: true }); if (out.length >= 5) break; }
+  return out;
+}
+async function searchClientsAndPast(q) { const [a, b] = await Promise.all([searchPast(q), searchClients(q, 6)]); return { data: [...a, ...((b.data) || [])] }; }
+const clientOrPastLine = c => c.past ? `<b>${E(c.client)}</b> <i class="tg sv">Déjà venu</i><small>${E([c.occupant, [c.adresse, c.complement].filter(Boolean).join(', '), [c.cp, c.ville].filter(Boolean).join(' ')].filter(Boolean).join(' · '))}${c.date ? ' · ' + new Date(c.date + 'T12:00').toLocaleDateString('fr-FR') : ''}</small>` : clientLine(c);
 function acIntervention(f, i) {
-  attachAC(f.client, q => searchClients(q, 8), clientLine, c => {
+  attachAC(f.client, searchClientsAndPast, clientOrPastLine, c => {
+    if (c.past) { f.client.value = c.client; f.adresse.value = c.adresse || ''; if (f.complement) f.complement.value = c.complement || ''; f.cp.value = c.cp || ''; f.ville.value = c.ville || '';
+      if (c.occupant && !f.occupant.value) f.occupant.value = c.occupant; if (c.tel && !f.tel.value) f.tel.value = c.tel; toast('Adresse reprise du planning'); return; }
     f.client.value = c.nom; f.adresse.value = c.adresse || ''; if (f.complement) f.complement.value = c.complement || ''; f.cp.value = c.cp || ''; f.ville.value = c.ville || '';
     if (c.tel) f.tel.value = c.tel; if (c.type === 'entreprise' && c.contact && !f.occupant.value) f.occupant.value = c.contact;
     i.client_id = c.id; markLinked(f.client, true); toast('Fiche client reprise : ' + c.nom); });
@@ -55,10 +66,14 @@ async function searchAdresse(q) {
   }
   return { data: [] };
 }
-const adrLine = a => `<b>${E(a.name || a.label)}</b><small>${E([a.postcode, a.city].filter(Boolean).join(' '))}${a.context ? ' · ' + E(String(a.context).split(',').slice(-2).join(',').trim()) : ''}</small>`;
+/* Numéro tapé par l'utilisateur, gardé quand la base ne connaît que la rue (ex. « 15, boulevard Pasteur ») */
+const numTape = q => ((String(q || '').match(/^\s*(\d+\s*(?:bis|ter|quater|[a-d])?)\b[\s,]*/i) || [])[1] || '').replace(/\s+/g, ' ').trim();
+const adrNom = (a, q) => { const n = numTape(q); return a.type === 'street' && n && !/^\d/.test(a.name || '') ? n + ' ' + a.name : (a.name || ''); };
+let adrQ = '';
+const adrLine = a => `<b>${E(adrNom(a, adrQ) || a.label)}</b><small>${E([a.postcode, a.city].filter(Boolean).join(' '))}${a.context ? ' · ' + E(String(a.context).split(',').slice(-2).join(',').trim()) : ''}</small>`;
 function acAdresse(f) {
-  attachAC(f.adresse, q => q.length < 4 ? Promise.resolve({ data: [] }) : searchAdresse(q), adrLine, a => {
-    f.adresse.value = a.type === 'municipality' ? '' : (a.name || ''); f.cp.value = a.postcode || ''; f.ville.value = a.city || '';
+  attachAC(f.adresse, q => { adrQ = q; return q.length < 4 ? Promise.resolve({ data: [] }) : searchAdresse(q); }, adrLine, a => {
+    f.adresse.value = a.type === 'municipality' ? '' : adrNom(a, adrQ); f.cp.value = a.postcode || ''; f.ville.value = a.city || '';
     (a.type === 'municipality' ? f.adresse : f.complement || f.adresse).focus(); });
 }
 /* Formulaire d'affaire : client + articles dans le chiffrage */
