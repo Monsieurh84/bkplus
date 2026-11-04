@@ -164,7 +164,7 @@ function planning() {
   if (!techs.length) { $('#main').innerHTML = h + `<div class="empty">Aucun membre de l’équipe enregistré.</div>`; return; }
   const hours = [...Array(H1 - H0)].map((_, k) => `<div class="hr" style="height:${px}px"><span>${pad(H0 + k)}:00</span></div>`).join('');
   const nLanes = d => Math.max(1, vis.filter(t => inter.some(i => i.date === d && i.techs.includes(t.id) && !isAllDay(i))).length);
-  const colsTpl = mode === 'semaine' ? '46px ' + days.map(d => `minmax(0,${Math.max(2, nLanes(d))}fr)`).join(' ') : `56px repeat(${vis.length},minmax(0,1fr))`;
+  const colsTpl = mode === 'semaine' ? '46px ' + `repeat(${days.length},minmax(0,1fr))` : `56px repeat(${vis.length},minmax(0,1fr))`;
   h += `<div class="cal ${mode}" style="--px:${px}px;grid-template-columns:${colsTpl}">`;
   if (mode === 'semaine') {
     h += `<div class="ch ax"></div>${days.map(d => `<div class="ch ${d === today ? 'td' : ''} ${ferie(d) ? 'fer' : ''}"><b>${lbl(d)}</b>${ferie(d) ? `<small class="fl">${E(ferie(d))}</small>` : ''}</div>`).join('')}`;

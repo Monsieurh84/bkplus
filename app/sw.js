@@ -1,5 +1,5 @@
 /* BK+ Terrain — garde l'application disponible sans réseau (les données passent par la base locale de tech.js) */
-const V = 'bk-terrain-24';
+const V = 'bk-terrain-25';
 const SHELL = ['tech.html', 'tech.css?v=18', 'icons.js?v=1', 'tech.js?v=22', '../config.js?v=2', '../logo-bk.png', '../icon-180.png', 'manifest.webmanifest',
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(V).then(c => Promise.all(SHELL.map(u => c.add(u).catch(() => { })))).then(() => self.skipWaiting())); });
