@@ -68,7 +68,7 @@ async function start() {
     if (cache) { me = await DB.get('me'); team = cache.team; tech = cache.tech; items = cache.items; preview = me?.role === 'bureau'; online = false; toast('Hors connexion : dernières données enregistrées'); }
     else { scr().innerHTML = '<div class="scroll"><div class="panel"><p>Pas de réseau et aucune donnée enregistrée. Réessayez avec du réseau.</p></div></div>'; return; }
   }
-  await refreshPending(); render(); flush(); subscribe();
+  await refreshPending(); render(); flush(); subscribe(); countCtrl();
 }
 const NBW = 6; let wk = 0; const addx = {};
 async function load() {
@@ -98,7 +98,7 @@ function alertNew() {
 let chan = null;
 function subscribe() {
   if (chan) sb.removeChannel(chan);
-  let tm; const re = () => { clearTimeout(tm); tm = setTimeout(async () => { try { const al = await load(); if (!openId) render(); if (!al && Date.now() - lastLocal > 8000) toast('Planning mis à jour par le bureau'); } catch (e) { } }, 600); };
+  let tm; const re = () => { clearTimeout(tm); tm = setTimeout(async () => { try { const al = await load(); countCtrl(); if (!openId && tab !== "controle" && tab !== "equipe") render(); if (!al && Date.now() - lastLocal > 8000) toast('Planning mis à jour par le bureau'); } catch (e) { } }, 600); };
   chan = sb.channel('tech-' + tech.id).on('postgres_changes', { event: '*', schema: 'public', table: 'interventions' }, re).on('postgres_changes', { event: '*', schema: 'public', table: 'intervention_techs' }, re).subscribe();
 }
 
@@ -178,7 +178,7 @@ function list() {
     ${tab === 'jour' && pins.length ? `<div class="pins"><h2>${ic('pin')} À faire aujourd’hui <span>${pins.length - pinsLeft.length}/${pins.length}</span></h2><p>Pas d’heure précise : quand vous avez un moment dans la journée.</p>${pins.map(pin).join('')}</div>` : ''}
     ${tab === 'jour' && todayJobs.length ? `<div class="prog"><span>${done} / ${todayJobs.length} interventions</span><div class="bar"><i style="width:${done / todayJobs.length * 100}%"></i></div></div>` : ''}
     ${tab === 'jour' && todayJobs.length && !next && !pinsLeft.length ? `<div class="done-box">${ic('check-circle')} Journée terminée, tout est envoyé au bureau.</div>` : ''}
-    <div class="tabs"><button data-tab="jour" class="${tab === 'jour' ? 'on' : ''}">Aujourd’hui</button><button data-tab="semaine" class="${tab === 'semaine' ? 'on' : ''}">Mes semaines</button>${preview ? `<button data-tab="equipe">Équipe</button>` : ''}</div>
+    ${tabsH()}
     ${tab === 'semaine' ? `<div class="wkn"><button id="wkp" ${wk ? '' : 'disabled'} aria-label="Semaine précédente">‹</button><span>${wk === 0 ? 'Cette semaine' : wk === 1 ? 'Semaine prochaine' : 'Semaine du ' + lbl(iso(m0))}</span><button id="wkn" ${wk < NBW - 1 ? '' : 'disabled'} aria-label="Semaine suivante">›</button></div>` : ''}
     ${days.map(block).join('')}
     <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:24px"><button class="btn" id="mdp">Mon mot de passe</button><button class="btn" id="out">Se déconnecter</button></div>
@@ -313,7 +313,36 @@ function checkReminder() {
 }
 setInterval(checkReminder, 60000);
 
-function render() { if (!tech || !scr()) return; scr().classList.toggle('sunmode', sun); openId ? fiche() : tab === 'equipe' && preview ? equipe() : list(); }
+function render() { if (!tech || !scr()) return; scr().classList.toggle('sunmode', sun); openId ? fiche() : tab === 'equipe' && preview ? equipe() : tab === 'controle' && preview ? controleMob() : list(); }
+const tabsH = () => `<div class="tabs"><button data-tab="jour" class="${tab === 'jour' ? 'on' : ''}">Aujourd’hui</button><button data-tab="semaine" class="${tab === 'semaine' ? 'on' : ''}">Mes semaines</button>${preview ? `<button data-tab="equipe" class="${tab === 'equipe' ? 'on' : ''}">Équipe</button><button data-tab="controle" class="${tab === 'controle' ? 'on' : ''}">À contrôler${nCtrl ? ` <i class="tbn">${nCtrl}</i>` : ''}</button>` : ''}</div>`;
+let nCtrl = 0, ctrlData = [];
+async function countCtrl() { if (!preview || !online) return; const { count } = await sb.from('interventions').select('id', { count: 'exact', head: true }).eq('statut', 'controle'); if ((count || 0) !== nCtrl) { nCtrl = count || 0; const b = scr()?.querySelector('[data-tab=controle]'); if (b) b.innerHTML = 'À contrôler' + (nCtrl ? ` <i class="tbn">${nCtrl}</i>` : ''); } }
+/* Bureau sur iPhone : retours des techniciens à contrôler, avec photos, puis clôture */
+async function controleMob() {
+  scr().innerHTML = topBar('À contrôler', 'Retours des techniciens', false) + previewBar() + `<div class="scroll eqs">${tabsH()}<div class="panel"><p>Chargement…</p></div></div><div class="lb" id="eqlb"></div>`; bindTop(); bindPreview();
+  const { data, error } = await sb.from('interventions').select('id,date,heure,duree,epingle,type,client,occupant,tel,adresse,complement,cp,ville,travaux,statut,commentaire,photos,valide_par,fin_at,note_bureau,note_lue,intervention_techs(tech_id),pieces(nom,type,path,prive)').in('statut', ['controle', 'attente', 'reprendre']).order('fin_at', { ascending: false, nullsFirst: false });
+  if (tab !== 'controle' || openId) return;
+  if (error) { toast('Pas de réseau : liste indisponible'); tab = 'jour'; return list(); }
+  ctrlData = (data || []).map(i => ({ ...i, techs: i.intervention_techs.map(x => x.tech_id) })); nCtrl = ctrlData.filter(i => i.statut === 'controle').length;
+  const grp = [['controle', 'À contrôler'], ['reprendre', 'À reprendre (chez le technicien)'], ['attente', 'En attente']];
+  scr().innerHTML = topBar('À contrôler', 'Retours des techniciens', false) + previewBar() + `<div class="scroll eqs">${tabsH()}
+    ${ctrlData.length ? grp.map(([k, t]) => { const l = ctrlData.filter(i => i.statut === k); return l.length ? `<h2 class="cth">${t} <span>${l.length}</span></h2>` + l.map(i => `<button class="ctj" data-eq="${i.id}"><span class="ctp" data-cph="${E((i.photos || [])[0]?.path || '')}">${(i.photos || []).length ? `<b>${i.photos.length}</b>` : ic('camera')}</span><span class="ctb"><b>${E([i.client, i.occupant].filter(Boolean).join(' · ') || i.travaux || 'Intervention')}</b><small>${E(lbl(i.date))} · ${E((i.valide_par ? T(i.valide_par).nom : i.techs.map(x => T(x).nom).join(', ')) || '')}</small>${i.commentaire ? `<em>« ${E(i.commentaire.slice(0, 90))}${i.commentaire.length > 90 ? '…' : ''} »</em>` : ''}</span><span class="chev">›</span></button>`).join('') : ''; }).join('') : '<div class="done-box">✓ Rien à contrôler, tout est clôturé.</div>'}
+    </div><div class="lb" id="eqlb"></div>`;
+  bindTop(); bindPreview();
+  scr().querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { tab = b.dataset.tab; wk = 0; render(); });
+  const lb = $('#eqlb'); lb.onclick = e => { if (e.target === lb || e.target.dataset.x !== undefined) lb.classList.remove('on'); };
+  scr().querySelectorAll('[data-eq]').forEach(b => b.onclick = () => { const i = ctrlData.find(x => x.id === b.dataset.eq); if (i) eqCard(i, lb); });
+  const th = [...scr().querySelectorAll('[data-cph]')].filter(x => x.dataset.cph);
+  if (th.length) signedMap('retours', th.map(x => x.dataset.cph)).then(u => th.forEach(x => { if (u[x.dataset.cph]) x.style.backgroundImage = `url('${u[x.dataset.cph]}')`; }));
+}
+async function bureauStatut(i, st, lb) {
+  const row = { statut: st };
+  if (st === 'reprendre') { const t = (prompt('À reprendre : quel message pour ' + i.techs.map(x => T(x).nom).join(', ') + ' ?\n(il le reçoit directement sur son application)', '') || '').trim(); if (t.length < 2) return toast('Écrivez ce qu’il faut reprendre'); Object.assign(row, { note_bureau: t, note_at: new Date().toISOString(), note_lue: false }); }
+  const { error } = await sb.from('interventions').update(row).eq('id', i.id); if (error) return toast('Erreur : ' + error.message);
+  Object.assign(i, row); lb.classList.remove('on'); moData = null; eqData = null;
+  toast(st === 'cloturee' ? '✓ Intervention clôturée' : st === 'reprendre' ? '↺ À reprendre · le technicien est prévenu' : 'Mise en attente');
+  await countCtrl(); render();
+}
 sb.auth.onAuthStateChange(ev => { if (ev === 'SIGNED_IN') start(); else if (ev === 'SIGNED_OUT') { started = false; tech = null; loginView(); } });
 start();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { });
@@ -355,7 +384,7 @@ async function equipe() {
       return `<button class="eqe ${i.statut}" data-eq="${i.id}" style="top:${(s0 - H0 * 60) / 60 * px}px;height:${Math.max(14, (s1 - s0) / 60 * px - 2)}px;left:${k / ls.length * 100}%;width:calc(${100 / ls.length}% - 2px);--c:${t.couleur}">${ls.length <= 2 ? E((i.client || i.occupant || i.travaux || '').slice(0, 18)) : ''}</button>`; }).join('')).join('')}</div>`; };
   const pins = d => all.filter(i => i.date === d && (i.epingle || !i.heure)).length;
   scr().innerHTML = topBar('Planning équipe', 'Semaine du ' + lbl(a), false) + previewBar() + `<div class="scroll eqs">
-    <div class="tabs"><button data-tab="jour">Aujourd’hui</button><button data-tab="semaine">Mes semaines</button><button data-tab="equipe" class="on">Équipe</button></div>
+    ${tabsH()}
     <div class="wkn"><button id="ep" aria-label="Semaine précédente">‹</button><span>${wkE === 0 ? 'Cette semaine' : wkE === 1 ? 'Semaine prochaine' : 'Semaine du ' + lbl(a).replace(/^\S+ /, '')}</span><button id="en" aria-label="Semaine suivante">›</button></div>
     <div class="eqseg"><button data-em="mois">Mois</button><button data-em="grille" class="${eqMode === 'grille' ? 'on' : ''}">Grille semaine</button></div>
     ${false ? days.map(d => { const its = all.filter(i => i.date === d), x = new Date(d + 'T12:00'), fr = ferie(d);
@@ -429,15 +458,17 @@ const telLink = t => t ? `<a class="eqtel" href="${telUrl(t)}">${ICON.phone} ${E
 function eqZoom(html) { let z = $('#eqz'); if (!z) { z = document.createElement('div'); z.id = 'eqz'; z.className = 'lb'; scr().appendChild(z); }
   z.innerHTML = html + '<button aria-label="Fermer">×</button>'; z.classList.add('on'); z.onclick = () => z.classList.remove('on'); }
 function eqCard(i, lb) {
-  lb.innerHTML = `<div class="eqcard"><button data-x aria-label="Fermer">×</button><small>${lbl(i.date)}${i.epingle || !i.heure ? ' · dans la journée' : ' · ' + hh(i.heure) + ' – ' + fin(i.heure, i.duree)}</small>
+  lb.innerHTML = `<div class="eqcard"><button data-x aria-label="Fermer">×</button>${['controle', 'attente', 'reprendre', 'cloturee'].includes(i.statut) ? `<span class="st ${i.statut}" style="display:inline-block;font-size:13px;padding:4px 10px;margin-bottom:6px">${{ controle: 'À contrôler', attente: 'En attente', reprendre: 'À reprendre', cloturee: 'Clôturée' }[i.statut]}</span><br>` : ''}<small>${lbl(i.date)}${i.epingle || !i.heure ? ' · dans la journée' : ' · ' + hh(i.heure) + ' – ' + fin(i.heure, i.duree)}</small>
     <h3>${E([i.client, i.occupant].filter(Boolean).join(' · ') || i.travaux || 'Intervention')}</h3>${i.adresse || i.ville ? `<a class="eqmap" href="https://maps.apple.com/?q=${encodeURIComponent(fullAddr(i) + ', France')}">${ICON.route}<span>${E([[i.adresse, i.complement].filter(Boolean).join(', '), [i.cp, i.ville].filter(Boolean).join(' ')].filter(Boolean).join(' · '))}<small>Voir dans Plans · accès, stationnement</small></span></a>` : ''}
     ${i.travaux ? `<p style="color:var(--mute)">${E(i.travaux.slice(0, 300))}</p>` : ''}<div class="eqw">${i.techs.map(t => `<span><i style="background:${T(t).couleur}"></i>${E(T(t).nom)}</span>`).join('')}</div>
     ${telLink(i.tel)}
     ${i.commentaire || (i.photos || []).length ? `<div class="eqret"><h4>${ic('check-circle')} Retour ${i.valide_par ? 'de ' + E(T(i.valide_par).nom) : 'du technicien'}</h4>${i.commentaire ? `<p style="white-space:pre-line">${E(i.commentaire)}</p>` : ''}
       <div class="eqph">${(i.photos || []).map(p => `<img alt="${E(p.tag || 'Photo')}" data-b="retours" data-ph="${E(p.path)}">`).join('')}</div></div>` : ''}
     ${(i.pieces || []).length ? `<div class="eqret"><h4>${ic('paperclip')} Pièces jointes</h4><div class="eqph">${i.pieces.map(p => p.type === 'photo' ? `<img alt="${E(p.nom)}" data-b="${p.prive ? 'bureau' : 'pieces'}" data-ph="${E(p.path)}">` : `<a class="eqdoc" data-b="${p.prive ? 'bureau' : 'pieces'}" data-doc2="${E(p.path)}">${ic('file')}<span>${E((p.prive ? '🔒 ' : '') + p.nom)}</span></a>`).join('')}</div></div>` : ''}
-    <button class="primary-step" id="eqed" style="margin-top:14px">Modifier</button><button type="button" class="eqback" data-x>‹ Retour au planning</button></div>`;
-  lb.classList.add('on'); lb.scrollTop = 0; $('#eqed').onclick = () => quickNew(i.date, String(i.heure || '08:00').slice(0, 5), i);
+    ${preview && ['controle', 'attente', 'reprendre'].includes(i.statut) ? `<div class="eqact"><button class="primary-step" id="eqclo" style="background:var(--ok)">✓ Clôturer</button><div class="r2"><button class="eqback" id="eqrep" style="color:#DC2626">↺ À reprendre</button>${i.statut !== 'attente' ? '<button class="eqback" id="eqatt">En attente</button>' : ''}</div></div>` : ''}
+    <button class="primary-step" id="eqed" style="margin-top:14px;${['controle', 'attente', 'reprendre'].includes(i.statut) ? 'background:#fff;color:#0E1630;border:2px solid var(--line)' : ''}">Modifier</button><button type="button" class="eqback" data-x>‹ Retour</button></div>`;
+  lb.classList.add('on'); lb.scrollTop = 0;
+  if ($('#eqclo')) { $('#eqclo').onclick = () => bureauStatut(i, 'cloturee', lb); $('#eqrep').onclick = () => bureauStatut(i, 'reprendre', lb); if ($('#eqatt')) $('#eqatt').onclick = () => bureauStatut(i, 'attente', lb); } $('#eqed').onclick = () => quickNew(i.date, String(i.heure || '08:00').slice(0, 5), i);
   const els = [...lb.querySelectorAll('[data-ph],[data-doc2]')], byB = {}; els.forEach(x => (byB[x.dataset.b] = byB[x.dataset.b] || []).push(x.dataset.ph || x.dataset.doc2));
   (async () => { const urls = {}; for (const bk in byB) Object.assign(urls, await signedMap(bk, byB[bk]));
     els.forEach(x => { const u = urls[x.dataset.ph || x.dataset.doc2]; if (!u) return; if (x.tagName === 'IMG') { x.src = u; x.onclick = ev => { ev.stopPropagation(); eqZoom(`<img src="${u}" alt="">`); }; } else x.onclick = ev => { ev.stopPropagation(); window.open(u, '_blank'); }; }); })();
@@ -458,7 +489,7 @@ async function equipeMois() {
   const its = all.filter(i => i.date === selD).sort((x, y) => (y.epingle - x.epingle) || String(x.heure || '').localeCompare(String(y.heure || '')));
   const strip = i => i.techs.length > 1 ? `linear-gradient(${i.techs.map((t, k) => `${T(t).couleur} ${k / i.techs.length * 100}% ${(k + 1) / i.techs.length * 100}%`).join(',')})` : T(i.techs[0]).couleur;
   scr().innerHTML = topBar('Planning équipe', title, false) + previewBar() + `<div class="scroll eqs">
-    <div class="tabs"><button data-tab="jour">Aujourd’hui</button><button data-tab="semaine">Mes semaines</button><button data-tab="equipe" class="on">Équipe</button></div>
+    ${tabsH()}
     <div class="eqseg"><button data-em="mois" class="on">Mois</button><button data-em="grille">Grille semaine</button></div>
     <div class="wkn"><button id="mp" aria-label="Mois précédent">‹</button><span>${title}</span><button id="mn" aria-label="Mois suivant">›</button></div>
     <div class="mgrid">${['L', 'M', 'M', 'J', 'V', 'S', 'D'].map(x => `<span class="mh">${x}</span>`).join('')}${cells}</div>
