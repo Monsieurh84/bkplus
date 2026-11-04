@@ -314,9 +314,9 @@ function checkReminder() {
 setInterval(checkReminder, 60000);
 
 function render() { if (!tech || !scr()) return; scr().classList.toggle('sunmode', sun); openId ? fiche() : tab === 'equipe' && preview ? equipe() : tab === 'controle' && preview ? controleMob() : list(); }
-const tabsH = () => `<div class="tabs"><button data-tab="jour" class="${tab === 'jour' ? 'on' : ''}">Aujourd’hui</button><button data-tab="semaine" class="${tab === 'semaine' ? 'on' : ''}">Mes semaines</button>${preview ? `<button data-tab="equipe" class="${tab === 'equipe' ? 'on' : ''}">Équipe</button><button data-tab="controle" class="${tab === 'controle' ? 'on' : ''}">À contrôler${nCtrl ? ` <i class="tbn">${nCtrl}</i>` : ''}</button>` : ''}</div>`;
+const tabsH = () => `<div class="tabs"><button data-tab="jour" class="${tab === 'jour' ? 'on' : ''}">Aujourd’hui</button><button data-tab="semaine" class="${tab === 'semaine' ? 'on' : ''}">${preview ? 'Semaines' : 'Mes semaines'}</button>${preview ? `<button data-tab="equipe" class="${tab === 'equipe' ? 'on' : ''}">Équipe</button><button data-tab="controle" class="${tab === 'controle' ? 'on' : ''}">Contrôle${nCtrl ? ` <i class="tbn">${nCtrl}</i>` : ''}</button>` : ''}</div>`;
 let nCtrl = 0, ctrlData = [];
-async function countCtrl() { if (!preview || !online) return; const { count } = await sb.from('interventions').select('id', { count: 'exact', head: true }).eq('statut', 'controle'); if ((count || 0) !== nCtrl) { nCtrl = count || 0; const b = scr()?.querySelector('[data-tab=controle]'); if (b) b.innerHTML = 'À contrôler' + (nCtrl ? ` <i class="tbn">${nCtrl}</i>` : ''); } }
+async function countCtrl() { if (!preview || !online) return; const { count } = await sb.from('interventions').select('id', { count: 'exact', head: true }).eq('statut', 'controle'); if ((count || 0) !== nCtrl) { nCtrl = count || 0; const b = scr()?.querySelector('[data-tab=controle]'); if (b) b.innerHTML = 'Contrôle' + (nCtrl ? ` <i class="tbn">${nCtrl}</i>` : ''); } }
 /* Bureau sur iPhone : retours des techniciens à contrôler, avec photos, puis clôture */
 async function controleMob() {
   scr().innerHTML = topBar('À contrôler', 'Retours des techniciens', false) + previewBar() + `<div class="scroll eqs">${tabsH()}<div class="panel"><p>Chargement…</p></div></div><div class="lb" id="eqlb"></div>`; bindTop(); bindPreview();
@@ -427,7 +427,7 @@ function quickNew(date, heure, ex) {
     <div class="r2"><label>Code postal<input name="cp" inputmode="numeric" maxlength="5" value="${v('cp')}"></label><label>Ville<input name="ville" value="${v('ville')}"></label></div>
     <label>Travaux à effectuer<textarea name="travaux">${v('travaux')}</textarea></label>
     <button class="primary-step" type="submit" id="qsv">${ex ? 'Enregistrer' : 'Planifier'}</button><button type="button" class="eqback" data-x>Annuler</button></form>`;
-  lb.classList.add('on'); lb.scrollTop = 0;
+  lb.classList.add('on'); lb.scrollTop = 0; pullClose(lb);
   lb.querySelectorAll('input:not([type=checkbox]):not([type=date]):not([type=time]),textarea').forEach(x => x.setAttribute('autocomplete', 'bk-' + x.name)); $('#qf').setAttribute('autocomplete', 'off');
   const f = $('#qf'), box = f.querySelector('.qac'); let tm, seq = 0;
   f.adresse.oninput = () => { clearTimeout(tm); const q = f.adresse.value.trim(); if (q.length < 4) return box.hidden = true;
@@ -455,8 +455,26 @@ function quickNew(date, heure, ex) {
 
 /* Vue mois façon Agenda Apple : grille du mois + liste du jour choisi */
 const telLink = t => t ? `<a class="eqtel" href="${telUrl(t)}">${ICON.phone} ${E(t)}</a>` : '';
-function eqZoom(html) { let z = $('#eqz'); if (!z) { z = document.createElement('div'); z.id = 'eqz'; z.className = 'lb'; scr().appendChild(z); }
-  z.innerHTML = html + '<button aria-label="Fermer">×</button>'; z.classList.add('on'); z.onclick = () => z.classList.remove('on'); }
+function eqZoom(html, list, k) { let z = $('#eqz'); if (!z) { z = document.createElement('div'); z.id = 'eqz'; z.className = 'lb'; scr().appendChild(z); }
+  const close = () => { z.classList.remove('on'); z.innerHTML = ''; };
+  if (!list) { z.innerHTML = html + '<button aria-label="Fermer">×</button>'; z.classList.add('on'); z.onclick = close; return; }
+  let i = k || 0;
+  const draw = () => { z.innerHTML = `<img class="zimg" src="${list[i].u}" alt="" draggable="false"><button aria-label="Fermer" data-zx>×</button>${list.length > 1 ? `<button class="zar l" data-zp aria-label="Photo précédente">‹</button><button class="zar r" data-zn aria-label="Photo suivante">›</button>` : ''}<div class="znav">${list.length > 1 ? (i + 1) + ' / ' + list.length : ''}${list[i].t ? `<small>${E(list[i].t)}</small>` : ''}<small>${list.length > 1 ? 'Glissez ← → pour changer · ' : ''}tirez vers le bas pour fermer</small></div>`; };
+  const go = n => { if (list.length < 2) return; i = (i + n + list.length) % list.length; draw(); };
+  draw(); z.classList.add('on');
+  z.onclick = e => { if (e.target.closest('[data-zp]')) return go(-1); if (e.target.closest('[data-zn]')) return go(1); if (e.target.closest('[data-zx]') || e.target === z) close(); };
+  let x0 = null, y0 = 0, dx = 0, dy = 0;
+  z.ontouchstart = e => { if (e.touches.length > 1) { x0 = null; return; } x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = dy = 0; const im = z.querySelector('.zimg'); if (im) im.style.transition = 'none'; };
+  z.ontouchmove = e => { if (x0 === null) return; e.preventDefault(); dx = e.touches[0].clientX - x0; dy = e.touches[0].clientY - y0; const im = z.querySelector('.zimg'); if (!im) return;
+    if (Math.abs(dy) > Math.abs(dx) && dy > 0) { im.style.transform = `translateY(${dy}px) scale(${Math.max(.75, 1 - dy / 900)})`; z.style.background = `rgba(0,0,0,${Math.max(.3, .92 - dy / 500)})`; } else im.style.transform = `translateX(${dx}px)`; };
+  z.ontouchend = () => { if (x0 === null) return; x0 = null; const im = z.querySelector('.zimg'); z.style.background = ''; if (im) { im.style.transition = ''; im.style.transform = ''; }
+    if (dy > 110 && Math.abs(dy) > Math.abs(dx)) return close(); if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy)) go(dx < 0 ? 1 : -1); };
+}
+/* Tirer la fiche vers le bas (quand on est tout en haut) pour la fermer, comme Instagram */
+function pullClose(lb) { if (lb.dataset.pull) return; lb.dataset.pull = 1; let y0 = null, dy = 0, card = null;
+  lb.addEventListener('touchstart', e => { card = lb.querySelector('.eqcard'); y0 = lb.scrollTop <= 0 && card && !lb.querySelector('.eqf') ? e.touches[0].clientY : null; dy = 0; }, { passive: true });
+  lb.addEventListener('touchmove', e => { if (y0 === null) return; dy = e.touches[0].clientY - y0; if (dy <= 0) { card.style.transform = ''; return; } if (e.cancelable) e.preventDefault(); card.style.transition = 'none'; card.style.transform = `translateY(${dy * .8}px)`; }, { passive: false });
+  lb.addEventListener('touchend', () => { if (y0 === null || !card) return; y0 = null; card.style.transition = ''; if (dy > 120) { card.style.transform = 'translateY(100vh)'; setTimeout(() => { lb.classList.remove('on'); card.style.transform = ''; }, 180); } else card.style.transform = ''; }); }
 function eqCard(i, lb) {
   lb.innerHTML = `<div class="eqcard"><button data-x aria-label="Fermer">×</button>${['controle', 'attente', 'reprendre', 'cloturee'].includes(i.statut) ? `<span class="st ${i.statut}" style="display:inline-block;font-size:13px;padding:4px 10px;margin-bottom:6px">${{ controle: 'À contrôler', attente: 'En attente', reprendre: 'À reprendre', cloturee: 'Clôturée' }[i.statut]}</span><br>` : ''}<small>${lbl(i.date)}${i.epingle || !i.heure ? ' · dans la journée' : ' · ' + hh(i.heure) + ' – ' + fin(i.heure, i.duree)}</small>
     <h3>${E([i.client, i.occupant].filter(Boolean).join(' · ') || i.travaux || 'Intervention')}</h3>${i.adresse || i.ville ? `<a class="eqmap" href="https://maps.apple.com/?q=${encodeURIComponent(fullAddr(i) + ', France')}">${ICON.route}<span>${E([[i.adresse, i.complement].filter(Boolean).join(', '), [i.cp, i.ville].filter(Boolean).join(' ')].filter(Boolean).join(' · '))}<small>Voir dans Plans · accès, stationnement</small></span></a>` : ''}
@@ -467,11 +485,11 @@ function eqCard(i, lb) {
     ${(i.pieces || []).length ? `<div class="eqret"><h4>${ic('paperclip')} Pièces jointes</h4><div class="eqph">${i.pieces.map(p => p.type === 'photo' ? `<img alt="${E(p.nom)}" data-b="${p.prive ? 'bureau' : 'pieces'}" data-ph="${E(p.path)}">` : `<a class="eqdoc" data-b="${p.prive ? 'bureau' : 'pieces'}" data-doc2="${E(p.path)}">${ic('file')}<span>${E((p.prive ? '🔒 ' : '') + p.nom)}</span></a>`).join('')}</div></div>` : ''}
     ${preview && ['controle', 'attente', 'reprendre'].includes(i.statut) ? `<div class="eqact"><button class="primary-step" id="eqclo" style="background:var(--ok)">✓ Clôturer</button><div class="r2"><button class="eqback" id="eqrep" style="color:#DC2626">↺ À reprendre</button>${i.statut !== 'attente' ? '<button class="eqback" id="eqatt">En attente</button>' : ''}</div></div>` : ''}
     <button class="primary-step" id="eqed" style="margin-top:14px;${['controle', 'attente', 'reprendre'].includes(i.statut) ? 'background:#fff;color:#0E1630;border:2px solid var(--line)' : ''}">Modifier</button><button type="button" class="eqback" data-x>‹ Retour</button></div>`;
-  lb.classList.add('on'); lb.scrollTop = 0;
+  lb.classList.add('on'); lb.scrollTop = 0; pullClose(lb);
   if ($('#eqclo')) { $('#eqclo').onclick = () => bureauStatut(i, 'cloturee', lb); $('#eqrep').onclick = () => bureauStatut(i, 'reprendre', lb); if ($('#eqatt')) $('#eqatt').onclick = () => bureauStatut(i, 'attente', lb); } $('#eqed').onclick = () => quickNew(i.date, String(i.heure || '08:00').slice(0, 5), i);
   const els = [...lb.querySelectorAll('[data-ph],[data-doc2]')], byB = {}; els.forEach(x => (byB[x.dataset.b] = byB[x.dataset.b] || []).push(x.dataset.ph || x.dataset.doc2));
   (async () => { const urls = {}; for (const bk in byB) Object.assign(urls, await signedMap(bk, byB[bk]));
-    els.forEach(x => { const u = urls[x.dataset.ph || x.dataset.doc2]; if (!u) return; if (x.tagName === 'IMG') { x.src = u; x.onclick = ev => { ev.stopPropagation(); eqZoom(`<img src="${u}" alt="">`); }; } else x.onclick = ev => { ev.stopPropagation(); window.open(u, '_blank'); }; }); })();
+    els.forEach(x => { const u = urls[x.dataset.ph || x.dataset.doc2]; if (!u) return; if (x.tagName === 'IMG') { x.src = u; x.onclick = ev => { ev.stopPropagation(); const gal = [...x.closest('.eqph').querySelectorAll('img')].filter(y => y.getAttribute('src')).map(y => ({ u: y.src, t: y.alt })); eqZoom('', gal, Math.max(0, gal.findIndex(g => g.u === x.src))); }; } else x.onclick = ev => { ev.stopPropagation(); window.open(u, '_blank'); }; }); })();
 }
 async function equipeMois() {
   const now = new Date(), first = new Date(now.getFullYear(), now.getMonth() + moE, 1, 12), last = new Date(first.getFullYear(), first.getMonth() + 1, 0, 12);
