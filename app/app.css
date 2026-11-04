@@ -267,3 +267,7 @@ body.rzbody,body.rzbody *{cursor:ns-resize!important;user-select:none}
 .box.note.nonlu .nlast small{color:#DC2626;font-weight:700}.box.note.lu .nlast small{color:var(--ok,#0E9F6E);font-weight:700}
 .cal .ch{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:0;border-bottom:1px solid var(--line);border-radius:0;display:block;cursor:default}.cal .ch:hover{box-shadow:none;border-color:var(--line)}.cal .ch.who{display:flex}
 #viewer .vbody{cursor:zoom-out}#viewer .vbody img,#viewer .vbody video,#viewer .vbody iframe{cursor:default}
+#main .list .d .cad{font-weight:700;color:var(--ink,#0E1630);margin:1px 0 2px}
+.ev .rzt{position:absolute;left:0;right:0;top:-1px;height:6px;cursor:ns-resize;z-index:3}
+.ev:hover .rzt::after{content:'';position:absolute;left:50%;top:2px;width:18px;height:3px;margin-left:-9px;border-radius:2px;background:var(--c);opacity:.7}
+.rztip.up{bottom:auto;top:-24px}

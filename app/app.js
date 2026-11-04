@@ -132,7 +132,7 @@ function ev(i, t, px, col, cols) {
   return `<div class="ev ${i.statut === 'cloturee' ? 'cl' : ''} ${short ? 'sh' : ''}" draggable="true" data-id="${i.id}" data-tech="${t}" title="${E(hh(i.heure) + '–' + fin(i.heure, i.duree) + ' · ' + title + (i.adresse ? ' · ' + i.adresse : ''))}"
     style="top:${top}px;height:${h - 2}px;left:calc(${col / cols * 100}% + 1px);width:calc(${100 / cols}% - 2px);--c:${c};--bg:${tint(c, .16)};--sc:${SC[i.statut]}">
     <b><i class="sd"></i>${E(title)}</b>${short ? '' : `<span>${hh(i.heure)}–${fin(i.heure, i.duree)}${i.type === 'intervention' && i.ville ? ' · ' + E(i.ville) : ''}</span>`}
-    ${h > 64 && i.type === 'intervention' ? `<span class="tr">${E(i.travaux || '')}</span>` : ''}${i.techs.length > 1 && h > 52 ? `<span class="avs">${avatars(i.techs)}</span>` : ''}<span class="ic2">${icoOf(i)}</span>${i.note_bureau && !i.note_lue ? '<span class="nb" title="Message pas encore lu par le technicien">✉</span>' : ''}<i class="rz" title="Glisser pour changer la durée"></i></div>`;
+    ${h > 64 && i.type === 'intervention' ? `<span class="tr">${E(i.travaux || '')}</span>` : ''}${i.techs.length > 1 && h > 52 ? `<span class="avs">${avatars(i.techs)}</span>` : ''}<span class="ic2">${icoOf(i)}</span>${i.note_bureau && !i.note_lue ? '<span class="nb" title="Message pas encore lu par le technicien">✉</span>' : ''}<i class="rzt" title="Glisser pour changer l’heure de début"></i><i class="rz" title="Glisser pour changer l’heure de fin"></i></div>`;
 }
 /* Répartit les interventions qui se chevauchent dans une même colonne */
 function layout(list) {
@@ -160,7 +160,7 @@ function planning() {
    <div class="seg"><button data-m="jour" class="${mode === 'jour' ? 'on' : ''}">Jour</button><button data-m="semaine" class="${mode === 'semaine' ? 'on' : ''}">Semaine</button></div>
    ${mode === 'semaine' ? `<label class="tgl"><input type="checkbox" id="we" ${showWE ? 'checked' : ''}> Sam. et dim.</label>` : ''}
    <button class="btn btn-line" id="bkup" title="Télécharge tout le planning dans un fichier Excel">${ic('download')} Sauvegarde</button><button class="btn btn-line" id="npin">${ic('pin')} Rappel du jour</button><button class="btn btn-grad" id="nnew">+ Planifier</button></div>
-   <div class="people">${techs.map(t => `<button data-who="${t.id}" class="${hidden.has(t.id) ? 'off' : ''}" style="--c:${t.couleur}"><i></i>${E(t.nom)}${isBureau(t) ? ' <small>bureau</small>' : ''}</button>`).join('')}<span class="hint">Cliquez pour afficher ou masquer · glissez deux doigts ou ← → pour changer de semaine · double-clic sur un créneau vide pour planifier · clic sur une intervention pour voir la fiche, double-clic pour la modifier · tirez le bas d’une intervention pour changer sa durée</span></div>`;
+   <div class="people">${techs.map(t => `<button data-who="${t.id}" class="${hidden.has(t.id) ? 'off' : ''}" style="--c:${t.couleur}"><i></i>${E(t.nom)}${isBureau(t) ? ' <small>bureau</small>' : ''}</button>`).join('')}<span class="hint">Cliquez pour afficher ou masquer · glissez deux doigts ou ← → pour changer de semaine · double-clic sur un créneau vide pour planifier · clic sur une intervention pour voir la fiche, double-clic pour la modifier · tirez le haut ou le bas d’une intervention pour changer ses horaires</span></div>`;
   if (!techs.length) { $('#main').innerHTML = h + `<div class="empty">Aucun membre de l’équipe enregistré.</div>`; return; }
   const hours = [...Array(H1 - H0)].map((_, k) => `<div class="hr" style="height:${px}px"><span>${pad(H0 + k)}:00</span></div>`).join('');
   const nLanes = d => Math.max(1, vis.filter(t => inter.some(i => i.date === d && i.techs.includes(t.id) && !isAllDay(i))).length);
@@ -212,18 +212,21 @@ function allDay(d, who, single) {
   return `<div class="ad" data-date="${d}" ${single ? `data-tech="${who[0].id}"` : ''}>${!single && ferie(d) ? `<span class="ferb">${ic('calendar')} ${E(ferie(d))}</span>` : ''}${abs.map(a => `<span class="abl" style="--c:${T(a.tech_id).couleur}">${ic('calendar-x')} ${single ? '' : E(T(a.tech_id).nom) + ' · '}${E(a.motif)}<button data-delabs="${a.id}" aria-label="Retirer l’absence">×</button></span>`).join('')}
     ${pins.map(i => `<div class="pinr" draggable="true" data-id="${i.id}" data-tech="${single ? who[0].id : i.techs[0]}" style="--c:${T(i.techs[0]).couleur};--bg:${tint(T(i.techs[0]).couleur, .14)}">${ic('pin')}<span>${single ? '' : `<em>${E(names(i.techs))}</em> `}${E(pinLbl(i))}</span></div>`).join('')}</div>`;
 }
-/* Agrandir / rétrécir une intervention à la souris (poignée du bas), par pas de 15 minutes */
+/* Agrandir / rétrécir une intervention à la souris (poignée du haut ou du bas), par pas de 15 minutes */
 let rzEnd = 0, clk = 0;
-function resizeEv(e, c, px) {
+function resizeEv(e, c, px, top) {
   e.preventDefault(); e.stopPropagation(); const i = inter.find(x => x.id === c.dataset.id); if (!i) return;
-  const y0 = e.clientY, h0 = c.offsetHeight, s = mins(i.heure), d0 = Math.round((+i.duree || 1) * 60); let d = d0;
+  const y0 = e.clientY, s0 = mins(i.heure), d0 = Math.round((+i.duree || 1) * 60), e0 = s0 + d0, top0 = c.offsetTop; let s = s0, d = d0;
   c.draggable = false; c.classList.add('rzing'); document.body.classList.add('rzbody');
-  const tip = document.createElement('div'); tip.className = 'rztip'; c.appendChild(tip);
+  const tip = document.createElement('div'); tip.className = 'rztip' + (top ? ' up' : ''); c.appendChild(tip);
   const show = () => { tip.textContent = hh(hm(s)) + ' – ' + hh(hm(s + d)) + ' · ' + (d >= 60 ? Math.floor(d / 60) + ' h' + (d % 60 ? ' ' + pad(d % 60) : '') : d + ' min'); };
-  const mv = x => { d = Math.max(15, Math.min(H1 * 60 - s, d0 + Math.round((x.clientY - y0) / px * 60 / 15) * 15)); c.style.height = Math.max(18, d / 60 * px - 2) + 'px'; show(); };
+  const mv = x => { const k = Math.round((x.clientY - y0) / px * 60 / 15) * 15;
+    if (top) { s = Math.max(H0 * 60, Math.min(e0 - 15, s0 + k)); d = e0 - s; c.style.top = (top0 + (s - s0) / 60 * px) + 'px'; }
+    else d = Math.max(15, Math.min(H1 * 60 - s, d0 + k));
+    c.style.height = Math.max(18, d / 60 * px - 2) + 'px'; show(); };
   const up = async () => { document.removeEventListener('mousemove', mv); document.removeEventListener('mouseup', up); rzEnd = Date.now(); c.classList.remove('rzing'); document.body.classList.remove('rzbody'); tip.remove(); c.draggable = true;
-    if (d === d0) return; const duree = Math.round(d / 60 * 10000) / 10000; i.duree = duree;
-    const { error } = await sb.from('interventions').update({ duree }).eq('id', i.id); if (error) { toast('Erreur : ' + error.message); }
+    if (d === d0 && s === s0) return; const row = { duree: Math.round(d / 60 * 10000) / 10000 }; if (s !== s0) row.heure = hm(s); Object.assign(i, row);
+    const { error } = await sb.from('interventions').update(row).eq('id', i.id); if (error) { toast('Erreur : ' + error.message); }
     else toast((i.client || i.occupant || i.travaux || 'Intervention') + ' : ' + hh(hm(s)) + '–' + hh(hm(s + d)));
     await loadPlanning(); planning(); };
   show(); document.addEventListener('mousemove', mv); document.addEventListener('mouseup', up);
@@ -233,7 +236,7 @@ function bindDnD(px) {
   document.querySelectorAll('.ev,.pinr').forEach(c => {
     c.onclick = e => { e.stopPropagation(); if (Date.now() - rzEnd < 400 || e.detail > 1) return; clearTimeout(clk); clk = setTimeout(() => { const i = inter.find(x => x.id === c.dataset.id); if (i) detail(i.id); }, 240); };
     c.ondblclick = e => { e.stopPropagation(); clearTimeout(clk); const i = inter.find(x => x.id === c.dataset.id); if (i) form(i); };
-    const rz = c.querySelector('.rz'); if (rz) rz.onmousedown = e => resizeEv(e, c, px);
+    const rz = c.querySelector('.rz'); if (rz) rz.onmousedown = e => resizeEv(e, c, px); const rt = c.querySelector('.rzt'); if (rt) rt.onmousedown = e => resizeEv(e, c, px, true);
     c.oncontextmenu = e => { e.preventDefault(); ctxMenu(e, inter.find(x => x.id === c.dataset.id)); };
     c.ondragstart = e => { if (c.classList.contains('rzing')) return e.preventDefault(); grab = e.offsetY || 0; c.classList.add('dragging'); e.dataTransfer.setData('text/plain', c.dataset.id + '|' + c.dataset.tech); };
     c.ondragend = () => c.classList.remove('dragging');
@@ -612,7 +615,7 @@ async function listControle() {
   $('#main').innerHTML = `<div class="head"><h1>À contrôler</h1><span class="live"><i></i>En direct</span></div>
    <p style="color:var(--mute);margin:-6px 0 16px">Interventions validées par les techniciens (photos + commentaire). Vérifiez puis clôturez.</p>
    ${ctrl.length ? `<div class="list">${ctrl.map(i => `<button class="d" data-c="${i.id}"><span class="th" data-th="${E((i.photos || [])[0]?.path || '')}">${(i.photos || []).length ? '' : ic('pin')}</span>
-     <span><h3>${E(i.type === 'intervention' ? (i.adresse || i.ville || 'Intervention') : i.travaux)}${i.epingle ? '<span class="tag t-aff">' + ic('pin') + ' Tâche</span>' : ''}</h3><p>${i.valide_par ? `<b>Validée par ${E(T(i.valide_par).nom)}</b>${i.techs.length > 1 ? ' (équipe : ' + E(names(i.techs)) + ')' : ''}` : i.techs.map(t => `<i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${T(t).couleur};margin-right:4px"></i>${E(T(t).nom)}`).join(' · ')} · ${(i.photos || []).length} photo${(i.photos || []).length > 1 ? 's' : ''}${i.commentaire ? ' · « ' + E(i.commentaire.slice(0, 70)) + (i.commentaire.length > 70 ? '…' : '') + ' »' : ''}</p></span>
+     <span><h3>${E(i.type === 'intervention' ? ([i.client, i.occupant].filter(Boolean).join(' · ') || i.adresse || i.ville || 'Intervention') : i.travaux)}${i.epingle ? '<span class="tag t-aff">' + ic('pin') + ' Tâche</span>' : ''}</h3>${i.type === 'intervention' && (i.client || i.occupant) && (i.adresse || i.ville) ? `<p class="cad">${E([i.adresse, [i.cp, i.ville].filter(Boolean).join(' ')].filter(Boolean).join(', '))}</p>` : ''}<p>${i.valide_par ? `<b>Validée par ${E(T(i.valide_par).nom)}</b>${i.techs.length > 1 ? ' (équipe : ' + E(names(i.techs)) + ')' : ''}` : i.techs.map(t => `<i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${T(t).couleur};margin-right:4px"></i>${E(T(t).nom)}`).join(' · ')} · ${(i.photos || []).length} photo${(i.photos || []).length > 1 ? 's' : ''}${i.commentaire ? ' · « ' + E(i.commentaire.slice(0, 70)) + (i.commentaire.length > 70 ? '…' : '') + ' »' : ''}</p></span>
      <span class="r" style="color:var(--mute);font-size:13px;font-weight:700">${i.fin_at ? fdate(i.fin_at) : lbl(i.date, true)}</span></button>`).join('')}</div>` : `<div class="empty">Rien à contrôler : tout est à jour ${ic('check-circle')}</div>`}`;
   document.querySelectorAll('[data-c]').forEach(b => b.onclick = () => detail(b.dataset.c, ctrl.find(x => x.id === b.dataset.c)));
   const paths = [...document.querySelectorAll('[data-th]')].map(e => e.dataset.th).filter(Boolean);
