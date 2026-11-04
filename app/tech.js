@@ -397,7 +397,7 @@ function quickNew(date, heure, ex) {
     <label>Complément<input name="complement" value="${v('complement')}" placeholder="Résidence, bâtiment…"></label>
     <div class="r2"><label>Code postal<input name="cp" inputmode="numeric" maxlength="5" value="${v('cp')}"></label><label>Ville<input name="ville" value="${v('ville')}"></label></div>
     <label>Travaux à effectuer<textarea name="travaux">${v('travaux')}</textarea></label>
-    <button class="primary-step" type="submit" id="qsv">${ex ? 'Enregistrer' : 'Planifier'}</button></form>`;
+    <button class="primary-step" type="submit" id="qsv">${ex ? 'Enregistrer' : 'Planifier'}</button><button type="button" class="eqback" data-x>Annuler</button></form>`;
   lb.classList.add('on'); lb.scrollTop = 0;
   lb.querySelectorAll('input:not([type=checkbox]):not([type=date]):not([type=time]),textarea').forEach(x => x.setAttribute('autocomplete', 'bk-' + x.name)); $('#qf').setAttribute('autocomplete', 'off');
   const f = $('#qf'), box = f.querySelector('.qac'); let tm, seq = 0;
@@ -436,7 +436,7 @@ function eqCard(i, lb) {
     ${i.commentaire || (i.photos || []).length ? `<div class="eqret"><h4>${ic('check-circle')} Retour ${i.valide_par ? 'de ' + E(T(i.valide_par).nom) : 'du technicien'}</h4>${i.commentaire ? `<p style="white-space:pre-line">${E(i.commentaire)}</p>` : ''}
       <div class="eqph">${(i.photos || []).map(p => `<img alt="${E(p.tag || 'Photo')}" data-b="retours" data-ph="${E(p.path)}">`).join('')}</div></div>` : ''}
     ${(i.pieces || []).length ? `<div class="eqret"><h4>${ic('paperclip')} Pièces jointes</h4><div class="eqph">${i.pieces.map(p => p.type === 'photo' ? `<img alt="${E(p.nom)}" data-b="${p.prive ? 'bureau' : 'pieces'}" data-ph="${E(p.path)}">` : `<a class="eqdoc" data-b="${p.prive ? 'bureau' : 'pieces'}" data-doc2="${E(p.path)}">${ic('file')}<span>${E((p.prive ? '🔒 ' : '') + p.nom)}</span></a>`).join('')}</div></div>` : ''}
-    <button class="primary-step" id="eqed" style="margin-top:14px">Modifier</button></div>`;
+    <button class="primary-step" id="eqed" style="margin-top:14px">Modifier</button><button type="button" class="eqback" data-x>‹ Retour au planning</button></div>`;
   lb.classList.add('on'); lb.scrollTop = 0; $('#eqed').onclick = () => quickNew(i.date, String(i.heure || '08:00').slice(0, 5), i);
   const els = [...lb.querySelectorAll('[data-ph],[data-doc2]')], byB = {}; els.forEach(x => (byB[x.dataset.b] = byB[x.dataset.b] || []).push(x.dataset.ph || x.dataset.doc2));
   (async () => { const urls = {}; for (const bk in byB) Object.assign(urls, await signedMap(bk, byB[bk]));
