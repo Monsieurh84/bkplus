@@ -271,3 +271,7 @@ body.rzbody,body.rzbody *{cursor:ns-resize!important;user-select:none}
 .ev .rzt{position:absolute;left:0;right:0;top:-1px;height:6px;cursor:ns-resize;z-index:3}
 .ev:hover .rzt::after{content:'';position:absolute;left:50%;top:2px;width:18px;height:3px;margin-left:-9px;border-radius:2px;background:var(--c);opacity:.7}
 .rztip.up{bottom:auto;top:-24px}
+.box.note .nrep{background:#EEF6FF;border:1px solid #BFDBFE;border-radius:10px;padding:9px 11px;margin:-2px 0 8px 18px}
+.box.note .nrep small{display:block;font-weight:800;color:#1D4ED8;font-size:12px;margin-bottom:3px}
+.box.note .nrep.new{border-color:#1D4ED8;box-shadow:0 0 0 2px #BFDBFE}
+.ev .nb.rp{color:#1D4ED8;font-weight:900}

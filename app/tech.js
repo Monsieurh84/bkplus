@@ -205,7 +205,9 @@ async function fiche() {
   const docs = [...i.pieces.map(p => ({ kind: p.type, name: (p.prive ? '🔒 ' : '') + p.nom, bucket: p.prive ? 'bureau' : 'pieces', path: p.path })), ...((i.demande?.photos) || []).map(p => ({ kind: 'photo', name: p.label, bucket: 'demandes', path: p.path }))];
   const isJob = i.type === 'intervention';
   scr().innerHTML = topBar(`${i.epingle ? ic('pin') : hh(i.heure)} · ${E(i.ville || 'Tâche')}`, lbl(i.date), true) + previewBar() + `<div class="scroll">
-    ${i.note_bureau ? `<div class="bmsg ${rep ? 'rep' : ''}"><small>${rep ? '↺ À reprendre · message du bureau' : 'Message du bureau'}${i.note_at ? ' · ' + new Date(i.note_at).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}</small><p>${E(i.note_bureau)}</p></div>` : ''}
+    ${i.note_bureau ? `<div class="bmsg ${rep ? 'rep' : ''}"><small>${rep ? '↺ À reprendre · message du bureau' : 'Message du bureau'}${i.note_at ? ' · ' + new Date(i.note_at).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}</small><p>${E(i.note_bureau)}</p>
+      ${i.note_reponse ? `<div class="brep"><small>Votre réponse${i.note_rep_at ? ' · ' + new Date(i.note_rep_at).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}</small>${E(i.note_reponse)}</div>` : ''}
+      <div class="brf"><textarea id="brt" rows="2" placeholder="Répondre au bureau…"></textarea><button id="brs" type="button">${ic('message')} ${i.note_reponse ? 'Renvoyer' : 'Répondre'}</button></div></div>` : ''}
     ${rep && !i.note_bureau ? '<div class="bmsg rep"><small>↺ À reprendre</small><p>Le bureau vous demande de reprendre cette intervention.</p></div>' : ''}
     ${done ? `<div class="done-box">${i.statut === 'attente' ? '⏸ En attente côté bureau' : '✓ Terminée et envoyée au bureau'}</div>` : ''}
     ${isJob ? `<div class="step"><div class="${step >= 0 ? 'on' : ''}">Prévue</div><div class="${step >= 1 ? 'on' : ''}">En route</div><div class="${step >= 2 ? 'on' : ''}">Sur place</div><div class="${step >= 3 ? 'on' : ''}">Terminée</div></div>` : ''}
@@ -248,6 +250,10 @@ async function fiche() {
       else window.open(p.url, '_blank'); }); }
   const rp = [...scr().querySelectorAll('[data-rph]')];
   if (rp.length) signedMap('retours', rp.map(x => x.dataset.rph)).then(u => rp.forEach(img => { if (u[img.dataset.rph]) img.src = u[img.dataset.rph]; else img.alt = 'Photo disponible avec du réseau'; }));
+  const brs = $('#brs'); if (brs) brs.onclick = async () => { const t = $('#brt').value.trim(); if (!t) return toast('Écrivez votre réponse');
+    if (!online) return toast('Pas de réseau : réessayez dans un instant'); brs.disabled = true;
+    const { error } = await sb.rpc('tech_repondre', { p_id: i.id, p_texte: t }); brs.disabled = false; if (error) return toast('Erreur : ' + error.message);
+    i.note_reponse = t; i.note_rep_at = new Date().toISOString(); i.note_lue = true; lastLocal = Date.now(); DB.set('cache', { team, tech, items, at: Date.now() }); const y = scr().querySelector('.scroll').scrollTop; await fiche(); scr().querySelector('.scroll').scrollTop = y; toast('✓ Réponse envoyée au bureau'); };
   const go = $('#go'); if (go) go.onclick = async () => { i.statut = 'enroute'; fiche(); await enqueue({ kind: 'statut', iid: i.id, statut: 'enroute' }); toast('Le bureau voit que vous êtes en route'); };
   const here = $('#here'); if (here) here.onclick = async () => { i.statut = 'encours'; i.debut_at = new Date().toISOString(); fiche(); await enqueue({ kind: 'statut', iid: i.id, statut: 'encours' }); toast('Arrivée enregistrée à ' + nowHHMM()); };
   const pd = $('#pindone'); if (pd) pd.onclick = async () => { i.statut = 'controle'; await enqueue({ kind: 'valider', iid: i.id, commentaire: 'Tâche faite à ' + nowHHMM(), photos: [] }); openId = null; render(); toast('✓ Tâche faite, le bureau est prévenu'); };

@@ -81,7 +81,9 @@ function listen() {
     if (p.eventType === 'INSERT') { demandes.unshift(p.new); toast('Nouvelle demande : ' + p.new.service + ' · ' + p.new.ville); }
     else if (p.eventType === 'UPDATE') { const i = demandes.findIndex(x => x.id === p.new.id); if (i > -1) demandes[i] = p.new; }
     badge(); if (view === 'demandes') listDemandes();
-  }).on('postgres_changes', { event: '*', schema: 'public', table: 'interventions' }, refresh)
+  }).on('postgres_changes', { event: '*', schema: 'public', table: 'interventions' }, p => { const n = p.new || {}, o = p.old || {};
+    if (n.note_reponse && !n.note_rep_lue && n.note_rep_at && !(listen.rs = listen.rs || new Set()).has(n.id + n.note_rep_at) && listen.rs.add(n.id + n.note_rep_at)) { toast('✉ Réponse de ' + (n.note_rep_par ? T(n.note_rep_par).nom : 'un technicien') + ' (' + (n.client || n.occupant || n.adresse || 'intervention') + ') : « ' + String(n.note_reponse).slice(0, 80) + ' »'); }
+    refresh(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'intervention_techs' }, refresh)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'absences' }, refresh)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'affaires' }, () => { clearTimeout(listen.ta); listen.ta = setTimeout(async () => { await loadAffaires(); listAffaires(); }, 400); })
@@ -132,7 +134,7 @@ function ev(i, t, px, col, cols) {
   return `<div class="ev ${i.statut === 'cloturee' ? 'cl' : ''} ${short ? 'sh' : ''}" draggable="true" data-id="${i.id}" data-tech="${t}" title="${E(hh(i.heure) + '–' + fin(i.heure, i.duree) + ' · ' + title + (i.adresse ? ' · ' + i.adresse : ''))}"
     style="top:${top}px;height:${h - 2}px;left:calc(${col / cols * 100}% + 1px);width:calc(${100 / cols}% - 2px);--c:${c};--bg:${tint(c, .16)};--sc:${SC[i.statut]}">
     <b><i class="sd"></i>${E(title)}</b>${short ? '' : `<span>${hh(i.heure)}–${fin(i.heure, i.duree)}${i.type === 'intervention' && i.ville ? ' · ' + E(i.ville) : ''}</span>`}
-    ${h > 64 && i.type === 'intervention' ? `<span class="tr">${E(i.travaux || '')}</span>` : ''}${i.techs.length > 1 && h > 52 ? `<span class="avs">${avatars(i.techs)}</span>` : ''}<span class="ic2">${icoOf(i)}</span>${i.note_bureau && !i.note_lue ? '<span class="nb" title="Message pas encore lu par le technicien">✉</span>' : ''}<i class="rzt" title="Glisser pour changer l’heure de début"></i><i class="rz" title="Glisser pour changer l’heure de fin"></i></div>`;
+    ${h > 64 && i.type === 'intervention' ? `<span class="tr">${E(i.travaux || '')}</span>` : ''}${i.techs.length > 1 && h > 52 ? `<span class="avs">${avatars(i.techs)}</span>` : ''}<span class="ic2">${icoOf(i)}</span>${i.note_reponse && !i.note_rep_lue ? '<span class="nb rp" title="Nouvelle réponse du technicien">✉</span>' : i.note_bureau && !i.note_lue ? '<span class="nb" title="Message pas encore lu par le technicien">✉</span>' : ''}<i class="rzt" title="Glisser pour changer l’heure de début"></i><i class="rz" title="Glisser pour changer l’heure de fin"></i></div>`;
 }
 /* Répartit les interventions qui se chevauchent dans une même colonne */
 function layout(list) {
@@ -397,11 +399,13 @@ async function detail(id, given) {
     ${i.commentaire || (i.photos || []).length ? `<div class="box" style="border-color:#BFE8D6;background:#F3FBF7"><h4>${ic('check-circle')} Validée par ${i.valide_par ? `<i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${T(i.valide_par).couleur}"></i> ${E(T(i.valide_par).nom)}` : 'le technicien'}${i.fin_at ? ' · ' + fdate(i.fin_at) : ''}</h4><div style="white-space:pre-line">${E(i.commentaire || '')}</div>${(i.photos || []).length ? `<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-line" id="rpall" type="button">${ic('download')} Télécharger les ${i.photos.length} photo${i.photos.length > 1 ? 's' : ''}</button><span style="font-size:12.5px;color:var(--mute);align-self:center">ou glissez une photo directement dans votre mail</span></div><div class="ph" id="rph" style="margin-top:10px">${i.photos.map(p => `<a target="_blank" rel="noopener" data-rp="${E(p.path)}"><img alt="">${E(p.tag || 'Photo')}</a>`).join('')}</div>` : ''}</div>` : ''}
     <div class="box note ${i.note_bureau ? (i.note_lue ? 'lu' : 'nonlu') : ''}"><h4>${ic('message')} Message pour ${i.techs.length > 1 ? 'les techniciens' : 'le technicien'} <small>(reçu directement sur son application)</small></h4>
       ${i.note_bureau ? `<div class="nlast"><div style="white-space:pre-line">${E(i.note_bureau)}</div><small>Envoyé ${i.note_at ? fdate(i.note_at) : ''} · ${i.note_lue ? '✓ Lu par le technicien' : 'Pas encore lu'}</small></div>` : ''}
+      ${i.note_reponse ? `<div class="nrep ${i.note_rep_lue ? '' : 'new'}"><small>${i.note_rep_lue ? '' : '● '}Réponse de ${E(i.note_rep_par ? T(i.note_rep_par).nom : 'technicien')}${i.note_rep_at ? ' · ' + fdate(i.note_rep_at) : ''}</small><div style="white-space:pre-line">${E(i.note_reponse)}</div></div>` : ''}
       <textarea id="nbw" rows="3" placeholder="Ex. : Merci de repasser chez l’occupant pour resserrer le raccord, il reste une goutte."></textarea>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn btn-line" id="nbs" type="button">${ic('message')} Envoyer le message</button><button class="btn btn-line" id="nbr" type="button" style="color:#DC2626;border-color:#FCA5A5">↺ Envoyer et mettre « À reprendre »</button></div></div>
     <label style="font-size:13px;font-weight:800;color:var(--mute)">Statut<select id="st" style="display:block;width:100%;margin-top:6px;border:2px solid var(--line);border-radius:10px;padding:10px">${[...new Set([i.statut, 'attente', 'reprendre', 'cloturee'])].map(k => `<option value="${k}" ${k === i.statut ? 'selected' : ''}>${STAT_I[k]}</option>`).join('')}</select></label>
   </div>
   <footer>${['controle', 'attente', 'reprendre'].includes(i.statut) ? '<button class="btn btn-grad" id="clo" style="background:var(--ok,#0E9F6E)">✓ Clôturer</button>' : ''}${i.statut === 'controle' ? '<button class="btn btn-line" id="rep" style="color:#DC2626">↺ À reprendre</button><button class="btn btn-line" id="att">En attente</button>' : ''}<button class="btn ${['controle', 'attente', 'reprendre'].includes(i.statut) ? 'btn-line' : 'btn-grad'}" id="ed">Modifier</button><button class="btn btn-line" id="dup">Dupliquer</button><button class="btn btn-line" id="p7">+7 jours</button><button class="btn btn-red" id="del" style="margin-left:auto">Supprimer</button></footer>`);
+  if (i.note_reponse && !i.note_rep_lue) { i.note_rep_lue = true; sb.from('interventions').update({ note_rep_lue: true }).eq('id', id).then(() => { const c = document.querySelector(`.ev[data-id="${id}"] .nb`); if (c) c.remove(); }); }
   const urls = await signed('pieces', (pieces || []).filter(p => !p.prive).map(p => p.path));
   signed('bureau', (pieces || []).filter(p => p.prive).map(p => p.path)).then(ub => document.querySelectorAll('#pjb [data-pb]').forEach(a => { const u = ub[a.dataset.pb]; if (u) { a.href = u; setThumb(a, u, a.dataset.pb); } }));
   document.querySelectorAll('#pj [data-p]').forEach(a => { const u = urls[a.dataset.p]; if (u) { a.href = u; setThumb(a, u, a.dataset.p); } });
@@ -592,7 +596,7 @@ async function badgeC() { const { count } = await sb.from('interventions').selec
 async function refreshView() { badgeC(); if (view === 'controle') await listControle(); else if (view === 'recherche') await listRecherche(); else { await loadPlanning(); planning(); } }
 /* Message du bureau : le technicien le reçoit en direct sur son application */
 async function noteTech(i, t, extra) {
-  const row = { note_bureau: t, note_at: new Date().toISOString(), note_lue: false, ...(extra || {}) };
+  const row = { note_bureau: t, note_at: new Date().toISOString(), note_lue: false, note_reponse: null, note_rep_at: null, note_rep_lue: true, ...(extra || {}) };
   const { error } = await sb.from('interventions').update(row).eq('id', i.id); if (error) { toast('Erreur : ' + error.message); return false; }
   Object.assign(i, row); await refreshView(); toast(extra && extra.statut === 'reprendre' ? '↺ À reprendre · ' + names(i.techs) + ' est prévenu sur son application' : 'Message envoyé à ' + names(i.techs)); return true;
 }
