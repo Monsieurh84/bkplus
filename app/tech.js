@@ -343,6 +343,7 @@ async function controleMob() {
 }
 async function bureauStatut(i, st, lb) {
   const row = { statut: st };
+  if (st === 'attente') { const m = prompt('Mise en attente : pourquoi ? (facultatif)', ''); if (m === null) return; Object.assign(row, { attente_motif: m.trim() || null, attente_at: new Date().toISOString() }); }
   if (st === 'reprendre') { const t = (prompt('À reprendre : quel message pour ' + i.techs.map(x => T(x).nom).join(', ') + ' ?\n(il le reçoit directement sur son application)', '') || '').trim(); if (t.length < 2) return toast('Écrivez ce qu’il faut reprendre'); Object.assign(row, { note_bureau: t, note_at: new Date().toISOString(), note_lue: false }); }
   const { error } = await sb.from('interventions').update(row).eq('id', i.id); if (error) return toast('Erreur : ' + error.message);
   Object.assign(i, row); lb.classList.remove('on'); moData = null; eqData = null;

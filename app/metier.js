@@ -142,17 +142,47 @@ function exportIsanet() {
 }
 
 /* ================= Chantiers ================= */
+let suivi = [], attente = [], showFait = false;
 async function loadChantiers() {
-  const { data, error } = await sb.from('chantiers').select('*, interventions(id,date,statut,intervention_techs(tech_id))').order('debut', { ascending: true, nullsFirst: false });
-  if (error) return toast('Erreur : ' + error.message); chantiers = data || [];
+  const [r1, r2, r3] = await Promise.all([sb.from('chantiers').select('*, interventions(id,date,statut,intervention_techs(tech_id))').order('debut', { ascending: true, nullsFirst: false }),
+    sb.from('suivi').select('*').order('created_at', { ascending: false }),
+    sb.from('interventions').select('*, intervention_techs(tech_id), pieces(id)').eq('statut', 'attente').order('attente_at', { ascending: false, nullsFirst: false })]);
+  if (r1.error) return toast('Erreur : ' + r1.error.message); chantiers = r1.data || [];
+  suivi = r2.error ? [] : r2.data || []; attente = (r3.data || []).map(i => ({ ...i, techs: i.intervention_techs.map(x => x.tech_id), nbPieces: (i.pieces || []).length, materiel: i.materiel || [] }));
+}
+/* « À suivre » : interventions en attente (SAV, pas terminées à 100 %) + lignes libres (validations clients…), partagé Alan / Julie */
+function suiviHtml() {
+  const open = suivi.filter(x => !x.fait), done = suivi.filter(x => x.fait);
+  const who = i => [i.client, i.occupant].filter(Boolean).join(' · ') || i.adresse || i.ville || 'Intervention';
+  return `<section class="suivi"><div class="sh"><h2>${ic('clipboard')} À suivre <span>${attente.length + open.length}</span></h2><small>SAV, interventions pas terminées à 100 %, validations clients… La liste partagée du bureau.</small></div>
+    <div class="sadd"><input id="sut" placeholder="Ajouter une ligne : ex. Agence Lamy · Mme Badoro — attente validation du devis" autocomplete="off"><button class="btn btn-grad" id="sua" type="button">+ Ajouter</button></div>
+    ${attente.length ? `<h3>${ic('calendar')} Interventions en attente</h3>${attente.map(i => `<div class="srow at"><button class="sb" data-si="${i.id}"><b>${E(who(i))}</b><small>${E([i.adresse, i.ville].filter(Boolean).join(', '))} · ${lbl(i.date)} · ${E(i.techs.map(t => T(t).nom).join(', '))}</small>${i.attente_motif ? `<em>${E(i.attente_motif)}</em>` : i.commentaire ? `<em>« ${E(i.commentaire.slice(0, 120))} »</em>` : ''}</button>
+      <div class="sact"><button class="btn btn-line" data-sre="${i.id}" type="button">${ic('calendar')} Planifier un retour</button><button class="btn btn-line" data-scl="${i.id}" type="button" style="color:var(--ok,#0E9F6E)">✓ Clôturer</button></div></div>`).join('')}` : ''}
+    ${open.length ? `<h3>${ic('pencil')} Notes</h3>${open.map(x => `<div class="srow"><label class="sck"><input type="checkbox" data-sf="${x.id}"></label><div class="sb"><b>${E(x.texte)}</b><small>${E(x.auteur || '')} · ${fdate(x.created_at)}</small></div>
+      <div class="sact"><button class="btn btn-line" data-spl="${x.id}" type="button">${ic('calendar')} Planifier</button><button class="btn btn-line" data-sdl="${x.id}" type="button" aria-label="Supprimer">×</button></div></div>`).join('')}` : ''}
+    ${!attente.length && !open.length ? '<p class="sempty">Rien à suivre pour l’instant.</p>' : ''}
+    ${done.length ? `<button class="sdone" id="suf" type="button">${showFait ? '▾' : '▸'} ${done.length} ligne${done.length > 1 ? 's' : ''} faite${done.length > 1 ? 's' : ''}</button>${showFait ? done.slice(0, 40).map(x => `<div class="srow ok"><label class="sck"><input type="checkbox" checked data-sf="${x.id}"></label><div class="sb"><b>${E(x.texte)}</b><small>Fait ${x.fait_at ? fdate(x.fait_at) : ''}</small></div><div class="sact"><button class="btn btn-line" data-sdl="${x.id}" type="button" aria-label="Supprimer">×</button></div></div>`).join('') : ''}` : ''}</section>`;
+}
+function bindSuivi() {
+  const re = async () => { await loadChantiers(); listChantiers(); };
+  const add = async () => { const t = $('#sut').value.trim(); if (!t) return; const { error } = await sb.from('suivi').insert({ texte: t, auteur: me?.nom || '' }); if (error) return toast('Erreur : ' + error.message); await re(); toast('Ajouté à la liste'); setTimeout(() => $('#sut')?.focus(), 50); };
+  $('#sua').onclick = add; $('#sut').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); add(); } };
+  document.querySelectorAll('[data-sf]').forEach(c => c.onchange = async () => { const { error } = await sb.from('suivi').update({ fait: c.checked, fait_at: c.checked ? new Date().toISOString() : null }).eq('id', c.dataset.sf); if (error) return toast('Erreur : ' + error.message); await re(); });
+  document.querySelectorAll('[data-sdl]').forEach(b => b.onclick = async () => { if (!confirm('Supprimer cette ligne ?')) return; await sb.from('suivi').delete().eq('id', b.dataset.sdl); await re(); });
+  document.querySelectorAll('[data-spl]').forEach(b => b.onclick = () => { const x = suivi.find(y => y.id === b.dataset.spl); form(null, { ctx: 'À suivre', pre: { travaux: x.texte, date: iso(new Date()) } }); });
+  document.querySelectorAll('[data-si]').forEach(b => b.onclick = () => { const i = attente.find(y => y.id === b.dataset.si); if (i) detail(i.id, i); });
+  document.querySelectorAll('[data-scl]').forEach(b => b.onclick = async () => { await sb.from('interventions').update({ statut: 'cloturee' }).eq('id', b.dataset.scl); await re(); toast('✓ Intervention clôturée'); });
+  document.querySelectorAll('[data-sre]').forEach(b => b.onclick = () => { const i = attente.find(y => y.id === b.dataset.sre); if (i) duplicate(i); });
+  if ($('#suf')) $('#suf').onclick = () => { showFait = !showFait; listChantiers(); };
 }
 function listChantiers() {
   if (view !== 'chantiers') return;
   const t = iso(new Date());
   const it = chantiers.filter(c => filtreC === 'tous' || (filtreC === 'actifs' ? c.statut !== 'termine' : c.statut === 'termine'));
-  $('#main').innerHTML = `<div class="head"><h1>Chantiers en cours</h1><span class="live"><i></i>En direct</span>
+  $('#main').innerHTML = `<div class="head"><h1>Chantiers & suivi</h1><span class="live"><i></i>En direct</span>
     <div class="seg">${[['actifs', 'En cours / à venir'], ['termine', 'Terminés'], ['tous', 'Tous']].map(([k, l]) => `<button data-fc="${k}" class="${filtreC === k ? 'on' : ''}">${l}</button>`).join('')}</div>
     <button class="btn btn-grad" id="nc">+ Nouveau chantier</button></div>
+  ${suiviHtml()}<h2 class="chh">${ic('helmet')} Chantiers</h2>
   ${it.length ? `<div class="chs">${it.map(c => { const tids = [...new Set(c.interventions.flatMap(i => i.intervention_techs.map(x => x.tech_id)))];
     const next = c.interventions.filter(i => i.date >= t).sort((a, b) => a.date.localeCompare(b.date))[0];
     const late = c.statut !== 'termine' && c.fin_prevue && c.fin_prevue < t;
@@ -163,7 +193,7 @@ function listChantiers() {
     : `<div class="empty">Aucun chantier ici. Créez-en un, ou depuis une affaire acceptée : « ${ic('helmet')} Créer le chantier ».</div>`}`;
   document.querySelectorAll('[data-fc]').forEach(b => b.onclick = () => { filtreC = b.dataset.fc; listChantiers(); });
   document.querySelectorAll('[data-c]').forEach(b => b.onclick = () => chantierForm(chantiers.find(c => c.id === b.dataset.c)));
-  $('#nc').onclick = () => chantierForm(null);
+  $('#nc').onclick = () => chantierForm(null); bindSuivi();
 }
 async function chantierForm(c, opts) {
   opts = opts || {}; const isNew = !c;

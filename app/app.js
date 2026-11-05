@@ -87,6 +87,7 @@ function listen() {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'intervention_techs' }, refresh)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'absences' }, refresh)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'affaires' }, () => { clearTimeout(listen.ta); listen.ta = setTimeout(async () => { await loadAffaires(); listAffaires(); }, 400); })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'suivi' }, () => { clearTimeout(listen.ts); listen.ts = setTimeout(async () => { if (view === 'chantiers' && !document.activeElement?.closest?.('.suivi')) { await loadChantiers(); listChantiers(); } }, 500); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'chantiers' }, () => { clearTimeout(listen.tc); listen.tc = setTimeout(async () => { if (view === 'chantiers') { await loadChantiers(); listChantiers(); } }, 400); }).subscribe();
 }
 
@@ -316,8 +317,16 @@ async function listRecherche() {
 /* ================= Panneau ================= */
 /* Empêche Chrome de proposer « Enregistrer l'adresse » / remplissage automatique dans les formulaires de l'appli */
 function noFill(root) { root.querySelectorAll('form').forEach(f => f.setAttribute('autocomplete', 'off')); root.querySelectorAll('input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=date]):not([type=time]),textarea').forEach(x => { if (x.type !== 'password') x.setAttribute('autocomplete', 'bk-' + (x.name || 'x')); }); }
-function openPanel(html) { const P = $('#panel'); P.classList.remove('wide'); P.innerHTML = html; noFill(P); P.classList.add('on'); P.setAttribute('aria-hidden', 'false'); $('#scrim').classList.add('on'); P.querySelector('.x').onclick = closePanel; }
-function closePanel() { const P = $('#panel'); P.classList.remove('on'); P.setAttribute('aria-hidden', 'true'); $('#scrim').classList.remove('on'); }
+/* Chrome propose « Enregistrer l'adresse » quand il voit un formulaire envoyé avec une adresse.
+   On n'envoie plus de vrai « submit » (le bouton appelle directement l'enregistrement) et on vide les champs à la fermeture. */
+function noSubmit(root) { root.querySelectorAll('form').forEach(f => { if (f.dataset.ns) return; f.dataset.ns = 1;
+  const run = btn => { if (!f.reportValidity()) return; if (typeof f.onsubmit === 'function') f.onsubmit({ preventDefault() { }, stopPropagation() { }, target: f, currentTarget: f, submitter: btn }); };
+  const btns = [...f.querySelectorAll('button[type=submit],button:not([type])'), ...(f.id ? root.querySelectorAll(`button[form="${f.id}"]`) : [])];
+  btns.forEach(b => { if (b.type !== 'submit') return; b.type = 'button'; b.addEventListener('click', e => setTimeout(() => { if (!e.defaultPrevented && !b.disabled) run(b); })); });
+  f.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.defaultPrevented && e.target.tagName === 'INPUT' && !/checkbox|radio|file|button|submit/.test(e.target.type) && !e.isComposing) { e.preventDefault(); run(); } }); }); }
+function wipe(root) { root.querySelectorAll('input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=hidden]):not([type=password]),textarea').forEach(x => { x.value = ''; }); }
+function openPanel(html) { const P = $('#panel'); P.classList.remove('wide'); P.innerHTML = html; noFill(P); noSubmit(P); P.classList.add('on'); P.setAttribute('aria-hidden', 'false'); $('#scrim').classList.add('on'); P.querySelector('.x').onclick = closePanel; }
+function closePanel() { const P = $('#panel'); wipe(P); P.classList.remove('on'); P.setAttribute('aria-hidden', 'true'); $('#scrim').classList.remove('on'); }
 $('#scrim').onclick = closePanel; document.addEventListener('keydown', e => { if (e.key === 'Escape') closePanel(); });
 const MIME = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', heic: 'image/heic', heif: 'image/heif', mov: 'video/quicktime', mp4: 'video/mp4', m4v: 'video/mp4', pdf: 'application/pdf', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
 /* Copie le fichier en mémoire tout de suite (une photo glissée depuis Messages ou WhatsApp peut disparaître juste après le dépôt) et corrige son type s'il est vide */
@@ -415,11 +424,12 @@ async function detail(id, given) {
   if ($('#clo')) $('#clo').onclick = () => cloturer(id);
   $('#st').onchange = async e => { const v = e.target.value; if (v === 'reprendre') { if (!(await aReprendre(i, $('#nbw').value))) e.target.value = i.statut; return; }
     if (v === 'cloturee') return cloturer(id);
-    const { error } = await sb.from('interventions').update({ statut: v }).eq('id', id); if (error) return toast('Erreur : ' + error.message); i.statut = v; await refreshView(); detail(id); toast('Statut : ' + STAT_I[v]); };
+    const row = v === 'attente' ? attenteRow() : { statut: v }; if (!row) { e.target.value = i.statut; return; }
+    const { error } = await sb.from('interventions').update(row).eq('id', id); if (error) return toast('Erreur : ' + error.message); i.statut = v; await refreshView(); detail(id); toast(v === 'attente' ? 'En attente · visible dans Chantiers & suivi' : 'Statut : ' + STAT_I[v]); };
   $('#nbs').onclick = async () => { const t = $('#nbw').value.trim(); if (t.length < 2) return toast('Écrivez le message'); await noteTech(i, t); detail(id); };
   $('#nbr').onclick = async () => { if (await aReprendre(i, $('#nbw').value)) detail(id); };
   if ($('#rep')) $('#rep').onclick = async () => { if (await aReprendre(i, $('#nbw').value)) detail(id); };
-  if ($('#att')) $('#att').onclick = async () => { const { error } = await sb.from('interventions').update({ statut: 'attente' }).eq('id', id); if (error) return toast('Erreur : ' + error.message); i.statut = 'attente'; await refreshView(); detail(id); toast('Mise en attente'); };
+  if ($('#att')) $('#att').onclick = async () => { const row = attenteRow(); if (!row) return; const { error } = await sb.from('interventions').update(row).eq('id', id); if (error) return toast('Erreur : ' + error.message); Object.assign(i, row); await refreshView(); detail(id); toast('En attente · visible dans Chantiers & suivi'); };
   $('#ed').onclick = () => form(i); $('#dup').onclick = () => duplicate(i);
   $('#p7').onclick = async () => { await sb.from('interventions').update({ date: iso(addDays(new Date(i.date + 'T12:00'), 7)) }).eq('id', id); closePanel(); await refreshView(); toast('Reprogrammée la semaine suivante'); };
   $('#del').onclick = async () => { let ids = [id];
@@ -600,6 +610,8 @@ async function noteTech(i, t, extra) {
   const { error } = await sb.from('interventions').update(row).eq('id', i.id); if (error) { toast('Erreur : ' + error.message); return false; }
   Object.assign(i, row); await refreshView(); toast(extra && extra.statut === 'reprendre' ? '↺ À reprendre · ' + names(i.techs) + ' est prévenu sur son application' : 'Message envoyé à ' + names(i.techs)); return true;
 }
+/* Mise en attente : on note pourquoi (affiché dans « À suivre » de Chantiers) */
+function attenteRow() { const m = prompt('Mise en attente : pourquoi ? (facultatif)\nEx. : pièce à commander, attente validation agence, SAV à prévoir', ''); if (m === null) return null; return { statut: 'attente', attente_motif: m.trim() || null, attente_at: new Date().toISOString() }; }
 async function aReprendre(i, txt) {
   let t = (txt || '').trim(); if (t.length < 2) t = (prompt('À reprendre : quel message pour ' + names(i.techs) + ' ?\n(il le reçoit directement sur son application)', '') || '').trim();
   if (t.length < 2) { toast('Écrivez ce qu’il faut reprendre'); return false; }

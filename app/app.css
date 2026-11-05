@@ -275,3 +275,17 @@ body.rzbody,body.rzbody *{cursor:ns-resize!important;user-select:none}
 .box.note .nrep small{display:block;font-weight:800;color:#1D4ED8;font-size:12px;margin-bottom:3px}
 .box.note .nrep.new{border-color:#1D4ED8;box-shadow:0 0 0 2px #BFDBFE}
 .ev .nb.rp{color:#1D4ED8;font-weight:900}
+.suivi{background:#fff;border:1px solid var(--line);border-radius:var(--r,16px);padding:16px 18px;margin-bottom:22px}
+.suivi .sh{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}.suivi .sh h2{display:flex;align-items:center;gap:8px;font-size:19px;margin:0}
+.suivi .sh h2 span{background:#FDECEC;color:#DC2626;border-radius:999px;padding:1px 9px;font-size:13px}.suivi .sh small{color:var(--mute);font-weight:600}
+.suivi .sadd{display:flex;gap:8px;margin:12px 0 6px}.suivi .sadd input{flex:1;border:2px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit}
+.suivi h3{font-size:12.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--mute);margin:14px 0 6px;display:flex;gap:6px;align-items:center}
+.suivi .srow{display:flex;align-items:center;gap:10px;border-top:1px solid var(--line);padding:9px 0}
+.suivi .srow.at{border-left:3px solid #64748B;padding-left:10px}
+.suivi .sb{flex:1;min-width:0;text-align:left;background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer}
+.suivi .sb b{display:block;font-size:14.5px}.suivi .sb small{display:block;color:var(--mute);font-size:12.5px;margin-top:1px}.suivi .sb em{display:block;font-style:normal;color:#475569;font-size:13px;margin-top:2px}
+.suivi .sact{display:flex;gap:6px;flex:none}.suivi .sact .btn{padding:6px 10px;font-size:12.5px}
+.suivi .sck input{width:18px;height:18px}.suivi .srow.ok .sb b{text-decoration:line-through;color:var(--mute)}
+.suivi .sdone{border:0;background:none;color:var(--mute);font-weight:700;margin-top:8px;padding:4px 0;cursor:pointer}
+.suivi .sempty{color:var(--mute);margin:8px 0 0}
+.chh{font-size:19px;display:flex;align-items:center;gap:8px;margin:0 0 12px}
