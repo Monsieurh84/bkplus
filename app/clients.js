@@ -217,7 +217,7 @@ async function exportIsanet(t) {
   const cf = ISANET[t], { data, error } = await sb.from(t).select('*').eq('a_exporter', true).order('nom'); if (error) return toast('Erreur : ' + error.message);
   if (!data.length) return toast(`Rien à exporter : tous les ${cf.titre}s sont déjà dans Isanet`);
   const nv = data.filter(a => a.id.startsWith('bk-')).length, md = data.length - nv, s = n => n > 1 ? 's' : '';
-  if (!confirm(`${data.length} ${cf.titre}${s(data.length)} à envoyer dans Isanet (${nv} nouveau${nv > 1 ? 'x' : ''}, ${md} modifié${s(md)}).\n\nLe fichier va se télécharger. Ensuite dans Isanet : ${cf.menu} › Importer › Choisir un fichier › Importer.`)) return;
+  if (!await ask(`${data.length} ${cf.titre}${s(data.length)} à envoyer dans Isanet (${nv} nouveau${nv > 1 ? 'x' : ''}, ${md} modifié${s(md)}).\n\nLe fichier va se télécharger. Ensuite dans Isanet : ${cf.menu} › Importer › Choisir un fichier › Importer.`)) return;
   try {
     const X = await loadXLSX(), ws = X.utils.aoa_to_sheet([cf.head, ...data.map(cf.row)]), wb = X.utils.book_new();
     ws['!cols'] = cf.head.map(h => ({ wch: Math.max(10, Math.min(40, h.length + 4)) })); X.utils.book_append_sheet(wb, ws, 'Export');

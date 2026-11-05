@@ -1,6 +1,18 @@
 /* BK+ — application bureau (Supabase) */
 const C = window.BK_CONFIG, sb = supabase.createClient(C.url, C.key, { auth: { persistSession: true, autoRefreshToken: true } });
 const $ = s => document.querySelector(s), root = $('#root');
+/* Fenêtres de confirmation de l'application (remplacent celles du navigateur, qui affichaient l'adresse du site) */
+function dlgBox(msg, o) { o = o || {}; return new Promise(res => {
+  const d = document.createElement('div'); d.className = 'bkdlg';
+  d.innerHTML = `<div class="bkdlg-in" role="dialog" aria-modal="true"><p></p>${o.input ? `<${o.multi ? 'textarea rows="3"' : 'input'} class="bkdlg-f" ${o.password ? 'type="password"' : ''} autocomplete="off">${o.multi ? '</textarea>' : ''}` : ''}<div class="bkdlg-b"><button type="button" class="bkdlg-no">${o.cancel || 'Annuler'}</button><button type="button" class="bkdlg-ok ${o.danger ? 'red' : ''}">${o.ok || 'OK'}</button></div></div>`;
+  d.querySelector('p').textContent = msg; const f = d.querySelector('.bkdlg-f'); if (f && o.value) f.value = o.value; if (f && o.placeholder) f.placeholder = o.placeholder;
+  const end = v => { d.remove(); document.removeEventListener('keydown', key, true); res(v); };
+  const ok = () => end(o.input ? f.value : true), no = () => end(o.input ? null : false);
+  const key = e => { if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); no(); } else if (e.key === 'Enter' && !(o.multi && e.shiftKey) && !(e.target.tagName === 'BUTTON')) { e.preventDefault(); e.stopImmediatePropagation(); ok(); } };
+  d.querySelector('.bkdlg-ok').onclick = ok; d.querySelector('.bkdlg-no').onclick = no; d.onclick = e => { if (e.target === d) no(); };
+  document.addEventListener('keydown', key, true); document.body.appendChild(d); setTimeout(() => (f || d.querySelector('.bkdlg-ok')).focus(), 30); }); }
+const ask = (msg, o) => dlgBox(msg, { danger: /supprim|retirer/i.test(msg), ...(o || {}) });
+const askText = (msg, value, o) => dlgBox(msg, { input: true, value: value || '', ...(o || {}) });
 const E = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const pad = n => String(n).padStart(2, '0');
 const iso = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
@@ -203,7 +215,7 @@ function planning() {
   $('#bkup').onclick = sauvegarde;
   $('#nnew').onclick = () => form(); $('#npin').onclick = () => form(null, { epingle: true, pre: { date: mode === 'jour' ? day : iso(new Date()) } });
   document.querySelectorAll('[data-abs]').forEach(b => b.onclick = () => absenceForm(b.dataset.abs));
-  document.querySelectorAll('[data-delabs]').forEach(b => b.onclick = async e => { e.stopPropagation(); if (!confirm('Retirer cette absence ?')) return; await sb.from('absences').delete().eq('id', b.dataset.delabs); await loadPlanning(); planning(); });
+  document.querySelectorAll('[data-delabs]').forEach(b => b.onclick = async e => { e.stopPropagation(); if (!await ask('Retirer cette absence ?')) return; await sb.from('absences').delete().eq('id', b.dataset.delabs); await loadPlanning(); planning(); });
   bindDnD(px);
   /* La grille des heures descend jusqu'en bas de la fenêtre (7h–20h), sans barre de défilement */
   const hrs = $('.cal .hrs'); if (hrs && innerWidth > 900) { const ideal = Math.floor((innerHeight - hrs.getBoundingClientRect().top + ($('.cal').scrollTop || 0) - 18) / (H1 - H0)); if (ideal > px + 1 && ideal !== pxFit) { pxFit = ideal; planning(); } }
@@ -280,7 +292,7 @@ function ctxMenu(e, i) {
   m.querySelector('[data-a=dup]').onclick = () => { close(); duplicate(i); };
   m.querySelector('[data-a=ed]').onclick = () => { close(); form(i); };
   m.querySelector('[data-a=p7]').onclick = () => { close(); duplicate(i, iso(addDays(new Date(i.date + 'T12:00'), 7))); };
-  m.querySelector('[data-a=del]').onclick = async () => { close(); if (!confirm('Supprimer définitivement cette intervention ?')) return; const { error } = await sb.from('interventions').delete().eq('id', i.id); if (error) return toast('Erreur : ' + error.message); await refreshView(); toast('Intervention supprimée'); };
+  m.querySelector('[data-a=del]').onclick = async () => { close(); if (!await ask('Supprimer définitivement cette intervention ?')) return; const { error } = await sb.from('interventions').delete().eq('id', i.id); if (error) return toast('Erreur : ' + error.message); await refreshView(); toast('Intervention supprimée'); };
 }
 function duplicate(i, date) {
   const keep = ['type', 'devis', 'heure', 'duree', 'epingle', 'client', 'client_id', 'occupant', 'tel', 'adresse', 'complement', 'cp', 'ville', 'travaux', 'materiel', 'recurrent', 'demande_id', 'chantier_id', 'affaire_id'];
@@ -432,17 +444,17 @@ async function detail(id, given) {
   if ($('#clo')) $('#clo').onclick = () => cloturer(id, i.devis && i.statut === 'controle');
   $('#st').onchange = async e => { const v = e.target.value; if (v === 'reprendre') { if (!(await aReprendre(i, $('#nbw').value))) e.target.value = i.statut; return; }
     if (v === 'cloturee') return cloturer(id);
-    const row = v === 'attente' ? attenteRow() : { statut: v }; if (!row) { e.target.value = i.statut; return; }
+    const row = v === 'attente' ? await attenteRow() : { statut: v }; if (!row) { e.target.value = i.statut; return; }
     const { error } = await sb.from('interventions').update(row).eq('id', id); if (error) return toast('Erreur : ' + error.message); i.statut = v; await refreshView(); detail(id); toast(v === 'attente' ? 'En attente · visible dans Chantiers & suivi' : 'Statut : ' + STAT_I[v]); };
   $('#nbs').onclick = async () => { const t = $('#nbw').value.trim(); if (t.length < 2) return toast('Écrivez le message'); await noteTech(i, t); detail(id); };
   $('#nbr').onclick = async () => { if (await aReprendre(i, $('#nbw').value)) detail(id); };
   if ($('#rep')) $('#rep').onclick = async () => { if (await aReprendre(i, $('#nbw').value)) detail(id); };
-  if ($('#att')) $('#att').onclick = async () => { const row = attenteRow(); if (!row) return; const { error } = await sb.from('interventions').update(row).eq('id', id); if (error) return toast('Erreur : ' + error.message); Object.assign(i, row); await refreshView(); detail(id); toast('En attente · visible dans Chantiers & suivi'); };
+  if ($('#att')) $('#att').onclick = async () => { const row = await attenteRow(); if (!row) return; const { error } = await sb.from('interventions').update(row).eq('id', id); if (error) return toast('Erreur : ' + error.message); Object.assign(i, row); await refreshView(); detail(id); toast('En attente · visible dans Chantiers & suivi'); };
   $('#ed').onclick = () => form(i); $('#dup').onclick = () => duplicate(i);
   $('#p7').onclick = async () => { await sb.from('interventions').update({ date: iso(addDays(new Date(i.date + 'T12:00'), 7)) }).eq('id', id); closePanel(); await refreshView(); toast('Reprogrammée la semaine suivante'); };
   $('#del').onclick = async () => { let ids = [id];
-    if (i.serie) { const { data: nx } = await sb.from('interventions').select('id').eq('serie', i.serie).gt('date', i.date); if ((nx || []).length && confirm(`Cette intervention fait partie d’une série.\n\nOK : supprimer aussi les ${nx.length} suivantes\nAnnuler : choisir de ne supprimer que celle-ci`)) ids = ids.concat(nx.map(x => x.id)); else if (!confirm('Supprimer seulement cette date ?')) return; }
-    else if (!confirm('Supprimer définitivement cette intervention ?')) return;
+    if (i.serie) { const { data: nx } = await sb.from('interventions').select('id').eq('serie', i.serie).gt('date', i.date); if ((nx || []).length && await ask(`Cette intervention fait partie d’une série (${nx.length} date${nx.length > 1 ? 's' : ''} après celle-ci).`, { ok: `Supprimer aussi les ${nx.length} suivantes`, cancel: 'Seulement celle-ci', danger: true })) ids = ids.concat(nx.map(x => x.id)); else if (!await ask('Supprimer seulement cette date ?')) return; }
+    else if (!await ask('Supprimer définitivement cette intervention ?')) return;
     const { data: pcs } = await sb.from('pieces').select('path,prive').in('intervention_id', ids);
     if ((i.photos || []).length) await sb.storage.from('retours').remove(i.photos.map(p => p.path));
     const { error } = await sb.from('interventions').delete().in('id', ids); if (error) return toast('Erreur : ' + error.message);
@@ -538,7 +550,7 @@ async function form(i, opts) {
     try {
       let id = i.id, ids = [];
       const dates = isNew ? occ() : [row.date];
-      if (isNew && dates.length > 1 && !confirm(`Créer ${dates.length} interventions, du ${lbl(dates[0])} au ${lbl(dates[dates.length - 1])} ?`)) { btn.disabled = false; btn.textContent = 'Planifier'; return; }
+      if (isNew && dates.length > 1 && !await ask(`Créer ${dates.length} interventions, du ${lbl(dates[0])} au ${lbl(dates[dates.length - 1])} ?`)) { btn.disabled = false; btn.textContent = 'Planifier'; return; }
       if (isNew) { const serie = dates.length > 1 ? (crypto.randomUUID ? crypto.randomUUID() : null) : null;
         const r = await sb.from('interventions').insert(dates.map(dt => ({ ...row, date: dt, serie, created_by: me.id, updated_by: me.id }))).select('id,date'); if (r.error) throw r.error;
         ids = r.data.sort((a, b) => a.date.localeCompare(b.date)).map(x => x.id); id = ids[0]; }
@@ -621,9 +633,9 @@ async function noteTech(i, t, extra) {
   Object.assign(i, row); await refreshView(); toast(extra && extra.statut === 'reprendre' ? '↺ À reprendre · ' + names(i.techs) + ' est prévenu sur son application' : 'Message envoyé à ' + names(i.techs)); return true;
 }
 /* Mise en attente : on note pourquoi (affiché dans « À suivre » de Chantiers) */
-function attenteRow() { const m = prompt('Mise en attente : pourquoi ? (facultatif)\nEx. : pièce à commander, attente validation agence, SAV à prévoir', ''); if (m === null) return null; return { statut: 'attente', attente_motif: m.trim() || null, attente_at: new Date().toISOString() }; }
+async function attenteRow() { const m = await askText('Mise en attente : pourquoi ? (facultatif)\nEx. : pièce à commander, attente validation agence, SAV à prévoir', ''); if (m === null) return null; return { statut: 'attente', attente_motif: m.trim() || null, attente_at: new Date().toISOString() }; }
 async function aReprendre(i, txt) {
-  let t = (txt || '').trim(); if (t.length < 2) t = (prompt('À reprendre : quel message pour ' + names(i.techs) + ' ?\n(il le reçoit directement sur son application)', '') || '').trim();
+  let t = (txt || '').trim(); if (t.length < 2) t = (await askText('À reprendre : quel message pour ' + names(i.techs) + ' ?\n(il le reçoit directement sur son application)', '', { multi: true }) || '').trim();
   if (t.length < 2) { toast('Écrivez ce qu’il faut reprendre'); return false; }
   return noteTech(i, t, { statut: 'reprendre' });
 }
@@ -672,13 +684,13 @@ async function equipe() {
     <button class="btn btn-line" data-u="${u.id}">Nouveau mot de passe</button><div class="nm" id="nm-${u.id}"></div></div>`).join('')}</div>`);
   document.querySelectorAll('[data-u]').forEach(b => b.onclick = async () => {
     const u = data.find(x => x.id === b.dataset.u), mdp = genMdp();
-    if (!confirm('Créer un nouveau mot de passe pour ' + u.nom + ' ? L’ancien ne fonctionnera plus.')) return;
+    if (!await ask('Créer un nouveau mot de passe pour ' + u.nom + ' ? L’ancien ne fonctionnera plus.')) return;
     b.disabled = true; const { error } = await sb.rpc('bureau_mdp', { p_user: u.id, p_mdp: mdp }); b.disabled = false;
     if (error) return toast('Erreur : ' + error.message);
     const lien = u.role === 'bureau' ? APP_URL : TECH_URL;
     const msg = `Bonjour ${u.nom.split(' ')[0]}, voici ton accès à l’application BK+ :\n${lien}\nIdentifiant : ${u.email}\nMot de passe : ${mdp}\nTu pourras le changer dans l’application (« Mon mot de passe »).`;
     $('#nm-' + u.id).innerHTML = `<div class="newpw"><span>Nouveau mot de passe : <b>${E(mdp)}</b></span><button class="btn btn-grad" type="button">${ic('clipboard')} Copier le message à envoyer</button></div>`;
-    $('#nm-' + u.id).querySelector('button').onclick = async () => { try { await navigator.clipboard.writeText(msg); toast('Message copié : collez-le dans un SMS ou WhatsApp'); } catch (e) { prompt('Copiez ce message :', msg); } };
+    $('#nm-' + u.id).querySelector('button').onclick = async () => { try { await navigator.clipboard.writeText(msg); toast('Message copié : collez-le dans un SMS ou WhatsApp'); } catch (e) { askText('Copiez ce message :', msg, { multi: true }); } };
   });
 }
 

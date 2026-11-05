@@ -122,13 +122,13 @@ async function affaireForm(a, opts) {
     const txt = [`Client : ${r.client}`, r.contact ? `Contact : ${r.contact}` : '', r.tel ? `Tél : ${r.tel}` : '', r.email ? `E-mail : ${r.email}` : '', `Adresse : ${addr(r)}`, `Objet : ${r.objet}`, `Réf. BK+ : ${a.ref}`, '',
       ['Désignation', 'Qté', 'Unité', 'PU HT', 'Total HT'].join('\t'), ...r.lignes.map(x => [x.d, String(x.q).replace('.', ','), x.u, x.pu.toFixed(2).replace('.', ','), (x.q * x.pu).toFixed(2).replace('.', ',')].join('\t')), '',
       `Total HT : ${eur(ht)}`, `TVA ${String(tv).replace('.', ',')} % : ${eur(ht * tv / 100)}`, `Total TTC : ${eur(ht * (1 + tv / 100))}`].filter((x, k, arr) => x !== '' || arr[k - 1] !== '').join('\n');
-    try { await navigator.clipboard.writeText(txt); toast('Copié : collez-le dans Isanet Fact'); } catch (e) { prompt('Copiez ce texte :', txt); } };
+    try { await navigator.clipboard.writeText(txt); toast('Copié : collez-le dans Isanet Fact'); } catch (e) { askText('Copiez ce texte :', txt, { multi: true }); } };
   $('#apl').onclick = async () => { try { await save(); } catch (er) { return toast('Erreur : ' + (er.message || er)); }
     const r = row(); form(null, { ctx: 'Affaire ' + a.ref, pre: { client: r.client, occupant: r.contact, tel: r.tel, adresse: r.adresse, cp: r.cp, ville: r.ville || 'Istres', travaux: (r.statut === 'a_chiffrer' || r.statut === 'visite' ? 'Visite / relevé pour devis : ' : '') + r.objet, affaire_id: a.id, demande_id: a.demande_id || null } }); };
   if ($('#ach')) $('#ach').onclick = async () => { try { await save(); } catch (er) { return toast('Erreur : ' + (er.message || er)); }
     if (ch.length) { await go('chantiers'); const c = chantiers.find(x => x.id === ch[0].id); if (c) chantierForm(c); return; }
     const r = row(); chantierForm(null, { pre: { nom: r.objet, client: r.client, tel: r.tel, adresse: r.adresse, cp: r.cp, ville: r.ville, affaire_id: a.id, notes: r.lignes.map(x => '• ' + x.d + (x.q !== 1 ? ' × ' + x.q + ' ' + x.u : '')).join('\n') } }); };
-  $('#adl').onclick = async () => { if (!confirm('Supprimer définitivement l’affaire ' + a.ref + ' ?')) return; const { error } = await sb.from('affaires').delete().eq('id', a.id); if (error) return toast('Erreur : ' + error.message); closePanel(); await loadAffaires(); listAffaires(); toast('Affaire supprimée'); };
+  $('#adl').onclick = async () => { if (!await ask('Supprimer définitivement l’affaire ' + a.ref + ' ?')) return; const { error } = await sb.from('affaires').delete().eq('id', a.id); if (error) return toast('Erreur : ' + error.message); closePanel(); await loadAffaires(); listAffaires(); toast('Affaire supprimée'); };
 }
 function exportIsanet() {
   const it = affaires.filter(a => a.statut === 'accepte');
@@ -168,7 +168,7 @@ function bindSuivi() {
   const add = async () => { const t = $('#sut').value.trim(); if (!t) return; const { error } = await sb.from('suivi').insert({ texte: t, auteur: me?.nom || '' }); if (error) return toast('Erreur : ' + error.message); await re(); toast('Ajouté à la liste'); setTimeout(() => $('#sut')?.focus(), 50); };
   $('#sua').onclick = add; $('#sut').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); add(); } };
   document.querySelectorAll('[data-sf]').forEach(c => c.onchange = async () => { const { error } = await sb.from('suivi').update({ fait: c.checked, fait_at: c.checked ? new Date().toISOString() : null }).eq('id', c.dataset.sf); if (error) return toast('Erreur : ' + error.message); await re(); });
-  document.querySelectorAll('[data-sdl]').forEach(b => b.onclick = async () => { if (!confirm('Supprimer cette ligne ?')) return; await sb.from('suivi').delete().eq('id', b.dataset.sdl); await re(); });
+  document.querySelectorAll('[data-sdl]').forEach(b => b.onclick = async () => { if (!await ask('Supprimer cette ligne ?')) return; await sb.from('suivi').delete().eq('id', b.dataset.sdl); await re(); });
   document.querySelectorAll('[data-spl]').forEach(b => b.onclick = () => { const x = suivi.find(y => y.id === b.dataset.spl); form(null, { ctx: 'À suivre', pre: { travaux: x.texte, date: iso(new Date()) } }); });
   document.querySelectorAll('[data-si]').forEach(b => b.onclick = () => { const i = attente.find(y => y.id === b.dataset.si); if (i) detail(i.id, i); });
   document.querySelectorAll('[data-scl]').forEach(b => b.onclick = async () => { await sb.from('interventions').update({ statut: 'cloturee' }).eq('id', b.dataset.scl); await re(); toast('✓ Intervention clôturée'); });
@@ -234,5 +234,5 @@ async function chantierForm(c, opts) {
   $('#ja').onclick = async () => { const t = $('#jt').value.trim(); if (!t) return; const { data, error } = await sb.from('chantier_journal').insert({ chantier_id: c.id, texte: t, auteur: me.nom }).select().single(); if (error) return toast('Erreur : ' + error.message);
     $('#jl').insertAdjacentHTML('afterbegin', `<div class="jr"><small>${fdate(data.created_at)} · ${E(data.auteur)}</small>${E(data.texte)}</div>`); $('#jt').value = ''; };
   $('#jt').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); $('#ja').click(); } };
-  $('#cdl').onclick = async () => { if (!confirm('Supprimer le chantier « ' + c.nom + ' » ? Les journées planifiées restent au planning.')) return; const { error } = await sb.from('chantiers').delete().eq('id', c.id); if (error) return toast('Erreur : ' + error.message); closePanel(); await loadChantiers(); listChantiers(); toast('Chantier supprimé'); };
+  $('#cdl').onclick = async () => { if (!await ask('Supprimer le chantier « ' + c.nom + ' » ? Les journées planifiées restent au planning.')) return; const { error } = await sb.from('chantiers').delete().eq('id', c.id); if (error) return toast('Erreur : ' + error.message); closePanel(); await loadChantiers(); listChantiers(); toast('Chantier supprimé'); };
 }

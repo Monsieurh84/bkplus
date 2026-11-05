@@ -1,6 +1,18 @@
 /* BK+ — application technicien (iPhone / iPad) : fonctionne aussi sans réseau */
 const C = window.BK_CONFIG, sb = supabase.createClient(C.url, C.key, { auth: { persistSession: true, autoRefreshToken: true } });
 const $ = s => document.querySelector(s);
+/* Fenêtres de confirmation de l'application (remplacent celles du navigateur, qui affichaient l'adresse du site) */
+function dlgBox(msg, o) { o = o || {}; return new Promise(res => {
+  const d = document.createElement('div'); d.className = 'bkdlg';
+  d.innerHTML = `<div class="bkdlg-in" role="dialog" aria-modal="true"><p></p>${o.input ? `<${o.multi ? 'textarea rows="3"' : 'input'} class="bkdlg-f" ${o.password ? 'type="password"' : ''} autocomplete="off">${o.multi ? '</textarea>' : ''}` : ''}<div class="bkdlg-b"><button type="button" class="bkdlg-no">${o.cancel || 'Annuler'}</button><button type="button" class="bkdlg-ok ${o.danger ? 'red' : ''}">${o.ok || 'OK'}</button></div></div>`;
+  d.querySelector('p').textContent = msg; const f = d.querySelector('.bkdlg-f'); if (f && o.value) f.value = o.value; if (f && o.placeholder) f.placeholder = o.placeholder;
+  const end = v => { d.remove(); document.removeEventListener('keydown', key, true); res(v); };
+  const ok = () => end(o.input ? f.value : true), no = () => end(o.input ? null : false);
+  const key = e => { if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); no(); } else if (e.key === 'Enter' && !(o.multi && e.shiftKey) && !(e.target.tagName === 'BUTTON')) { e.preventDefault(); e.stopImmediatePropagation(); ok(); } };
+  d.querySelector('.bkdlg-ok').onclick = ok; d.querySelector('.bkdlg-no').onclick = no; d.onclick = e => { if (e.target === d) no(); };
+  document.addEventListener('keydown', key, true); document.body.appendChild(d); setTimeout(() => (f || d.querySelector('.bkdlg-ok')).focus(), 30); }); }
+const ask = (msg, o) => dlgBox(msg, { danger: /supprim|retirer/i.test(msg), ...(o || {}) });
+const askText = (msg, value, o) => dlgBox(msg, { input: true, value: value || '', ...(o || {}) });
 const E = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const pad = n => String(n).padStart(2, '0');
 const iso = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
@@ -346,8 +358,8 @@ async function controleMob() {
 async function bureauStatut(i, st, lb) {
   const row = { statut: st === 'devisfait' ? 'cloturee' : st };
   if (st === 'devisfait') Object.assign(row, { devis_fait: true, devis_fait_at: new Date().toISOString(), devis_fait_par: me?.nom || '' });
-  if (st === 'attente') { const m = prompt('Mise en attente : pourquoi ? (facultatif)', ''); if (m === null) return; Object.assign(row, { attente_motif: m.trim() || null, attente_at: new Date().toISOString() }); }
-  if (st === 'reprendre') { const t = (prompt('À reprendre : quel message pour ' + i.techs.map(x => T(x).nom).join(', ') + ' ?\n(il le reçoit directement sur son application)', '') || '').trim(); if (t.length < 2) return toast('Écrivez ce qu’il faut reprendre'); Object.assign(row, { note_bureau: t, note_at: new Date().toISOString(), note_lue: false }); }
+  if (st === 'attente') { const m = await askText('Mise en attente : pourquoi ? (facultatif)', ''); if (m === null) return; Object.assign(row, { attente_motif: m.trim() || null, attente_at: new Date().toISOString() }); }
+  if (st === 'reprendre') { const t = (await askText('À reprendre : quel message pour ' + i.techs.map(x => T(x).nom).join(', ') + ' ?\n(il le reçoit directement sur son application)', '') || '').trim(); if (t.length < 2) return toast('Écrivez ce qu’il faut reprendre'); Object.assign(row, { note_bureau: t, note_at: new Date().toISOString(), note_lue: false }); }
   const { error } = await sb.from('interventions').update(row).eq('id', i.id); if (error) return toast('Erreur : ' + error.message);
   Object.assign(i, row); lb.classList.remove('on'); moData = null; eqData = null;
   toast(st === 'devisfait' ? '✓ Devis fait · c’est noté' : st === 'cloturee' ? '✓ Intervention clôturée' : st === 'reprendre' ? '↺ À reprendre · le technicien est prévenu' : 'Mise en attente');
@@ -359,10 +371,10 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catc
 if ('Notification' in window && Notification.permission === 'default') document.addEventListener('click', () => { try { Notification.requestPermission(); } catch (e) { } }, { once: true });
 
 /* ---------- Changer son mot de passe ---------- */
-function monMdp() {
-  const a = prompt('Nouveau mot de passe (8 caractères minimum) :'); if (a == null) return;
+async function monMdp() {
+  const a = await askText('Nouveau mot de passe (8 caractères minimum) :', '', { password: true }); if (a == null) return;
   if (a.length < 8) return toast('Trop court : 8 caractères minimum');
-  const b = prompt('Retapez le nouveau mot de passe :'); if (b !== a) return toast('Les deux mots de passe ne correspondent pas');
+  const b = await askText('Retapez le nouveau mot de passe :', '', { password: true }); if (b !== a) return toast('Les deux mots de passe ne correspondent pas');
   sb.auth.updateUser({ password: a }).then(({ error }) => toast(error ? 'Impossible (réseau ?) : réessayez' : 'Mot de passe modifié'));
 }
 
