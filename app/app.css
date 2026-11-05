@@ -289,3 +289,11 @@ body.rzbody,body.rzbody *{cursor:ns-resize!important;user-select:none}
 .suivi .sdone{border:0;background:none;color:var(--mute);font-weight:700;margin-top:8px;padding:4px 0;cursor:pointer}
 .suivi .sempty{color:var(--mute);margin:8px 0 0}
 .chh{font-size:19px;display:flex;align-items:center;gap:8px;margin:0 0 12px}
+.tag.t-dv{background:#EDE9FE;color:#6D28D9}.tag.t-dv .i{width:12px;height:12px;vertical-align:-2px}
+.ev .dvt{font-style:normal;font-size:9px;font-weight:900;background:#6D28D9;color:#fff;border-radius:3px;padding:0 3px;margin-right:2px;letter-spacing:.03em}
+.dvok{display:inline-block;margin-left:10px;background:var(--ok,#0E9F6E);color:#fff;border-radius:999px;padding:5px 11px;font-size:12.5px;font-weight:800;cursor:pointer}
+.list.soon .d{opacity:.85}
+#viewer .varr{position:absolute;top:50%;margin-top:-32px;width:56px;height:64px;border:0;border-radius:14px;background:rgba(255,255,255,.16);color:#fff;font-size:36px;cursor:pointer;z-index:2}
+#viewer .varr:hover{background:rgba(255,255,255,.28)}#viewer .varr.l{left:16px}#viewer .varr.r{right:16px}
+#viewer .vcount{position:absolute;left:0;right:0;bottom:14px;text-align:center;color:#fff;font-weight:700;font-size:13.5px;opacity:.85;pointer-events:none}
+.cal .ch.we{background:#F7F8FA;color:var(--mute)}.cal .dc.we{background-color:#FAFBFC}.cal.semaine .ch.we b{font-size:11.5px}

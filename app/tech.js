@@ -161,7 +161,7 @@ function list() {
   const m0 = addDays(monday(new Date()), 7 * wk), days = tab === 'jour' ? [today] : [...Array(7)].map((_, k) => iso(addDays(m0, k))).filter((d, k) => k < 5 || mine.some(i => i.date === d));
   const job = i => `<button class="job ${i.type !== 'intervention' ? 'int' : ''} ${i.statut === 'controle' || i.statut === 'attente' ? 'done' : ''} ${needsMe(i) ? 'alrt' : ''}" data-id="${i.id}" style="--sc:${stripe(i.techs)}">
       <div class="h">${hh(i.heure)}<small>${fin(i.heure, i.duree)}</small></div>
-      <div class="b"><div class="ad">${E(i.type === 'intervention' ? (who(i) || i.adresse || i.ville) : i.travaux)}</div><div class="vi">${E(i.type === 'intervention' ? (who(i) ? [i.adresse, i.ville].filter(Boolean).join(', ') : i.ville) : (i.type === 'interne' ? 'Interne' : 'Tâche'))}${i.pieces.length ? ' · ' + ic('paperclip') : ''}${i.statut === 'controle' ? ' · ✓ Terminée' : ''}</div>${i.techs.length > 1 ? `<div class="teamline"><span class="avs">${avatars(i.techs)}</span>${E(i.techs.map(x => T(x).nom).join(' + '))}</div>` : ''}</div>
+      <div class="b"><div class="ad">${E(i.type === 'intervention' ? (who(i) || i.adresse || i.ville) : i.travaux)}</div><div class="vi">${E(i.type === 'intervention' ? (who(i) ? [i.adresse, i.ville].filter(Boolean).join(', ') : i.ville) : (i.type === 'interne' ? 'Interne' : 'Tâche'))}${i.devis ? ' · 📝 Devis' : ''}${i.pieces.length ? ' · ' + ic('paperclip') : ''}${i.statut === 'controle' ? ' · ✓ Terminée' : ''}</div>${i.techs.length > 1 ? `<div class="teamline"><span class="avs">${avatars(i.techs)}</span>${E(i.techs.map(x => T(x).nom).join(' + '))}</div>` : ''}</div>
       ${i.type === 'intervention' ? `<span class="st ${i.statut}">${i.statut === 'controle' ? 'Terminée' : { planifiee: 'Planifiée', enroute: 'En route', encours: 'En cours', attente: 'En attente', reprendre: 'À reprendre' }[i.statut] || ''}</span>` : ''}<span class="chev">›</span></button>`;
   const pin = i => { const ok = i.statut === 'controle', others = i.techs.filter(x => x !== tech.id);
     return `<div class="pin ${ok ? 'ok' : ''}"><div class="pt">${ok ? '✓ ' : ''}${E(i.travaux)}</div><div class="pm">${E(fullAddr(i))}${others.length ? ` · avec <span class="avs">${avatars(others)}</span> ${E(others.map(x => T(x).nom).join(', '))}` : ''}</div>
@@ -209,6 +209,7 @@ async function fiche() {
       ${i.note_reponse ? `<div class="brep"><small>Votre réponse${i.note_rep_at ? ' · ' + new Date(i.note_rep_at).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}</small>${E(i.note_reponse)}</div>` : ''}
       <div class="brf"><textarea id="brt" rows="2" placeholder="Répondre au bureau…"></textarea><button id="brs" type="button">${ic('message')} ${i.note_reponse ? 'Renvoyer' : 'Répondre'}</button></div></div>` : ''}
     ${rep && !i.note_bureau ? '<div class="bmsg rep"><small>↺ À reprendre</small><p>Le bureau vous demande de reprendre cette intervention.</p></div>' : ''}
+    ${i.devis && !done ? '<div class="bmsg dv"><small>📝 Visite pour devis</small><p>Prenez des photos et notez les mesures / le matériel : le bureau fera le devis à partir de votre retour.</p></div>' : ''}
     ${done ? `<div class="done-box">${i.statut === 'attente' ? '⏸ En attente côté bureau' : '✓ Terminée et envoyée au bureau'}</div>` : ''}
     ${isJob ? `<div class="step"><div class="${step >= 0 ? 'on' : ''}">Prévue</div><div class="${step >= 1 ? 'on' : ''}">En route</div><div class="${step >= 2 ? 'on' : ''}">Sur place</div><div class="${step >= 3 ? 'on' : ''}">Terminée</div></div>` : ''}
     ${isJob && who(i) ? `<div class="who2">${i.client ? `<div><small>Client</small><b>${E(i.client)}</b></div>` : ''}${i.occupant ? `<div><small>Occupant</small><b>${E(i.occupant)}</b></div>` : ''}</div>` : ''}
@@ -326,13 +327,14 @@ async function countCtrl() { if (!preview || !online) return; const { count } = 
 /* Bureau sur iPhone : retours des techniciens à contrôler, avec photos, puis clôture */
 async function controleMob() {
   scr().innerHTML = topBar('À contrôler', 'Retours des techniciens', false) + previewBar() + `<div class="scroll eqs">${tabsH()}<div class="panel"><p>Chargement…</p></div></div><div class="lb" id="eqlb"></div>`; bindTop(); bindPreview();
-  const { data, error } = await sb.from('interventions').select('id,date,heure,duree,epingle,type,client,occupant,tel,adresse,complement,cp,ville,travaux,statut,commentaire,photos,valide_par,fin_at,note_bureau,note_lue,intervention_techs(tech_id),pieces(nom,type,path,prive)').in('statut', ['controle', 'attente', 'reprendre']).order('fin_at', { ascending: false, nullsFirst: false });
+  const { data, error } = await sb.from('interventions').select('id,date,heure,duree,epingle,type,client,occupant,tel,adresse,complement,cp,ville,travaux,statut,devis,devis_fait,commentaire,photos,valide_par,fin_at,note_bureau,note_lue,intervention_techs(tech_id),pieces(nom,type,path,prive)').in('statut', ['controle', 'attente', 'reprendre']).order('fin_at', { ascending: false, nullsFirst: false });
   if (tab !== 'controle' || openId) return;
   if (error) { toast('Pas de réseau : liste indisponible'); tab = 'jour'; return list(); }
   ctrlData = (data || []).map(i => ({ ...i, techs: i.intervention_techs.map(x => x.tech_id) })); nCtrl = ctrlData.filter(i => i.statut === 'controle').length;
-  const grp = [['controle', 'À contrôler'], ['reprendre', 'À reprendre (chez le technicien)'], ['attente', 'En attente']];
+  const grp = [['devis', 'Devis à faire'], ['controle', 'À contrôler'], ['reprendre', 'À reprendre (chez le technicien)'], ['attente', 'En attente']];
+  const kOf = i => i.devis && i.statut === 'controle' ? 'devis' : i.statut;
   scr().innerHTML = topBar('À contrôler', 'Retours des techniciens', false) + previewBar() + `<div class="scroll eqs">${tabsH()}
-    ${ctrlData.length ? grp.map(([k, t]) => { const l = ctrlData.filter(i => i.statut === k); return l.length ? `<h2 class="cth">${t} <span>${l.length}</span></h2>` + l.map(i => `<button class="ctj" data-eq="${i.id}"><span class="ctp" data-cph="${E((i.photos || [])[0]?.path || '')}">${(i.photos || []).length ? `<b>${i.photos.length}</b>` : ic('camera')}</span><span class="ctb"><b>${E([i.client, i.occupant].filter(Boolean).join(' · ') || i.travaux || 'Intervention')}</b><small>${E(lbl(i.date))} · ${E((i.valide_par ? T(i.valide_par).nom : i.techs.map(x => T(x).nom).join(', ')) || '')}</small>${i.commentaire ? `<em>« ${E(i.commentaire.slice(0, 90))}${i.commentaire.length > 90 ? '…' : ''} »</em>` : ''}</span><span class="chev">›</span></button>`).join('') : ''; }).join('') : '<div class="done-box">✓ Rien à contrôler, tout est clôturé.</div>'}
+    ${ctrlData.length ? grp.map(([k, t]) => { const l = ctrlData.filter(i => kOf(i) === k); return l.length ? `<h2 class="cth">${t} <span>${l.length}</span></h2>` + l.map(i => `<button class="ctj" data-eq="${i.id}"><span class="ctp" data-cph="${E((i.photos || [])[0]?.path || '')}">${(i.photos || []).length ? `<b>${i.photos.length}</b>` : ic('camera')}</span><span class="ctb"><b>${E([i.client, i.occupant].filter(Boolean).join(' · ') || i.travaux || 'Intervention')}</b><small>${E(lbl(i.date))} · ${E((i.valide_par ? T(i.valide_par).nom : i.techs.map(x => T(x).nom).join(', ')) || '')}</small>${i.commentaire ? `<em>« ${E(i.commentaire.slice(0, 90))}${i.commentaire.length > 90 ? '…' : ''} »</em>` : ''}</span><span class="chev">›</span></button>`).join('') : ''; }).join('') : '<div class="done-box">✓ Rien à contrôler, tout est clôturé.</div>'}
     </div><div class="lb" id="eqlb"></div>`;
   bindTop(); bindPreview();
   scr().querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { tab = b.dataset.tab; wk = 0; render(); });
@@ -342,12 +344,13 @@ async function controleMob() {
   if (th.length) signedMap('retours', th.map(x => x.dataset.cph)).then(u => th.forEach(x => { if (u[x.dataset.cph]) x.style.backgroundImage = `url('${u[x.dataset.cph]}')`; }));
 }
 async function bureauStatut(i, st, lb) {
-  const row = { statut: st };
+  const row = { statut: st === 'devisfait' ? 'cloturee' : st };
+  if (st === 'devisfait') Object.assign(row, { devis_fait: true, devis_fait_at: new Date().toISOString(), devis_fait_par: me?.nom || '' });
   if (st === 'attente') { const m = prompt('Mise en attente : pourquoi ? (facultatif)', ''); if (m === null) return; Object.assign(row, { attente_motif: m.trim() || null, attente_at: new Date().toISOString() }); }
   if (st === 'reprendre') { const t = (prompt('À reprendre : quel message pour ' + i.techs.map(x => T(x).nom).join(', ') + ' ?\n(il le reçoit directement sur son application)', '') || '').trim(); if (t.length < 2) return toast('Écrivez ce qu’il faut reprendre'); Object.assign(row, { note_bureau: t, note_at: new Date().toISOString(), note_lue: false }); }
   const { error } = await sb.from('interventions').update(row).eq('id', i.id); if (error) return toast('Erreur : ' + error.message);
   Object.assign(i, row); lb.classList.remove('on'); moData = null; eqData = null;
-  toast(st === 'cloturee' ? '✓ Intervention clôturée' : st === 'reprendre' ? '↺ À reprendre · le technicien est prévenu' : 'Mise en attente');
+  toast(st === 'devisfait' ? '✓ Devis fait · c’est noté' : st === 'cloturee' ? '✓ Intervention clôturée' : st === 'reprendre' ? '↺ À reprendre · le technicien est prévenu' : 'Mise en attente');
   await countCtrl(); render();
 }
 sb.auth.onAuthStateChange(ev => { if (ev === 'SIGNED_IN') start(); else if (ev === 'SIGNED_OUT') { started = false; tech = null; loginView(); } });
@@ -379,7 +382,7 @@ async function equipe() {
   const m0 = addDays(monday(new Date()), 7 * wkE), a = iso(m0), b = iso(addDays(m0, 6)), key = a;
   const H0 = 7, H1 = 20, today = iso(new Date());
   if (eqKey !== key || !eqData) { scr().innerHTML = topBar('Planning équipe', 'Semaine du ' + lbl(a), false) + previewBar() + '<div class="scroll"><div class="panel"><p>Chargement…</p></div></div>'; bindTop(); bindPreview();
-    const { data, error } = await sb.from('interventions').select('id,date,heure,duree,epingle,type,client,occupant,tel,adresse,complement,cp,ville,travaux,statut,commentaire,photos,valide_par,fin_at,intervention_techs(tech_id),pieces(nom,type,path,prive)').gte('date', a).lte('date', b);
+    const { data, error } = await sb.from('interventions').select('id,date,heure,duree,epingle,type,client,occupant,tel,adresse,complement,cp,ville,travaux,statut,devis,devis_fait,commentaire,photos,valide_par,fin_at,intervention_techs(tech_id),pieces(nom,type,path,prive)').gte('date', a).lte('date', b);
     if (error) { toast('Pas de réseau : vue équipe indisponible'); tab = 'jour'; return list(); }
     eqData = (data || []).map(i => ({ ...i, techs: i.intervention_techs.map(x => x.tech_id) })); eqKey = key; }
   const all = eqData, days = [...Array(7)].map((_, k) => iso(addDays(m0, k))).filter((d, k) => k < 5 || all.some(i => i.date === d));
@@ -490,10 +493,10 @@ function eqCard(i, lb) {
     ${i.commentaire || (i.photos || []).length ? `<div class="eqret"><h4>${ic('check-circle')} Retour ${i.valide_par ? 'de ' + E(T(i.valide_par).nom) : 'du technicien'}</h4>${i.commentaire ? `<p style="white-space:pre-line">${E(i.commentaire)}</p>` : ''}
       <div class="eqph">${(i.photos || []).map(p => `<img alt="${E(p.tag || 'Photo')}" data-b="retours" data-ph="${E(p.path)}">`).join('')}</div></div>` : ''}
     ${(i.pieces || []).length ? `<div class="eqret"><h4>${ic('paperclip')} Pièces jointes</h4><div class="eqph">${i.pieces.map(p => p.type === 'photo' ? `<img alt="${E(p.nom)}" data-b="${p.prive ? 'bureau' : 'pieces'}" data-ph="${E(p.path)}">` : `<a class="eqdoc" data-b="${p.prive ? 'bureau' : 'pieces'}" data-doc2="${E(p.path)}">${ic('file')}<span>${E((p.prive ? '🔒 ' : '') + p.nom)}</span></a>`).join('')}</div></div>` : ''}
-    ${preview && ['controle', 'attente', 'reprendre'].includes(i.statut) ? `<div class="eqact"><button class="primary-step" id="eqclo" style="background:var(--ok)">✓ Clôturer</button><div class="r2"><button class="eqback" id="eqrep" style="color:#DC2626">↺ À reprendre</button>${i.statut !== 'attente' ? '<button class="eqback" id="eqatt">En attente</button>' : ''}</div></div>` : ''}
+    ${preview && ['controle', 'attente', 'reprendre'].includes(i.statut) ? `<div class="eqact"><button class="primary-step" id="eqclo" style="background:var(--ok)">${i.devis && i.statut === 'controle' ? '✓ Devis fait' : '✓ Clôturer'}</button><div class="r2"><button class="eqback" id="eqrep" style="color:#DC2626">↺ À reprendre</button>${i.statut !== 'attente' ? '<button class="eqback" id="eqatt">En attente</button>' : ''}</div></div>` : ''}
     <button class="primary-step" id="eqed" style="margin-top:14px;${['controle', 'attente', 'reprendre'].includes(i.statut) ? 'background:#fff;color:#0E1630;border:2px solid var(--line)' : ''}">Modifier</button><button type="button" class="eqback" data-x>‹ Retour</button></div>`;
   lb.classList.add('on'); lb.scrollTop = 0; pullClose(lb);
-  if ($('#eqclo')) { $('#eqclo').onclick = () => bureauStatut(i, 'cloturee', lb); $('#eqrep').onclick = () => bureauStatut(i, 'reprendre', lb); if ($('#eqatt')) $('#eqatt').onclick = () => bureauStatut(i, 'attente', lb); } $('#eqed').onclick = () => quickNew(i.date, String(i.heure || '08:00').slice(0, 5), i);
+  if ($('#eqclo')) { $('#eqclo').onclick = () => bureauStatut(i, i.devis && i.statut === 'controle' ? 'devisfait' : 'cloturee', lb); $('#eqrep').onclick = () => bureauStatut(i, 'reprendre', lb); if ($('#eqatt')) $('#eqatt').onclick = () => bureauStatut(i, 'attente', lb); } $('#eqed').onclick = () => quickNew(i.date, String(i.heure || '08:00').slice(0, 5), i);
   const els = [...lb.querySelectorAll('[data-ph],[data-doc2]')], byB = {}; els.forEach(x => (byB[x.dataset.b] = byB[x.dataset.b] || []).push(x.dataset.ph || x.dataset.doc2));
   (async () => { const urls = {}; for (const bk in byB) Object.assign(urls, await signedMap(bk, byB[bk]));
     els.forEach(x => { const u = urls[x.dataset.ph || x.dataset.doc2]; if (!u) return; if (x.tagName === 'IMG') { x.src = u; x.onclick = ev => { ev.stopPropagation(); const gal = [...x.closest('.eqph').querySelectorAll('img')].filter(y => y.getAttribute('src')).map(y => ({ u: y.src, t: y.alt })); eqZoom('', gal, Math.max(0, gal.findIndex(g => g.u === x.src))); }; } else x.onclick = ev => { ev.stopPropagation(); window.open(u, '_blank'); }; }); })();
@@ -504,7 +507,7 @@ async function equipeMois() {
   if (!selD || selD < iso(first) || selD > iso(last)) selD = moE === 0 ? today : iso(first);
   const title = first.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }).replace(/^./, c => c.toUpperCase());
   if (moKey !== a || !moData) { scr().innerHTML = topBar('Planning équipe', title, false) + previewBar() + '<div class="scroll"><div class="panel"><p>Chargement…</p></div></div>'; bindTop(); bindPreview();
-    const { data, error } = await sb.from('interventions').select('id,date,heure,duree,epingle,type,client,occupant,tel,adresse,complement,cp,ville,travaux,statut,commentaire,photos,valide_par,fin_at,intervention_techs(tech_id),pieces(nom,type,path,prive)').gte('date', a).lte('date', b);
+    const { data, error } = await sb.from('interventions').select('id,date,heure,duree,epingle,type,client,occupant,tel,adresse,complement,cp,ville,travaux,statut,devis,devis_fait,commentaire,photos,valide_par,fin_at,intervention_techs(tech_id),pieces(nom,type,path,prive)').gte('date', a).lte('date', b);
     if (error) { toast('Pas de réseau : vue équipe indisponible'); tab = 'jour'; return list(); }
     moData = (data || []).map(i => ({ ...i, techs: i.intervention_techs.map(x => x.tech_id) })); moKey = a; }
   const all = moData, nW = Math.round((g1 - g0) / 864e5 / 7);

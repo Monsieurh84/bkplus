@@ -383,3 +383,4 @@ html,body,.screen,.scroll{overflow-x:hidden;max-width:100vw}
 .bmsg .brf textarea{flex:1;min-width:0;border:2px solid var(--line);border-radius:12px;padding:9px 10px;font:inherit;font-size:16px;resize:none;background:#fff}
 .bmsg .brf button{flex:none;border:0;border-radius:12px;background:var(--navy);color:#fff;font:inherit;font-weight:800;font-size:15px;padding:0 14px;display:flex;align-items:center;gap:6px}
 .bmsg .brf button .i{width:16px;height:16px}
+.bmsg.dv{background:#F5F3FF;border-color:#C4B5FD}.bmsg.dv small{color:#6D28D9}
