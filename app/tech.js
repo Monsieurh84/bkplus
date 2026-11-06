@@ -581,3 +581,8 @@ async function equipeMois() {
   $('#eqnew').onclick = () => quickNew(selD, '08:00');
   scr().querySelectorAll('[data-eq]').forEach(b => b.onclick = () => { const i = all.find(x => x.id === b.dataset.eq); if (i) eqCard(i, lb); });
 }
+
+/* Toute erreur inattendue est notée dans le journal (on la voit avant qu'on nous la signale) */
+(() => { let n = 0; const send = (msg, src) => { if (n++ > 20 || typeof sb === 'undefined') return; try { sb.from('journal').insert({ quoi: 'erreur_tech', detail: { msg: String(msg).slice(0, 400), src: String(src || '').slice(0, 200), url: location.href.slice(0, 200), v: document.querySelector('script[src*="tech.js"]')?.src.split('v=')[1] }, ua: navigator.userAgent.slice(0, 200) }).then(() => { }, () => { }); } catch (e) { } };
+  addEventListener('error', e => { if (e.message && !/ResizeObserver|Script error/.test(e.message)) send(e.message, (e.filename || '') + ':' + e.lineno); });
+  addEventListener('unhandledrejection', e => { const m = e.reason && (e.reason.message || e.reason); if (m && !/Failed to fetch|NetworkError|Load failed|AbortError/i.test(m)) send(m, 'promise'); }); })();

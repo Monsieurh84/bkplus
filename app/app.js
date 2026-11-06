@@ -745,3 +745,8 @@ async function sauvegarde() {
     X.utils.book_append_sheet(wb, ws, 'Planning'); X.writeFile(wb, `BK-planning-sauvegarde-${iso(new Date())}.xlsx`); toast(rows.length + ' interventions sauvegardées'); }
   catch (e) { toast('Erreur : ' + (e.message || e)); }
 }
+
+/* Toute erreur inattendue est notée dans le journal (on la voit avant qu'on nous la signale) */
+(() => { let n = 0; const send = (msg, src) => { if (n++ > 20 || typeof sb === 'undefined') return; try { sb.from('journal').insert({ quoi: 'erreur_bureau', detail: { msg: String(msg).slice(0, 400), src: String(src || '').slice(0, 200), url: location.href.slice(0, 200), v: document.querySelector('script[src*="app.js"]')?.src.split('v=')[1] }, ua: navigator.userAgent.slice(0, 200) }).then(() => { }, () => { }); } catch (e) { } };
+  addEventListener('error', e => { if (e.message && !/ResizeObserver|Script error/.test(e.message)) send(e.message, (e.filename || '') + ':' + e.lineno); });
+  addEventListener('unhandledrejection', e => { const m = e.reason && (e.reason.message || e.reason); if (m && !/Failed to fetch|NetworkError|Load failed|AbortError/i.test(m)) send(m, 'promise'); }); })();

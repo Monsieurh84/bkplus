@@ -76,7 +76,7 @@ h1,h2,h3{font-family:Sora,Manrope,sans-serif;letter-spacing:-.01em;margin:0}
 .panel .x{margin-left:auto;border:0;background:var(--bg);width:36px;height:36px;border-radius:10px;font-size:20px;flex:none}
 .panel .body{flex:1;overflow:auto;padding:18px 20px;display:grid;gap:14px;align-content:start}
 .panel footer{padding:14px 20px;border-top:1px solid var(--line);display:flex;gap:8px;flex-wrap:wrap}
-.kv{display:grid;grid-template-columns:110px 1fr;gap:8px 12px;font-size:14.5px;margin:0}.kv dt{color:var(--mute);font-weight:700}.kv dd{margin:0;font-weight:700}
+.kv{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px 12px;font-size:14.5px;margin:0}.kv dt{color:var(--mute);font-weight:700}.kv dd{margin:0;font-weight:700}
 .box{border:1px solid var(--line);border-radius:14px;padding:14px}.box h4{margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--mute)}
 .chips{display:flex;gap:6px;flex-wrap:wrap}.chips span{display:inline-flex;align-items:center;gap:6px;background:var(--bg);border-radius:999px;padding:4px 10px 4px 6px;font-weight:800;font-size:13px}.chips i{width:10px;height:10px;border-radius:50%}
 .ph{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.ph a{display:block;text-decoration:none;color:var(--mute);font-size:12px;font-weight:700;line-height:1.25;position:relative}
@@ -349,3 +349,26 @@ body.rzbody,body.rzbody *{cursor:ns-resize!important;user-select:none}
 .mp .mit .tag{flex:none;margin:0;font-size:10.5px;padding:3px 7px}
 .mp .mhint{color:var(--mute);font-size:12.5px;text-align:center;margin-top:12px}
 .mp .dvt{font-style:normal;font-size:10px;font-weight:900;background:#6D28D9;color:#fff;border-radius:4px;padding:1px 4px;vertical-align:1px}
+/* ===== Solidité de l'affichage : un texte très long (lien, mot sans espace) ne doit jamais élargir un panneau ou une liste ===== */
+.panel,.main,.bkdlg-in,.ctx,#viewer .vbar{overflow-wrap:anywhere;word-break:normal}
+.panel .body{grid-template-columns:minmax(0,1fr)}.panel .body>*,.panel .box,.panel .kv dd,.panel .chips{min-width:0;max-width:100%}
+.panel header>div{min-width:0;flex:1}.panel header h2{overflow-wrap:anywhere}
+.panel .ph{max-width:100%}.panel img,.main img{max-width:100%}
+.panel footer .btn{flex:0 1 auto}
+.list .d{min-width:0;max-width:100%}.list .d>span{min-width:0}.list .d h3,.list .d p{overflow-wrap:anywhere}
+.main .head{min-width:0}.main .head>*{min-width:0}
+.suivi .sb,.chs .ch{min-width:0}
+@media (max-width:760px){.main .seg{max-width:100%;overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch}.main .seg button{flex:none}
+  .list .d{grid-template-columns:52px minmax(0,1fr)!important}.panel footer{gap:6px}.panel footer .btn{padding:10px 12px;font-size:14px}}
+@media (max-width:760px){
+  .panel header{padding:calc(10px + env(safe-area-inset-top)) 14px 10px}.panel header h2{font-size:17px!important;line-height:1.25}
+  .panel header div[style*="font-size:14px"]{font-size:13px!important}
+  .panel .body{padding:12px 14px}
+  .panel footer{padding:10px 12px calc(10px + env(safe-area-inset-bottom));gap:6px}
+  .panel footer .btn{padding:9px 11px;font-size:13.5px;border-radius:10px}
+  .panel footer #del{margin-left:0!important}
+  .kv{grid-template-columns:86px minmax(0,1fr)!important}
+}
+.panel input,.panel select,.panel textarea{max-width:100%;min-width:0;box-sizing:border-box}.panel label{min-width:0}
+.panel .form,.panel form.form{grid-template-columns:repeat(2,minmax(0,1fr))}
+@media (max-width:760px){.panel .form,.panel form.form{grid-template-columns:minmax(0,1fr)!important}.panel .btn{white-space:normal;text-align:center}}
