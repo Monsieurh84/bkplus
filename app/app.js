@@ -375,6 +375,11 @@ function closePanel() { const P = $('#panel'); wipe(P); P.classList.remove('on')
 $('#scrim').onclick = closePanel; document.addEventListener('keydown', e => { if (e.key === 'Escape') closePanel(); });
 const MIME = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', heic: 'image/heic', heif: 'image/heif', mov: 'video/quicktime', mp4: 'video/mp4', m4v: 'video/mp4', pdf: 'application/pdf', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
 /* Copie le fichier en mémoire tout de suite (une photo glissée depuis Messages ou WhatsApp peut disparaître juste après le dépôt) et corrige son type s'il est vide */
+/* Photos trop lourdes (iPhone : 3 à 6 Mo) réduites avant l'envoi : même netteté à l'écran, 5 à 10 fois moins de place dans l'hébergement */
+async function allege(f) { try { if (!/^image\/(jpeg|png|webp)$/.test(f.type) || f.size < 700 * 1024) return f;
+  const bmp = await createImageBitmap(f), k = Math.min(1, 2200 / Math.max(bmp.width, bmp.height)), c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height); const b = await new Promise(r => c.toBlob(r, 'image/jpeg', .82)); if (!b || b.size >= f.size) return f;
+  return new File([b], f.name.replace(/\.(png|webp|jpe?g)$/i, '') + '.jpg', { type: 'image/jpeg' }); } catch (e) { return f; } }
 async function fixFile(f, quiet) {
   if (!f) return null; const ext = (f.name.split('.').pop() || '').toLowerCase(), type = f.type || MIME[ext] || 'application/octet-stream';
   if (/heic|heif/.test(type) || /^(heic|heif)$/.test(ext)) { try { const j = await heicToJpeg(f); return new File([j], (f.name || 'photo').replace(/\.(heic|heif)$/i, '') + '.jpg', { type: 'image/jpeg' }); } catch (e) { } }
@@ -598,7 +603,7 @@ async function form(i, opts) {
       for (const t of moins) await sb.from('intervention_techs').delete().match({ intervention_id: id, tech_id: t });
       for (const pid of removed) { const p = existing.find(x => x.id === pid); await sb.from('pieces').delete().eq('id', pid); await rmIfAlone(p.prive ? 'bureau' : 'pieces', [p.path]); }
       const files = add.tech.map(x => [x, false]).concat(add.bur.map(x => [x, true]));
-      for (let k = 0; k < files.length; k++) { const [file, prive] = files[k]; btn.textContent = `Envoi des fichiers ${k + 1}/${files.length}…`;
+      for (let k = 0; k < files.length; k++) { const [f0, prive] = files[k]; btn.textContent = `Envoi des fichiers ${k + 1}/${files.length}…`; const file = await allege(f0);
         const path = `${id}/${Date.now()}-${k}-${file.name.normalize('NFD').replace(/[^\w.\-]+/g, '_')}`;
         const up = await sb.storage.from(prive ? 'bureau' : 'pieces').upload(path, file, { contentType: file.type || 'application/octet-stream' }); if (up.error) throw new Error('envoi de « ' + file.name + ' » impossible (' + up.error.message + ')');
         const r = await sb.from('pieces').insert((ids.length ? ids : [id]).map(x => ({ intervention_id: x, nom: file.name, type: kindOf(file), path, prive }))); if (r.error) throw r.error; }
