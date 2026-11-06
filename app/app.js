@@ -70,7 +70,7 @@ async function start() {
   await go(view); listen(); badgeC();
 }
 function shell() {
-  root.innerHTML = `<div class="app"><aside class="side"><div class="brand"><img src="../logo-bk.png" alt=""><div><b>BK+</b><small>Application</small></div></div>
+  root.innerHTML = `<div class="mtop"><button class="mham" id="mham" aria-label="Menu">☰</button><img src="../logo-bk.png" alt=""><b id="mtit">BK+</b><button class="mnew" id="mnew" aria-label="Planifier">+</button></div><div class="mscrim" id="mscrim"></div><div class="app"><aside class="side"><div class="brand"><img src="../logo-bk.png" alt=""><div><b>BK+</b><small>Application</small></div></div>
   <button class="nav srch" data-v="recherche">${ic('search')} Rechercher une intervention</button>
   <button class="nav" data-v="planning">${ic('calendar')} Planning</button>
   <button class="nav" data-v="demandes">${ic('inbox')} Demandes du site<span class="c" id="cn"></span></button>
@@ -79,10 +79,12 @@ function shell() {
   <button class="nav" id="team">${ic('users')} Équipe & accès</button>
   <div class="who"><b>${E(me.nom)}</b>Accès bureau<br><button id="mdp">Mon mot de passe</button> · <button id="out">Se déconnecter</button></div></aside><main class="main" id="main"><div class="loading">Chargement…</div></main></div>`;
   $('#out').onclick = () => sb.auth.signOut(); $('#mdp').onclick = monMdp; $('#team').onclick = equipe;
-  document.querySelectorAll('[data-v]').forEach(b => b.onclick = () => go(b.dataset.v));
+  document.querySelectorAll('[data-v]').forEach(b => b.onclick = () => { document.body.classList.remove('mopen'); go(b.dataset.v); });
+  $('#mham').onclick = () => document.body.classList.toggle('mopen'); $('#mscrim').onclick = () => document.body.classList.remove('mopen');
+  $('#mnew').onclick = () => form(); $('#team').addEventListener('click', () => document.body.classList.remove('mopen'));
 }
 async function go(v) {
-  view = v; history.replaceState(null, '', '#' + v);
+  view = v; history.replaceState(null, '', '#' + v); const nb = document.querySelector(`[data-v="${v}"]`); if ($('#mtit') && nb) $('#mtit').textContent = nb.textContent.replace(/\d+$/, '').trim();
   document.querySelectorAll('[data-v]').forEach(b => b.classList.toggle('on', b.dataset.v === v));
   if (v === 'planning') { await loadPlanning(); planning(); } else if (v === 'controle' || v === 'devis') await listControle(); else if (v === 'affaires') { await loadAffaires(); listAffaires(); } else if (v === 'chantiers') { await loadChantiers(); listChantiers(); } else if (v === 'recherche') listRecherche(); else if (v === 'clients') listClients(); else if (v === 'articles') listArticles(); else listDemandes();
 }
@@ -165,8 +167,10 @@ function lane(d, t, px, withHead) {
   const items = inter.filter(i => i.date === d && i.techs.includes(t.id) && !isAllDay(i));
   return `<div class="ln ${ab ? 'abs' : ''}" data-date="${d}" data-tech="${t.id}" style="--c:${t.couleur}">${withHead ? '' : `<span class="lh" style="background:${t.couleur}" title="${E(t.nom)}"></span>`}${layout(items).map(([i, c, n]) => ev(i, t.id, px, c, n)).join('')}</div>`;
 }
+const isMob = () => innerWidth <= 760;
 function planning() {
   if (view !== 'planning') return;
+  if (isMob()) return planningMob();
   const today = iso(new Date()), nowM = new Date().getHours() * 60 + new Date().getMinutes();
   const days = mode === 'semaine' ? [...Array(7)].map((_, k) => iso(addDays(week, k))) : [day];
   const px = Math.max(mode === 'semaine' ? 46 : 58, pxFit), vis = visTechs();
@@ -221,6 +225,35 @@ function planning() {
   const hrs = $('.cal .hrs'); if (hrs && innerWidth > 900) { const ideal = Math.floor((innerHeight - hrs.getBoundingClientRect().top + ($('.cal').scrollTop || 0) - 18) / (H1 - H0)); if (ideal > px + 1 && ideal !== pxFit) { pxFit = ideal; planning(); } }
 }
 const pinLbl = i => [...new Set([i.travaux, i.client, i.occupant].map(x => (x || '').trim()).filter(Boolean))].join(' · ') || 'Rappel';
+/* Planning sur téléphone : agenda du jour (toute l'équipe), on glisse pour changer de jour */
+let mDay = null;
+async function planningMob() {
+  const today = iso(new Date()); if (!mDay) mDay = today;
+  if (mode !== 'semaine') { mode = 'semaine'; week = monday(new Date(mDay + 'T12:00')); await loadPlanning(); }
+  const [a, b] = range(); if (mDay < a || mDay > b) { week = monday(new Date(mDay + 'T12:00')); await loadPlanning(); }
+  const days = [...Array(7)].map((_, k) => iso(addDays(week, k))), vis = visTechs(), vid = new Set(vis.map(t => t.id));
+  const its = inter.filter(i => i.date === mDay && i.techs.some(t => vid.has(t))).sort((x, y) => (isAllDay(y) - isAllDay(x)) || String(x.heure || '').localeCompare(String(y.heure || '')));
+  const abs = absences.filter(x => x.date === mDay && vid.has(x.tech_id));
+  const strip = i => i.techs.length > 1 ? `linear-gradient(${i.techs.map((t, k) => `${T(t).couleur} ${k / i.techs.length * 100}% ${(k + 1) / i.techs.length * 100}%`).join(',')})` : T(i.techs[0]).couleur;
+  const ttl = i => i.type === 'intervention' ? ([i.client, i.occupant].filter(Boolean).join(' · ') || i.adresse || i.ville || 'Intervention') : (i.travaux || 'Tâche');
+  $('#main').innerHTML = `<div class="mp">
+    <div class="mpw">${days.map(d => { const x = new Date(d + 'T12:00'), n = inter.filter(i => i.date === d && i.techs.some(t => vid.has(t))).length; return `<button data-md="${d}" class="${d === mDay ? 'on' : ''} ${d === today ? 'td' : ''} ${isWE(d) ? 'we' : ''}"><small>${JOURS[(x.getDay() + 6) % 7].slice(0, 3)}</small><b>${x.getDate()}</b><i>${n || ''}</i></button>`; }).join('')}</div>
+    <div class="mph"><button id="mpp" aria-label="Jour précédent">‹</button><b>${lbl(mDay, true)}${ferie(mDay) ? ` · <span style="color:#B45309">${E(ferie(mDay))}</span>` : ''}</b><button id="mpn" aria-label="Jour suivant">›</button></div>
+    <div class="mpb"><button class="btn btn-line" id="mpt">Aujourd’hui</button><button class="btn btn-line" id="mpr">${ic('pin')} Rappel</button><button class="btn btn-grad" id="mpa">+ Planifier</button></div>
+    <div class="people mpeo">${techs.map(t => `<button data-who="${t.id}" class="${hidden.has(t.id) ? 'off' : ''}" style="--c:${t.couleur}"><i></i>${E(t.nom)}</button>`).join('')}</div>
+    ${abs.map(x => `<div class="mabs" style="--c:${T(x.tech_id).couleur}">${ic('calendar-x')} ${E(T(x.tech_id).nom)} · ${E(x.motif)}</div>`).join('')}
+    ${its.length ? its.map(i => `<button class="mit" data-mi="${i.id}" style="--st:${strip(i)}"><span class="mt">${isAllDay(i) ? ic('pin') : `${hh(i.heure)}<small>${fin(i.heure, i.duree)}</small>`}</span><span class="mb"><b>${i.devis ? '<em class="dvt">DEVIS</em> ' : ''}${E(ttl(i))}</b>${i.type === 'intervention' && (i.adresse || i.ville) ? `<small>${E([i.adresse, i.ville].filter(Boolean).join(', '))}</small>` : i.type !== 'intervention' && (i.client || i.occupant) ? `<small>${E([i.client, i.occupant].filter(Boolean).join(' · '))}</small>` : ''}<span class="mw">${i.techs.map(t => `<i style="background:${T(t).couleur}"></i>${E(T(t).nom)}`).join(' ')}</span></span><span class="tag s-${i.statut}">${STAT_I[i.statut]}</span></button>`).join('') : '<div class="empty">Rien de prévu ce jour-là.</div>'}
+    <p class="mhint">Glissez à gauche ou à droite pour changer de jour · touchez une intervention pour la fiche</p></div>`;
+  const goD = async n => { mDay = iso(addDays(new Date(mDay + 'T12:00'), n)); await planningMob(); };
+  $('#mpp').onclick = () => goD(-1); $('#mpn').onclick = () => goD(1); $('#mpt').onclick = async () => { mDay = today; await planningMob(); };
+  document.querySelectorAll('[data-md]').forEach(x => x.onclick = async () => { mDay = x.dataset.md; await planningMob(); });
+  $('#mpa').onclick = () => form(null, { pre: { date: mDay } }); $('#mpr').onclick = () => form(null, { epingle: true, pre: { date: mDay } });
+  document.querySelectorAll('.mpeo [data-who]').forEach(x => x.onclick = () => { const id = x.dataset.who; hidden.has(id) ? hidden.delete(id) : hidden.add(id); saveUI(); planningMob(); });
+  document.querySelectorAll('[data-mi]').forEach(x => x.onclick = () => detail(x.dataset.mi));
+  const m = $('.mp'); let tx = null, ty = 0; m.addEventListener('touchstart', e => { tx = e.touches[0].clientX; ty = e.touches[0].clientY; }, { passive: true });
+  m.addEventListener('touchend', e => { if (tx === null) return; const dx = e.changedTouches[0].clientX - tx, dy = e.changedTouches[0].clientY - ty; tx = null; if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.5) goD(dx < 0 ? 1 : -1); });
+}
+let wasMob = isMob(); addEventListener('resize', () => { const m = isMob(); if (m !== wasMob) { wasMob = m; if (view === 'planning') planning(); } });
 function allDay(d, who, single) {
   const pins = inter.filter(i => i.date === d && isAllDay(i) && i.techs.some(t => who.some(w => w.id === t))).sort(sortI);
   const abs = absences.filter(a => a.date === d && who.some(w => w.id === a.tech_id));
@@ -476,7 +509,7 @@ async function form(i, opts) {
     ${opts.ctx ? `<div class="full box" style="background:var(--soft);border:0"><b>${E(opts.ctx)}</b></div>` : ''}
     ${opts.demande ? `<div class="full box" style="background:var(--soft);border:0"><b>${ic('camera')} Depuis la demande ${E(opts.demande.ref)}</b> · ${E(opts.demande.service)}. Ses photos seront visibles par le technicien.</div>` : ''}
     <label>Type<select name="type"><option value="intervention">Intervention</option><option value="devis" ${i.devis ? 'selected' : ''}>Devis (visite pour faire un devis)</option><option value="tache" ${i.type === 'tache' ? 'selected' : ''}>Tâche (matériel, déchetterie…)</option><option value="interne" ${i.type === 'interne' ? 'selected' : ''}>Rendez-vous / bureau (devis, réunion…)</option></select></label>
-    <label>Date<input type="date" name="date" value="${i.date}" required></label>
+    <label>Date${isNew ? ' (du)' : ''}<input type="date" name="date" value="${i.date}" required></label>${isNew ? `<label>Au <small style="font-weight:600;color:var(--mute)">(si plusieurs jours, facultatif)</small><input type="date" name="au"><small class="aun" style="display:block;color:var(--mute);font-weight:600;margin-top:3px"></small></label>` : ''}
     <label class="full inline pinbox"><input type="checkbox" name="epingle" ${i.epingle ? 'checked' : ''}> ${ic('pin')} Rappel dans la journée, sans heure précise (affiché en haut du planning)</label>
     <label class="hr">De<input type="time" name="heure" value="${debut}" step="60"></label>
     <label class="hr">À<input type="time" name="fin" value="${finH}" step="60"></label>
@@ -498,7 +531,10 @@ async function form(i, opts) {
   </div><datalist id="villes">${['Istres', 'Miramas', 'Martigues', 'Fos-sur-Mer', 'Port-de-Bouc', 'Saint-Chamas', 'Cornillon-Confoux', 'Grans', 'Salon-de-Provence', 'Vitrolles', 'Marignane', 'Sausset-les-Pins', 'Port-Saint-Louis-du-Rhône', 'Aix-en-Provence', 'Marseille'].map(v => `<option value="${v}">`).join('')}</datalist></form>
   <footer><button class="btn btn-grad" form="f" type="submit" id="sv">${isNew ? 'Planifier' : 'Enregistrer'}</button><button class="btn btn-line" type="button" id="cc">Annuler</button></footer>`);
   const f = $('#f'); acIntervention(f, i); acAdresse(f); if ($('#tofi')) $('#tofi').onclick = () => detail(i.id);
-  const occ = () => { const rp = f.rep ? f.rep.value : '', start = f.date.value; if (!rp || !start) return [start];
+  const occ = () => { const rp = f.rep ? f.rep.value : '', start = f.date.value;
+    if (!rp && f.au && f.au.value && start && f.au.value > start) { const out = [], d0 = new Date(start + 'T12:00'), d1 = new Date(f.au.value + 'T12:00'), we = isWE(start) || isWE(f.au.value);
+      for (let d = d0; d <= d1 && out.length < 120; d = addDays(d, 1)) if (we || ![0, 6].includes(d.getDay())) out.push(iso(d)); return out; }
+    if (!rp || !start) return [start];
     const end = f.jusqu.value, out = [], d0 = new Date(start + 'T12:00'), lim = end ? new Date(end + 'T12:00') : null;
     if (!lim || lim < d0) return [start];
     const u = rp[0], n = +rp.slice(1) || 1;
@@ -507,6 +543,8 @@ async function form(i, opts) {
       else { const mm = u === 'a' ? 12 * k : n * k, y = d0.getFullYear(), m = d0.getMonth() + mm, last = new Date(y, m + 1, 0).getDate(); d = new Date(y, m, Math.min(d0.getDate(), last), 12); }
       if (d > lim) break; if (u === 'j' && [0, 6].includes(d.getDay())) continue; out.push(iso(d)); }
     return out; };
+  if (f.au) { const ua = () => { const o = occ(), n = f.querySelector('.aun'); n.textContent = f.au.value && !f.rep?.value ? (o.length > 1 ? `→ ${o.length} jours : du ${lbl(o[0])} au ${lbl(o[o.length - 1])}${o.some(isWE) ? '' : ' (sans le week-end)'}` : 'La date de fin doit être après la date de début') : ''; };
+    f.au.onchange = ua; f.date.addEventListener('change', ua); }
   if (f.rep) { const upd = () => { const on = !!f.rep.value; f.querySelector('.repu').hidden = !on; const n = f.querySelector('.repn'); const o = on ? occ() : []; n.hidden = !on;
       n.textContent = !on ? '' : !f.jusqu.value ? 'Choisissez la date de fin.' : o.length > 1 ? `${o.length} dates seront créées : du ${lbl(o[0])} au ${lbl(o[o.length - 1])}.` : 'La date de fin doit être après la date de début.'; };
     f.rep.onchange = () => { if (f.rep.value && !f.jusqu.value) { const d = new Date(f.date.value + 'T12:00'), u = f.rep.value[0]; f.jusqu.value = iso(u === 'j' ? addDays(d, 4) : u === 's' ? addDays(d, 7 * 8) : new Date(d.getFullYear() + 1, d.getMonth(), d.getDate() - 1, 12)); } upd(); };
@@ -625,6 +663,8 @@ if (/type=recovery/.test(location.hash)) newPasswordView(); else start();
 let ctrl = [];
 async function badgeC() { const [a, b] = await Promise.all([sb.from('interventions').select('id', { count: 'exact', head: true }).eq('statut', 'controle').eq('devis', false), sb.from('interventions').select('id', { count: 'exact', head: true }).eq('statut', 'controle').eq('devis', true)]);
   const c = $('#cc'); if (c) c.textContent = a.count || ''; const d = $('#cdv'); if (d) d.textContent = b.count || ''; }
+/* Le bureau se remet à jour tout seul toutes les 15 minutes (en plus du temps réel) */
+setInterval(() => { if (!document.hidden && me && !$('#panel.on') && !$('.bkdlg') && !(document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))) refreshView().catch(() => { }); }, 15 * 60 * 1000);
 async function refreshView() { badgeC(); if (view === 'controle' || view === 'devis') await listControle(); else if (view === 'recherche') await listRecherche(); else { await loadPlanning(); planning(); } }
 /* Message du bureau : le technicien le reçoit en direct sur son application */
 async function noteTech(i, t, extra) {

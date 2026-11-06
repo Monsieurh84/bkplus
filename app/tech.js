@@ -82,9 +82,9 @@ async function start() {
   }
   await refreshPending(); render(); flush(); subscribe(); countCtrl();
 }
-const NBW = 6; let wk = 0; const addx = {};
+const NBW = 6, NBP = 8; let wk = 0; const addx = {};
 async function load() {
-  const a = iso(monday(new Date())), b = iso(addDays(monday(new Date()), 7 * NBW - 1));
+  const a = iso(addDays(monday(new Date()), -7 * NBP)), b = iso(addDays(monday(new Date()), 7 * NBW - 1));
   const { data, error } = await sb.from('interventions').select('*, mine:intervention_techs!inner(tech_id), pieces(*), demande:demandes(ref,message,photos)').eq('mine.tech_id', tech.id).gte('date', a).lte('date', b);
   if (error) throw error;
   const { data: ex } = await sb.from('interventions').select('*, mine:intervention_techs!inner(tech_id), pieces(*), demande:demandes(ref,message,photos)').eq('mine.tech_id', tech.id).or('statut.eq.reprendre,note_lue.eq.false');
@@ -107,6 +107,11 @@ function alertNew() {
   try { if ('Notification' in window && Notification.permission === 'granted') new Notification('BK+ · Message du bureau', { body: txt, icon: '../icon-180.png', tag: 'bk-note' }); } catch (e) { }
   toast(fresh.length > 1 ? fresh.length + ' messages du bureau' : txt.split('\n')[0]); return true;
 }
+/* Mise à jour automatique : toutes les 15 minutes, et dès qu'on rouvre l'appli (téléphone sorti de la poche) */
+let lastLoad = Date.now();
+async function autoRefresh(why) { if (!online || !tech || document.hidden) return; try { await flush(); await load(); lastLoad = Date.now(); if (!openId && !$('.bkdlg') && !(document.activeElement && /INPUT|TEXTAREA/.test(document.activeElement.tagName))) render(); } catch (e) { } }
+setInterval(() => autoRefresh('15min'), 15 * 60 * 1000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - lastLoad > 60 * 1000) autoRefresh('retour'); });
 let chan = null;
 function subscribe() {
   if (chan) sb.removeChannel(chan);
@@ -117,31 +122,50 @@ function subscribe() {
 /* ---------- Envois (avec file d'attente hors connexion) ---------- */
 async function refreshPending() { pending = (await DB.qAll().catch(() => [])).length; }
 async function enqueue(job) { lastLocal = Date.now(); job.id = job.id || uid(); job.at = Date.now(); await DB.qAdd(job); await refreshPending(); flush(); }
-async function flush() {
+/* Un envoi qui échoue pour une autre raison que le réseau (intervention supprimée, refus du serveur…) ne bloque plus toute la file :
+   il est mis de côté, signalé au bureau dans le journal, et les autres envois continuent. */
+const isNet = e => !navigator.onLine || /fetch|network|load failed|timeout|abort|502|503|504|gateway/i.test(String(e?.message || e)) || e?.status === 0;
+const tlog = (quoi, detail) => { try { sb.from('journal').insert({ quoi, detail: { ...detail, tech: tech?.nom, v: 'tech' }, ua: navigator.userAgent.slice(0, 200) }).then(() => { }, () => { }); } catch (e) { } };
+let blocked = 0;
+async function runJob(j) {
+  if (j.kind === 'statut') { const { error } = await sb.rpc('tech_statut', { p_id: j.iid, p_statut: j.statut }); if (error && !/non autorisé|invalide/.test(error.message)) throw error; }
+  if (j.kind === 'valider') {
+    const photos = [];
+    for (let k = 0; k < j.photos.length; k++) { const p = j.photos[k], path = `${j.iid}/${j.id}-${k + 1}.jpg`;
+      const up = await sb.storage.from('retours').upload(path, p.blob, { contentType: 'image/jpeg', upsert: true }); if (up.error && !/exist|duplicate/i.test(up.error.message)) throw up.error; photos.push({ path, tag: p.tag || '' }); }
+    const { error } = await sb.rpc('tech_valider', { p_id: j.iid, p_commentaire: j.commentaire, p_photos: photos }); if (error) throw error;
+  }
+  if (j.kind === 'completer') {
+    const photos = [];
+    for (let k = 0; k < j.photos.length; k++) { const p = j.photos[k], path = `${j.iid}/${j.id}-c${k + 1}.jpg`;
+      const up = await sb.storage.from('retours').upload(path, p.blob, { contentType: 'image/jpeg', upsert: true }); if (up.error && !/exist|duplicate/i.test(up.error.message)) throw up.error; photos.push({ path, tag: p.tag || 'Ajout' }); }
+    const { error } = await sb.rpc('tech_completer', { p_id: j.iid, p_commentaire: j.commentaire, p_photos: photos });
+    if (error) { if (/clôturée/.test(error.message)) toast('Trop tard : le bureau a déjà clôturé cette intervention'); else throw error; }
+  }
+  if (j.kind === 'materiel') { const { error } = await sb.rpc('tech_materiel', { p_id: j.iid, p_ajout: j.items }); if (error) throw error; }
+}
+async function flush(force) {
   if (flushing || !online) return; flushing = true;
   try {
-    const jobs = (await DB.qAll()).sort((a, b) => a.at - b.at);
+    const jobs = (await DB.qAll()).sort((a, b) => a.at - b.at); blocked = 0;
     for (const j of jobs) {
-      if (j.kind === 'statut') { const { error } = await sb.rpc('tech_statut', { p_id: j.iid, p_statut: j.statut }); if (error && !/non autorisé|invalide/.test(error.message)) throw error; }
-      if (j.kind === 'valider') {
-        const photos = [];
-        for (let k = 0; k < j.photos.length; k++) { const p = j.photos[k], path = `${j.iid}/${j.id}-${k + 1}.jpg`;
-          const up = await sb.storage.from('retours').upload(path, p.blob, { contentType: 'image/jpeg', upsert: true }); if (up.error) throw up.error; photos.push({ path, tag: p.tag || '' }); }
-        const { error } = await sb.rpc('tech_valider', { p_id: j.iid, p_commentaire: j.commentaire, p_photos: photos }); if (error) throw error;
-      }
-      if (j.kind === 'completer') {
-        const photos = [];
-        for (let k = 0; k < j.photos.length; k++) { const p = j.photos[k], path = `${j.iid}/${j.id}-c${k + 1}.jpg`;
-          const up = await sb.storage.from('retours').upload(path, p.blob, { contentType: 'image/jpeg', upsert: true }); if (up.error) throw up.error; photos.push({ path, tag: p.tag || 'Ajout' }); }
-        const { error } = await sb.rpc('tech_completer', { p_id: j.iid, p_commentaire: j.commentaire, p_photos: photos });
-        if (error) { if (/clôturée/.test(error.message)) toast('Trop tard : le bureau a déjà clôturé cette intervention'); else throw error; }
-      }
-      await DB.qDel(j.id);
+      if ((j.tries || 0) >= 3 && !force) { blocked++; continue; }
+      try { await runJob(j); await DB.qDel(j.id); }
+      catch (e) { if (isNet(e)) throw e; j.tries = (j.tries || 0) + 1; j.err = String(e?.message || e).slice(0, 200); await DB.qAdd(j);
+        tlog('envoi_echec', { kind: j.kind, iid: j.iid, err: j.err, tries: j.tries }); if (j.tries >= 3) blocked++; }
     }
   } catch (e) { console.warn('envoi reporté', e); }
   flushing = false; const before = pending; await refreshPending();
   if (before && !pending) { toast('✓ Tout est envoyé au bureau'); try { await load(); } catch (e) { } }
   if (!openId) render(); else { const s = $('#sync'); if (s) s.outerHTML = syncHtml(); bindTop(); }
+}
+/* Envois bloqués : on montre pourquoi, et on propose de réessayer ou d'abandonner */
+async function showBlocked() {
+  const jobs = (await DB.qAll()).filter(j => (j.tries || 0) >= 3); if (!jobs.length) { flush(true); return; }
+  const lab = { statut: 'Statut', valider: 'Validation', completer: 'Ajout photos / commentaire', materiel: 'Matériel' };
+  const txt = jobs.map(j => { const i = items.find(x => x.id === j.iid); return '• ' + (lab[j.kind] || j.kind) + ' — ' + (i ? (who(i) || i.adresse || i.travaux || '') : 'intervention introuvable (supprimée ?)') + '\n   ' + (j.err || ''); }).join('\n');
+  if (await ask('Ces envois n’ont pas pu partir :\n\n' + txt, { ok: 'Réessayer', cancel: 'Plus tard' })) { for (const j of jobs) { j.tries = 0; await DB.qAdd(j); } flush(true); }
+  else if (await ask('Abandonner ces envois ? (le bureau devra être prévenu de vive voix)', { ok: 'Abandonner', cancel: 'Garder', danger: true })) { for (const j of jobs) await DB.qDel(j.id); await refreshPending(); render(); }
 }
 window.addEventListener('online', () => { online = true; flush(); render(); });
 window.addEventListener('offline', () => { online = false; render(); toast('Plus de réseau : l’app continue de fonctionner'); });
@@ -150,16 +174,17 @@ setInterval(() => { if (online && pending) flush(); }, 20000);
 /* ---------- Barre du haut ---------- */
 function syncHtml() {
   if (!online) return `<button class="sync off" id="sync" aria-label="Hors connexion"><i></i>Hors ligne${pending ? ' · ' + pending : ''}</button>`;
+  if (blocked) return `<button class="sync err" id="sync"><i></i>${blocked} envoi${blocked > 1 ? 's' : ''} bloqué${blocked > 1 ? 's' : ''}</button>`;
   if (pending) return `<button class="sync busy" id="sync"><i></i>Envoi…</button>`;
   return `<button class="sync" id="sync" aria-label="Synchronisé"><i></i>Synchronisé</button>`;
 }
 function topBar(title, sub, back) { return `<div class="top">${back ? '<button class="back" id="back" aria-label="Retour">‹</button>' : ''}<div class="ttl"><h1>${title}</h1><small>${sub}</small></div><button class="sun" id="sun" aria-label="Mode plein soleil">${sun ? ic('contrast') : ic('sun')}</button>${syncHtml()}</div>`; }
 function bindTop() {
-  const s = $('#sync'); if (s) s.onclick = () => toast(!online ? 'Pas de réseau : tout est gardé sur l’appareil et partira tout seul' : pending ? 'Envoi en cours…' : 'Tout est envoyé au bureau');
+  const s = $('#sync'); if (s) s.onclick = () => blocked ? showBlocked() : toast(!online ? 'Pas de réseau : tout est gardé sur l’appareil et partira tout seul' : pending ? 'Envoi en cours…' : 'Tout est envoyé au bureau');
   $('#sun').onclick = () => { sun = !sun; try { localStorage.setItem('bk-sun', sun ? '1' : '0'); } catch (e) { } scr().classList.toggle('sunmode', sun); $('#sun').innerHTML = sun ? ic('contrast') : ic('sun'); };
   const b = $('#back'); if (b) b.onclick = () => { openId = null; render(); };
 }
-function previewBar() { return preview ? `<div class="preview">${ic('eye')} Accès bureau · planning de <select id="pv">${team.map(t => `<option value="${t.id}" ${t.id === tech.id ? 'selected' : ''}>${E(t.nom)}</option>`).join('')}</select></div>` : ''; }
+function previewBar() { return preview ? `<div class="preview">${ic('eye')} Accès bureau · planning de <select id="pv">${team.map(t => `<option value="${t.id}" ${t.id === tech.id ? 'selected' : ''}>${E(t.nom)}</option>`).join('')}</select><a class="pvb" href="index.html">${ic('briefcase')} Bureau complet</a></div>` : ''; }
 function bindPreview() { const s = $('#pv'); if (s) s.onchange = async () => { tech = team.find(t => t.id === s.value); try { sessionStorage.setItem('bk-preview', tech.id); } catch (e) { } openId = null; await load(); subscribe(); render(); }; }
 
 /* ---------- Liste ---------- */
@@ -170,15 +195,15 @@ function list() {
   const todayJobs = timed.filter(i => i.date === today && i.type === 'intervention').sort((a, b) => (a.heure || '').localeCompare(b.heure || ''));
   const pins = mine.filter(i => i.date === today && i.epingle), pinsLeft = pins.filter(i => i.statut !== 'controle');
   const done = todayJobs.filter(i => i.statut === 'controle').length, next = todayJobs.find(i => i.statut !== 'controle');
-  const m0 = addDays(monday(new Date()), 7 * wk), days = tab === 'jour' ? [today] : [...Array(7)].map((_, k) => iso(addDays(m0, k))).filter((d, k) => k < 5 || mine.some(i => i.date === d));
-  const job = i => `<button class="job ${i.type !== 'intervention' ? 'int' : ''} ${i.statut === 'controle' || i.statut === 'attente' ? 'done' : ''} ${needsMe(i) ? 'alrt' : ''}" data-id="${i.id}" style="--sc:${stripe(i.techs)}">
+  const m0 = addDays(monday(new Date()), 7 * wk), days = tab === 'jour' ? [today] : [...Array(7)].map((_, k) => iso(addDays(m0, k))).filter((d, k) => k < 5 || items.some(i => i.date === d));
+  const job = i => `<button class="job ${i.type !== 'intervention' ? 'int' : ''} ${['controle', 'attente', 'cloturee'].includes(i.statut) ? 'done' : ''} ${needsMe(i) ? 'alrt' : ''}" data-id="${i.id}" style="--sc:${stripe(i.techs)}">
       <div class="h">${hh(i.heure)}<small>${fin(i.heure, i.duree)}</small></div>
       <div class="b"><div class="ad">${E(i.type === 'intervention' ? (who(i) || i.adresse || i.ville) : i.travaux)}</div><div class="vi">${E(i.type === 'intervention' ? (who(i) ? [i.adresse, i.ville].filter(Boolean).join(', ') : i.ville) : (i.type === 'interne' ? 'Interne' : 'Tâche'))}${i.devis ? ' · 📝 Devis' : ''}${i.pieces.length ? ' · ' + ic('paperclip') : ''}${i.statut === 'controle' ? ' · ✓ Terminée' : ''}</div>${i.techs.length > 1 ? `<div class="teamline"><span class="avs">${avatars(i.techs)}</span>${E(i.techs.map(x => T(x).nom).join(' + '))}</div>` : ''}</div>
-      ${i.type === 'intervention' ? `<span class="st ${i.statut}">${i.statut === 'controle' ? 'Terminée' : { planifiee: 'Planifiée', enroute: 'En route', encours: 'En cours', attente: 'En attente', reprendre: 'À reprendre' }[i.statut] || ''}</span>` : ''}<span class="chev">›</span></button>`;
+      ${i.type === 'intervention' ? `<span class="st ${i.statut}">${i.statut === 'controle' ? 'Terminée' : { planifiee: 'Planifiée', enroute: 'En route', encours: 'En cours', attente: 'En attente', reprendre: 'À reprendre', cloturee: 'Clôturée' }[i.statut] || ''}</span>` : ''}<span class="chev">›</span></button>`;
   const pin = i => { const ok = i.statut === 'controle', others = i.techs.filter(x => x !== tech.id);
     return `<div class="pin ${ok ? 'ok' : ''}"><div class="pt">${ok ? '✓ ' : ''}${E(i.travaux)}</div><div class="pm">${E(fullAddr(i))}${others.length ? ` · avec <span class="avs">${avatars(others)}</span> ${E(others.map(x => T(x).nom).join(', '))}` : ''}</div>
       ${ok ? '<div class="pm" style="color:var(--ok);font-weight:800">Fait ✓</div>' : `<div class="pa">${i.adresse ? `<button data-nav="${i.id}">${ICON.route}Itinéraire</button>` : ''}<button class="pdone" data-pin="${i.id}">✓ C’est fait</button></div>`}</div>`; };
-  const block = d => { const it = timed.filter(i => i.date === d).sort((a, b) => (a.heure || '').localeCompare(b.heure || '')), pd = mine.filter(i => i.date === d && i.epingle);
+  const wsrc = items.filter(i => !i.epingle), block = d => { const it = (tab === 'semaine' ? wsrc : timed).filter(i => i.date === d).sort((a, b) => (a.heure || '').localeCompare(b.heure || '')), pd = mine.filter(i => i.date === d && i.epingle);
     return (tab === 'semaine' ? `<div class="daytitle">${lbl(d)}${d === today ? ' · aujourd’hui' : ''}</div>` : '') + (tab === 'semaine' && pd.length ? pd.map(i => `<div class="pin mini"><div class="pt">${ic('pin')} ${E(i.travaux)}</div></div>`).join('') : '') +
       (it.length ? it.map(job).join('') : (pd.length && tab === 'semaine' ? '' : `<div class="panel"><p style="color:var(--mute)">Rien de prévu.</p></div>`)); };
   const al = items.filter(needsMe).sort((a, b) => (b.note_at || '').localeCompare(a.note_at || ''));
@@ -191,13 +216,13 @@ function list() {
     ${tab === 'jour' && todayJobs.length ? `<div class="prog"><span>${done} / ${todayJobs.length} interventions</span><div class="bar"><i style="width:${done / todayJobs.length * 100}%"></i></div></div>` : ''}
     ${tab === 'jour' && todayJobs.length && !next && !pinsLeft.length ? `<div class="done-box">${ic('check-circle')} Journée terminée, tout est envoyé au bureau.</div>` : ''}
     ${tabsH()}
-    ${tab === 'semaine' ? `<div class="wkn"><button id="wkp" ${wk ? '' : 'disabled'} aria-label="Semaine précédente">‹</button><span>${wk === 0 ? 'Cette semaine' : wk === 1 ? 'Semaine prochaine' : 'Semaine du ' + lbl(iso(m0))}</span><button id="wkn" ${wk < NBW - 1 ? '' : 'disabled'} aria-label="Semaine suivante">›</button></div>` : ''}
+    ${tab === 'semaine' ? `<div class="wkn"><button id="wkp" ${wk > -NBP ? '' : 'disabled'} aria-label="Semaine précédente">‹</button><span>${wk === 0 ? 'Cette semaine' : wk === 1 ? 'Semaine prochaine' : wk === -1 ? 'Semaine dernière' : 'Semaine du ' + lbl(iso(m0))}</span><button id="wkn" ${wk < NBW - 1 ? '' : 'disabled'} aria-label="Semaine suivante">›</button></div>` : ''}
     ${days.map(block).join('')}
     <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:24px"><button class="btn" id="mdp">Mon mot de passe</button><button class="btn" id="out">Se déconnecter</button></div>
   </div>`;
   scr().querySelectorAll('[data-id]').forEach(b => b.onclick = () => { openId = b.dataset.id; render(); scr().querySelector('.scroll').scrollTop = 0; });
   scr().querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { tab = b.dataset.tab; wk = 0; render(); });
-  if ($('#wkp')) { $('#wkp').onclick = () => { wk = Math.max(0, wk - 1); render(); }; $('#wkn').onclick = () => { wk = Math.min(NBW - 1, wk + 1); render(); }; }
+  if ($('#wkp')) { $('#wkp').onclick = () => { wk = Math.max(-NBP, wk - 1); render(); }; $('#wkn').onclick = () => { wk = Math.min(NBW - 1, wk + 1); render(); }; }
   scr().querySelectorAll('[data-nav]').forEach(b => b.onclick = () => navTo(items.find(x => x.id === b.dataset.nav)));
   scr().querySelectorAll('[data-pin]').forEach(b => b.onclick = async () => { const i = items.find(x => x.id === b.dataset.pin); i.statut = 'controle'; render();
     await enqueue({ kind: 'valider', iid: i.id, commentaire: 'Tâche faite à ' + nowHHMM(), photos: [] }); toast('✓ Tâche faite, le bureau est prévenu'); });
@@ -233,7 +258,8 @@ async function fiche() {
     ${isJob && i.statut === 'encours' && i.debut_at ? `<div class="since">${ic('timer')} Sur place depuis ${new Date(i.debut_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }).replace(':', 'h')}</div>` : ''}
     ${isJob ? `<div class="panel"><dl class="facts">${i.occupant ? `<dt>Occupant</dt><dd>${E(i.occupant)}</dd>` : ''}${i.tel ? `<dt>Téléphone</dt><dd><a href="${telUrl(i.tel)}">${E(i.tel)}</a></dd>` : ''}${i.client ? `<dt>Client</dt><dd>${E(i.client)}</dd>` : ''}<dt>Horaires</dt><dd>${hh(i.heure)} – ${fin(i.heure, i.duree)}</dd></dl></div>` : ''}
     ${isJob ? `<div class="panel"><h3>${ic('wrench')} Travaux à faire</h3><p>${E(i.travaux)}</p></div>` : ''}
-    ${i.materiel.length ? `<div class="panel"><h3>${ic('package')} Matériel à prendre</h3><ul class="mat">${i.materiel.map((m, k) => `<li><label><input type="checkbox" data-mat="${k}" ${(matChk[i.id] || {})[k] ? 'checked' : ''}>${E(m)}</label></li>`).join('')}</ul></div>` : ''}
+    ${i.materiel.length || (isJob && i.statut !== 'cloturee') ? `<div class="panel"><h3>${ic('package')} Matériel</h3>${i.materiel.length ? `<ul class="mat">${i.materiel.map((m, k) => `<li><label><input type="checkbox" data-mat="${k}" ${(matChk[i.id] || {})[k] ? 'checked' : ''}>${E(m)}</label></li>`).join('')}</ul>` : '<p style="color:var(--mute);margin:0 0 8px">Aucun matériel noté.</p>'}
+      ${i.statut !== 'cloturee' ? `<div class="madd"><input id="mati" placeholder="Ajouter du matériel (ex. : 2 raccords 20/27)" autocomplete="off"><button id="mata" type="button">+ Ajouter</button></div>` : ''}</div>` : ''}
     ${docs.length ? `<div class="panel"><h3>${ic('paperclip')} Documents${i.demande ? ' · photos du client' : ''}</h3><div class="docs">${docs.map((p, k) => `<button data-doc="${k}"><div class="m ${p.kind === 'video' ? 'v' : ''}" data-dm="${k}">${p.kind === 'pdf' ? ic('file') : p.kind === 'video' ? '' : ''}</div><span>${E(p.name)}</span></button>`).join('')}</div>${i.demande?.message ? `<p style="font-size:16px;margin-top:10px;color:var(--mute)">« ${E(i.demande.message)} »</p>` : ''}</div>` : ''}
     ${isJob ? `<div class="panel"><h3>${ic('camera')} Photos</h3>
       ${done ? '' : `<div class="pbtns"><label class="photo-btn">${ICON.cam}Prendre une photo<input type="file" accept="image/*" capture="environment" class="sr" id="cam"></label><label class="photo-btn alt">${ic('image')}Mes photos<input type="file" accept="image/*" multiple class="sr" id="gal"></label></div>`}
@@ -252,13 +278,16 @@ async function fiche() {
   <div class="lb" id="lb"></div>`;
   bindTop(); bindPreview();
   scr().querySelectorAll('[data-nav]').forEach(b => b.onclick = () => navTo(i));
+  const mata = $('#mata'); if (mata) { const addM = async () => { const t = $('#mati').value.trim(); if (!t) return; const its = t.split(/\n|;/).map(x => x.trim()).filter(Boolean);
+      i.materiel = [...i.materiel, ...its]; await enqueue({ kind: 'materiel', iid: i.id, items: its }); DB.set('cache', { team, tech, items, at: Date.now() }); const y = scr().querySelector('.scroll').scrollTop; await fiche(); scr().querySelector('.scroll').scrollTop = y; toast('Matériel ajouté · le bureau le voit'); };
+    mata.onclick = addM; $('#mati').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); addM(); } }; }
   scr().querySelectorAll('[data-mat]').forEach(c => c.onchange = () => { (matChk[i.id] = matChk[i.id] || {})[c.dataset.mat] = c.checked; });
   const lb = $('#lb'); lb.onclick = e => { if (e.target.tagName === 'VIDEO') return; lb.classList.remove('on'); lb.innerHTML = ''; };
-  scr().querySelectorAll('[data-lb]').forEach(img => img.onclick = () => { lb.innerHTML = `<img src="${img.src}" alt=""><button aria-label="Fermer">×</button>`; lb.classList.add('on'); });
+  scr().querySelectorAll('[data-lb]').forEach(img => img.onclick = () => { const gal = [...img.closest('.thumbs').querySelectorAll('img[data-lb]')].filter(x => x.getAttribute('src')).map(x => ({ u: x.src, t: x.closest('figure')?.querySelector('figcaption,.tg')?.textContent || '' })); eqZoom('', gal, Math.max(0, gal.findIndex(g => g.u === img.src))); });
   if (docs.length) { const byB = {}; docs.forEach(x => (byB[x.bucket] = byB[x.bucket] || []).push(x.path)); const urls = {}; for (const b in byB) Object.assign(urls, await signedMap(b, byB[b]));
     docs.forEach((p, k) => { p.url = urls[p.path]; const m = scr().querySelector(`[data-dm="${k}"]`); if (m && p.kind === 'photo' && p.url) m.style.backgroundImage = `url('${p.url}')`; });
     scr().querySelectorAll('[data-doc]').forEach(b => b.onclick = () => { const p = docs[+b.dataset.doc]; if (!p.url) return toast(online ? 'Document introuvable, prévenez le bureau' : 'Document disponible avec du réseau');
-      if (p.kind === 'photo') { lb.innerHTML = `<img src="${p.url}" alt=""><button aria-label="Fermer">×</button>`; lb.classList.add('on'); }
+      if (p.kind === 'photo') { const gal = docs.filter(x => x.kind === 'photo' && x.url).map(x => ({ u: x.url, t: x.name })); eqZoom('', gal, Math.max(0, gal.findIndex(g => g.u === p.url))); }
       else if (p.kind === 'video') { lb.innerHTML = `<video src="${p.url}" controls autoplay playsinline style="max-width:100%;max-height:100%;border-radius:12px"></video><button aria-label="Fermer">×</button>`; lb.classList.add('on'); }
       else window.open(p.url, '_blank'); }); }
   const rp = [...scr().querySelectorAll('[data-rph]')];
