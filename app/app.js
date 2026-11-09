@@ -505,7 +505,7 @@ async function form(i, opts) {
   opts = opts || {}; const isNew = !i || !i.id;
   i = { type: opts.epingle ? 'tache' : 'intervention', date: mode === 'jour' ? day : iso(new Date()), heure: '09:00', duree: 1, epingle: !!opts.epingle, statut: 'planifiee', client: '', occupant: '', tel: '', adresse: '', complement: '', cp: '', ville: '', travaux: '', materiel: [], recurrent: false, techs: [], demande_id: null, ...(i || {}), ...(opts.pre || {}) };
   let existing = []; if (!isNew) { const { data } = await sb.from('pieces').select('*').eq('intervention_id', i.id); existing = data || []; }
-  const add = { tech: [], bur: [] }; let removed = [];
+  const add = { tech: [], bur: [] }; let removed = []; (opts.files || []).forEach(x => add[x.prive ? 'bur' : 'tech'].push(x.file));
   const debut = (i.heure || '09:00').slice(0, 5), finH = hm(Math.min(mins(debut) + Math.round((+i.duree || 1) * 60), 23 * 60 + 45));
   const who = (list, label) => list.length ? `<div class="whog"><small>${label}</small><div class="checks">${list.map(t => `<label><input type="checkbox" name="techs" value="${t.id}" ${i.techs.includes(t.id) ? 'checked' : ''}><i style="width:10px;height:10px;border-radius:50%;background:${t.couleur};display:inline-block"></i>${E(t.nom)}</label>`).join('')}</div></div>` : '';
   const upl = (k, title, help) => `<div class="full upl ${k === 'bur' ? 'priv' : ''}"><div class="ut">${title} <span>${help}</span></div><div class="ph" id="pj-${k}"></div><div class="dz"><label class="btn btn-line">+ Ajouter des fichiers<input type="file" id="in-${k}" multiple accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx" class="sr"></label><button type="button" class="btn btn-line" data-clip="${k}">${ic('paperclip')} Coller la photo copiée</button><span>ou glissez-les ici</span></div></div>`;
@@ -527,7 +527,7 @@ async function form(i, opts) {
     <label>Ville<input name="ville" value="${E(i.ville)}" list="villes"></label>
     <label class="full">Téléphone de l’occupant<input name="tel" type="tel" value="${E(i.tel)}"></label>
     <label class="full">Travaux à effectuer<textarea name="travaux">${E(i.travaux)}</textarea></label>
-    <label class="full">${ic('package')} Matériel nécessaire <span style="font-weight:600">(une ligne par élément)</span><textarea name="materiel" placeholder="Ex. : Siphon PVC Ø40&#10;Flexible inox 50 cm">${E((i.materiel || []).join('\n'))}</textarea></label>
+    <label class="full"><span class="lbt">${ic('package')} Matériel nécessaire <small>(une ligne par élément)</small></span><textarea name="materiel" placeholder="Ex. : Siphon PVC Ø40&#10;Flexible inox 50 cm">${E((i.materiel || []).join('\n'))}</textarea></label>
     ${upl('tech', ic('paperclip') + ' Pièces jointes pour le technicien', '(photos, vidéos, PDF · facultatif)')}
     ${upl('bur', ic('file') + ' Devis et documents du bureau', '(visibles uniquement par le bureau, jamais par les techniciens)')}
     ${isNew ? `<div class="full rep"><label>Répéter<select name="rep"><option value="">Non, une seule fois</option><option value="j">Chaque jour, du lundi au vendredi (chantier sur plusieurs jours)</option><option value="s1">Chaque semaine</option><option value="s2">Toutes les 2 semaines</option><option value="m1">Chaque mois (relevé de compteur…)</option><option value="m3">Tous les 3 mois</option><option value="m6">Tous les 6 mois</option><option value="a1">Chaque année (contrat d’entretien)</option></select></label>

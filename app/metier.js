@@ -63,7 +63,9 @@ function lignesHTML(l) {
 async function affaireForm(a, opts) {
   opts = opts || {}; const isNew = !a;
   a = a || { source: 'telephone', client: '', contact: '', tel: '', email: '', adresse: '', cp: '', ville: 'Istres', objet: '', description: '', lignes: [], tva: 10, statut: 'a_chiffrer', visite_le: null, envoye_le: null, relance_le: null, isanet_devis: '', isanet_facture: '', notes: '', demande_id: null, ...(opts.pre || {}) };
-  let lignes = (a.lignes || []).map(x => ({ ...x })); if (!lignes.length) lignes.push({ d: '', q: 1, u: 'u', pu: '' });
+  let lignes = (a.lignes || []).map(x => ({ ...x })); const hasL = lignes.some(x => String(x.d || '').trim() || num(x.pu)); if (!lignes.length) lignes.push({ d: '', q: 1, u: 'u', pu: '' });
+  let fich = [...(a.fichiers || [])], rmF = []; const addF = { tech: [], bur: [] };
+  const zone = (k, t, h) => `<div class="full upl ${k === 'bur' ? 'priv' : ''}"><div class="ut">${t} <span>${h}</span></div><div class="ph" id="afz-${k}"></div><div class="dz"><label class="btn btn-line">+ Ajouter des fichiers<input type="file" id="afi-${k}" multiple accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx" class="sr"></label><span>ou glissez-les ici</span></div></div>`;
   const [{ data: inters }, { data: ch }] = isNew ? [{ data: [] }, { data: [] }] : await Promise.all([
     sb.from('interventions').select('id,date,heure,statut,travaux,epingle,intervention_techs(tech_id)').eq('affaire_id', a.id).order('date'),
     sb.from('chantiers').select('id,nom,statut').eq('affaire_id', a.id)]);
@@ -78,11 +80,14 @@ async function affaireForm(a, opts) {
     <label>Code postal<input name="cp" value="${E(a.cp)}" maxlength="5" inputmode="numeric"></label>
     <label>Ville<input name="ville" value="${E(a.ville)}" list="villes2"></label>
     <label class="full">Objet *<input name="objet" value="${E(a.objet)}" required placeholder="Ex. : Remplacement ballon d’eau chaude"></label>
-    <label class="full">Description / relevé<textarea name="description">${E(a.description)}</textarea></label>
-    <div class="full box lines"><h4>Chiffrage (pré-devis à reprendre dans Isanet Fact)</h4>
+    <label class="full">Description / travaux à faire<textarea name="description" placeholder="Ce qu’il faut faire sur place, comme pour une intervention">${E(a.description)}</textarea></label>
+    <label class="full"><span class="lbt">${ic('package')} Matériel nécessaire <small>(une ligne par élément)</small></span><textarea name="materiel" placeholder="Ex. : Siphon PVC Ø40&#10;Flexibles inox 50 cm">${E((a.materiel || []).join('\n'))}</textarea></label>
+    ${zone('tech', ic('camera') + ' Photos et documents pour le technicien', '(visibles par le technicien une fois le rendez-vous planifié)')}
+    ${zone('bur', ic('file') + ' Devis et documents du bureau', '(non visibles par les techniciens)')}
+    <details class="full box lines" ${hasL ? 'open' : ''}><summary><h4 style="display:inline">Chiffrage (facultatif · pré-devis à reprendre dans Isanet Fact)</h4></summary>
       <table><thead><tr><th>Désignation</th><th>Qté</th><th>Unité</th><th>PU HT</th><th>Total HT</th><th></th></tr></thead><tbody id="lt">${lignesHTML(lignes)}</tbody></table>
       <button type="button" class="btn btn-line" id="addl" style="margin-top:8px">+ Ligne</button>
-      <div class="tot"><span>Total HT <b id="tht"></b></span><label class="inline">TVA <select name="tva">${[5.5, 10, 20].map(v => `<option value="${v}" ${+a.tva === v ? 'selected' : ''}>${String(v).replace('.', ',')} %</option>`).join('')}</select></label><span>TTC <b id="ttc"></b></span></div></div>
+      <div class="tot"><span>Total HT <b id="tht"></b></span><label class="inline">TVA <select name="tva">${[5.5, 10, 20].map(v => `<option value="${v}" ${+a.tva === v ? 'selected' : ''}>${String(v).replace('.', ',')} %</option>`).join('')}</select></label><span>TTC <b id="ttc"></b></span></div></details>
     <label>Statut<select name="statut">${Object.entries(ST_A).map(([k, v]) => `<option value="${k}" ${k === a.statut ? 'selected' : ''}>${v[0]}</option>`).join('')}</select></label>
     <label>Visite / relevé le<input type="date" name="visite_le" value="${a.visite_le || ''}"></label>
     <label>Devis envoyé le<input type="date" name="envoye_le" value="${a.envoye_le || ''}"></label>
@@ -92,8 +97,8 @@ async function affaireForm(a, opts) {
     <label class="full">Notes internes<textarea name="notes" style="min-height:60px">${E(a.notes)}</textarea></label>
     ${!isNew && (inters.length || ch.length) ? `<div class="full box"><h4>Liés à cette affaire</h4>${ch.map(c => `<div>${ic('helmet')} Chantier <b>${E(c.nom)}</b> · ${ST_C[c.statut][0]}</div>`).join('')}${inters.map(i => `<div>${ic('calendar')} ${lbl(i.date)}${i.epingle ? '' : ' ' + hh(i.heure)} · ${E(names(i.intervention_techs.map(x => x.tech_id)))} · ${STAT_I[i.statut]}</div>`).join('')}</div>` : ''}
   </div><datalist id="villes2">${['Istres', 'Miramas', 'Martigues', 'Fos-sur-Mer', 'Port-de-Bouc', 'Saint-Chamas', 'Cornillon-Confoux', 'Grans', 'Salon-de-Provence', 'Vitrolles', 'Marignane', 'Sausset-les-Pins', 'Port-Saint-Louis-du-Rhône', 'Aix-en-Provence', 'Marseille'].map(v => `<option value="${v}">`).join('')}</datalist></form>
-  <footer><button class="btn btn-grad" form="af" type="submit" id="asv">${isNew ? 'Créer l’affaire' : 'Enregistrer'}</button>
-    ${isNew ? '' : `<button class="btn btn-line" id="acp" title="Copier client + lignes pour les coller dans Isanet">${ic('clipboard')} Copier pour Isanet</button><button class="btn btn-line" id="apl">${ic('calendar')} Planifier</button>${a.statut === 'accepte' || a.statut === 'facture' ? `<button class="btn btn-line" id="ach">${ic('helmet')} ${ch.length ? 'Voir le chantier' : 'Créer le chantier'}</button>` : ''}<button class="btn btn-red" id="adl" style="margin-left:auto">Supprimer</button>`}</footer>`);
+  <footer><button class="btn btn-grad" type="button" id="arv">${ic('calendar')} ${isNew ? 'Créer et planifier le rendez-vous' : 'Transformer en rendez-vous'}</button><button class="btn ${isNew ? 'btn-line' : 'btn-line'}" form="af" type="submit" id="asv">${isNew ? 'Créer l’affaire' : 'Enregistrer'}</button>
+    ${isNew ? '' : `<button class="btn btn-line" id="acp" title="Copier client + lignes pour les coller dans Isanet">${ic('clipboard')} Copier pour Isanet</button>${a.statut === 'accepte' || a.statut === 'facture' ? `<button class="btn btn-line" id="ach">${ic('helmet')} ${ch.length ? 'Voir le chantier' : 'Créer le chantier'}</button>` : ''}<button class="btn btn-red" id="adl" style="margin-left:auto">Supprimer</button>`}</footer>`);
   $('#panel').classList.add('wide');
   const f = $('#af'); acAffaire(f, a);
   const recalc = () => { const ht = totalHT(lignes), tv = num(f.tva.value); $('#tht').textContent = eur(ht); $('#ttc').textContent = eur(ht * (1 + tv / 100)); document.querySelectorAll('#lt tr').forEach(tr => { const x = lignes[+tr.dataset.k]; tr.querySelector('.tt').textContent = eur(num(x.q) * num(x.pu)); }); };
@@ -106,25 +111,52 @@ async function affaireForm(a, opts) {
   const row = () => { const fd = new FormData(f), L = lignes.filter(x => String(x.d).trim() || num(x.pu)).map(x => ({ d: String(x.d).trim(), q: num(x.q), u: x.u || 'u', pu: num(x.pu) }));
     const o = {}; ['client', 'source', 'contact', 'tel', 'email', 'adresse', 'cp', 'ville', 'objet', 'description', 'statut', 'isanet_devis', 'isanet_facture', 'notes'].forEach(k => o[k] = String(fd.get(k) || '').trim());
     ['visite_le', 'envoye_le', 'relance_le'].forEach(k => o[k] = fd.get(k) || null);
+    o.materiel = String(fd.get('materiel') || '').split('\n').map(x => x.trim()).filter(Boolean);
     return { ...o, tva: num(fd.get('tva')), lignes: L, montant_ht: totalHT(L), demande_id: a.demande_id || null, client_id: a.client_id || null }; };
   const save = async () => {
     const r = row(); let res;
     if (isNew) res = await sb.from('affaires').insert({ ...r, created_by: me.id }).select().single(); else res = await sb.from('affaires').update(r).eq('id', a.id).select().single();
     if (res.error) throw res.error;
+    const id = res.data.id; let k = 0;
+    for (const kk of ['tech', 'bur']) for (const f0 of addF[kk]) { const file = typeof allege === 'function' ? await allege(f0) : f0, path = `affaires/${id}/${Date.now()}-${k++}-${file.name.normalize('NFD').replace(/[^\w.\-]+/g, '_')}`;
+      const up = await sb.storage.from('bureau').upload(path, file, { contentType: file.type || 'application/octet-stream' }); if (up.error) throw new Error('envoi de « ' + file.name + ' » impossible (' + up.error.message + ')');
+      fich.push({ nom: file.name, type: kindOf(file), path, prive: kk === 'bur' }); }
+    addF.tech = []; addF.bur = [];
+    if (rmF.length) { await sb.storage.from('bureau').remove(rmF); rmF = []; }
+    if (JSON.stringify(fich) !== JSON.stringify(res.data.fichiers || [])) { const r2 = await sb.from('affaires').update({ fichiers: fich }).eq('id', id).select().single(); if (r2.error) throw r2.error; res.data = r2.data; }
+    a.id = id; a.ref = res.data.ref;
     if (isNew && opts.demande) await sb.from('demandes').update({ statut: 'affaire', traitee_par: me.id, traitee_le: new Date().toISOString() }).eq('id', opts.demande.id);
     return res.data;
   };
   f.onsubmit = async e => { e.preventDefault(); const b = $('#asv'); b.disabled = true;
     try { const d = await save(); closePanel(); await loadAffaires(); if (view === 'affaires') listAffaires(); else await go('affaires'); toast(isNew ? 'Affaire ' + d.ref + ' créée' : 'Affaire enregistrée'); }
     catch (er) { b.disabled = false; toast('Erreur : ' + (er.message || er)); } };
+  /* Photos / devis de l'affaire */
+  const fIcon = t => `<span class="ic">${t === 'video' ? ic('film') : ic('file')}</span>`, fU = {};
+  const drawF = k => { const ex = fich.filter(x => !!x.prive === (k === 'bur'));
+    $('#afz-' + k).innerHTML = ex.map(x => `<a data-pb="${E(x.path)}" ${fU[x.path] ? `href="${fU[x.path]}"` : ''}>${x.type === 'photo' ? '<img alt="">' : fIcon(x.type)}${E(x.nom)}<button type="button" class="rm" data-rmf="${E(x.path)}">×</button></a>`).join('') + addF[k].map((x, n) => `<a>${kindOf(x) === 'photo' ? `<img src="${URL.createObjectURL(x)}" alt="">` : fIcon(kindOf(x))}${E(x.name)}<button type="button" class="rm" data-rma="${k}:${n}">×</button></a>`).join('') || '<span class="none" style="color:var(--mute);font-size:13px">Aucun fichier</span>';
+    $('#afz-' + k).querySelectorAll('a[href]').forEach(x => { if (typeof setThumb === 'function') setThumb(x, x.getAttribute('href'), x.dataset.pb); });
+    $('#afz-' + k).querySelectorAll('[data-rmf]').forEach(b => b.onclick = e => { e.preventDefault(); e.stopPropagation(); rmF.push(b.dataset.rmf); fich = fich.filter(x => x.path !== b.dataset.rmf); drawF(k); });
+    $('#afz-' + k).querySelectorAll('[data-rma]').forEach(b => b.onclick = e => { e.preventDefault(); const [kk, n] = b.dataset.rma.split(':'); addF[kk].splice(+n, 1); drawF(kk); }); };
+  const addFi = async (k, list) => { const all = (await Promise.all([...list].map(x => fixFile(x)))).filter(Boolean).filter(x => x.size <= 50 * 1024 * 1024); addF[k] = addF[k].concat(all); drawF(k); if (all.length) toast(all.length > 1 ? all.length + ' fichiers ajoutés' : 'Fichier ajouté : ' + all[0].name); };
+  if (fich.length) signed('bureau', fich.map(x => x.path)).then(u => { Object.assign(fU, u); drawF('tech'); drawF('bur'); });
+  ['tech', 'bur'].forEach(k => { drawF(k); $('#afi-' + k).onchange = e => { addFi(k, e.target.files); e.target.value = ''; };
+    const z = $('#afz-' + k).closest('.upl'); z.addEventListener('dragover', e => { e.preventDefault(); z.classList.add('drop'); }); z.addEventListener('dragleave', () => z.classList.remove('drop'));
+    z.addEventListener('drop', e => { e.preventDefault(); z.classList.remove('drop'); addFi(k, e.dataTransfer.files); }); });
+  /* Transformer en rendez-vous : tout est repris (adresse, travaux, matériel, photos, devis) ; il ne reste qu'à choisir la date et les techniciens */
+  $('#arv').onclick = async () => { if (!f.reportValidity()) return; const b = $('#arv'); b.disabled = true; b.textContent = 'Préparation…';
+    try { await save(); } catch (er) { b.disabled = false; b.textContent = 'Transformer en rendez-vous'; return toast('Erreur : ' + (er.message || er)); }
+    const r = row(), files = [];
+    for (const x of fich) { try { const { data, error } = await sb.storage.from('bureau').download(x.path); if (!error && data) files.push({ prive: !!x.prive, file: new File([data], x.nom, { type: data.type || (x.type === 'photo' ? 'image/jpeg' : 'application/octet-stream') }) }); } catch (e) { } }
+    await loadAffaires(); if (view === 'affaires') listAffaires();
+    form(null, { ctx: 'Affaire ' + a.ref, files, pre: { client: r.client, occupant: r.contact, tel: r.tel, adresse: r.adresse, cp: r.cp, ville: r.ville || 'Istres', travaux: [r.objet, r.description].filter(Boolean).join('\n'), materiel: r.materiel, affaire_id: a.id, demande_id: a.demande_id || null } });
+    toast('Choisissez la date et les techniciens, puis « Planifier »'); };
   if (isNew) return;
   $('#acp').onclick = async () => { const r = row(); const tv = r.tva, ht = r.montant_ht;
     const txt = [`Client : ${r.client}`, r.contact ? `Contact : ${r.contact}` : '', r.tel ? `Tél : ${r.tel}` : '', r.email ? `E-mail : ${r.email}` : '', `Adresse : ${addr(r)}`, `Objet : ${r.objet}`, `Réf. BK+ : ${a.ref}`, '',
       ['Désignation', 'Qté', 'Unité', 'PU HT', 'Total HT'].join('\t'), ...r.lignes.map(x => [x.d, String(x.q).replace('.', ','), x.u, x.pu.toFixed(2).replace('.', ','), (x.q * x.pu).toFixed(2).replace('.', ',')].join('\t')), '',
       `Total HT : ${eur(ht)}`, `TVA ${String(tv).replace('.', ',')} % : ${eur(ht * tv / 100)}`, `Total TTC : ${eur(ht * (1 + tv / 100))}`].filter((x, k, arr) => x !== '' || arr[k - 1] !== '').join('\n');
     try { await navigator.clipboard.writeText(txt); toast('Copié : collez-le dans Isanet Fact'); } catch (e) { askText('Copiez ce texte :', txt, { multi: true }); } };
-  $('#apl').onclick = async () => { try { await save(); } catch (er) { return toast('Erreur : ' + (er.message || er)); }
-    const r = row(); form(null, { ctx: 'Affaire ' + a.ref, pre: { client: r.client, occupant: r.contact, tel: r.tel, adresse: r.adresse, cp: r.cp, ville: r.ville || 'Istres', travaux: (r.statut === 'a_chiffrer' || r.statut === 'visite' ? 'Visite / relevé pour devis : ' : '') + r.objet, affaire_id: a.id, demande_id: a.demande_id || null } }); };
   if ($('#ach')) $('#ach').onclick = async () => { try { await save(); } catch (er) { return toast('Erreur : ' + (er.message || er)); }
     if (ch.length) { await go('chantiers'); const c = chantiers.find(x => x.id === ch[0].id); if (c) chantierForm(c); return; }
     const r = row(); chantierForm(null, { pre: { nom: r.objet, client: r.client, tel: r.tel, adresse: r.adresse, cp: r.cp, ville: r.ville, affaire_id: a.id, notes: r.lignes.map(x => '• ' + x.d + (x.q !== 1 ? ' × ' + x.q + ' ' + x.u : '')).join('\n') } }); };

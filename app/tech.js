@@ -308,7 +308,7 @@ async function fiche() {
       delete addx[i.id]; openId = null; render(); toast(online ? '✓ Ajout envoyé au bureau' : '✓ Gardé sur l’appareil · partira au retour du réseau'); }; }
   if (done || !isJob) return;
   const saveDraft = () => DB.set('draft-' + i.id, d).catch(() => { });
-  const upd = () => { const a = d.photos.length > 0, b = d.commentaire.trim().length > 1; $('#n1').className = a ? 'ok' : ''; $('#n1').textContent = (a ? '✓' : '○') + ' 1 photo minimum'; $('#n2').className = b ? 'ok' : ''; $('#n2').textContent = (b ? '✓' : '○') + ' Un commentaire'; $('#ok').classList.toggle('ready', a && b); if (a && b) $('#alert').classList.remove('show'); };
+  const upd = () => { const a = d.photos.length > 0, b = i.devis || d.commentaire.trim().length > 1; $('#n1').className = a ? 'ok' : ''; $('#n1').textContent = (a ? '✓' : '○') + ' 1 photo minimum'; $('#n2').className = b ? 'ok' : ''; $('#n2').textContent = i.devis ? '✓ Commentaire facultatif (devis)' : (b ? '✓' : '○') + ' Un commentaire'; $('#ok').classList.toggle('ready', a && b); if (a && b) $('#alert').classList.remove('show'); };
   upd();
   $('#cam').onchange = $('#gal').onchange = async e => { const fl = [...e.target.files]; if (!fl.length) return; for (const f of fl) { try { d.photos.push({ blob: await shrink(f), tag: d.photos.length ? 'Après' : 'Avant' }); } catch (er) { toast('Une photo n’a pas pu être lue'); } } await saveDraft();
     if (i.statut === 'planifiee' || i.statut === 'enroute') { i.statut = 'encours'; i.debut_at = i.debut_at || new Date().toISOString(); enqueue({ kind: 'statut', iid: i.id, statut: 'encours' }); }
@@ -319,7 +319,7 @@ async function fiche() {
   scr().querySelectorAll('[data-ph]').forEach(b => b.onclick = () => { const p = b.dataset.ph; ta.value = ta.value.trim() ? ta.value.replace(/\s*$/, '') + (/[.!?]$/.test(ta.value.trim()) ? ' ' : '. ') + p : p; ta.dispatchEvent(new Event('input')); });
   $('#mic').onclick = dictate;
   $('#ok').onclick = async () => {
-    const miss = []; if (!d.photos.length) miss.push('au moins une photo'); if (d.commentaire.trim().length < 2) miss.push('un commentaire');
+    const miss = []; if (!d.photos.length) miss.push('au moins une photo'); if (!i.devis && d.commentaire.trim().length < 2) miss.push('un commentaire');
     if (miss.length) { const a = $('#alert'); a.classList.remove('show'); void a.offsetWidth; a.textContent = 'Ajoutez ' + miss.join(' et ') + ' pour valider.'; a.classList.add('show'); return; }
     const job = { kind: 'valider', iid: i.id, commentaire: d.commentaire.trim(), photos: d.photos.map(p => ({ blob: p.blob, tag: p.tag })) };
     i.statut = 'controle'; i.note_lue = true; i.commentaire = job.commentaire; delete drafts[i.id]; DB.del('draft-' + i.id); openId = null;
