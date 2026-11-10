@@ -1,7 +1,7 @@
 /* BK+ — Affaires (devis toutes sources → Isanet Fact) et Chantiers (gros travaux) */
 
 /* ================= Outils ================= */
-const ST_A = { a_chiffrer: ['À chiffrer', '#5E6680'], visite: ['Visite prévue', '#6D28D9'], envoye: ['Devis envoyé', '#2239A9'], accepte: ['Accepté · à facturer', '#0E9F6E'], refuse: ['Refusé', '#C62828'], facture: ['Facturé', '#0B1433'] };
+const ST_A = { a_placer: ['À placer', '#B45309'], a_chiffrer: ['À chiffrer', '#5E6680'], visite: ['Visite prévue', '#6D28D9'], envoye: ['Devis envoyé', '#2239A9'], accepte: ['À facturer', '#0E9F6E'], refuse: ['Refusé', '#C62828'], facture: ['Terminé · facturé', '#0B1433'] };
 const SRC = { telephone: 'Téléphone', site: 'Site', email: 'E-mail', bouche: 'Bouche-à-oreille', passage: 'Passage au bureau', partenaire: 'Agence / syndic', autre: 'Autre' };
 const SRC_I = { telephone: 'phone', site: 'globe', email: 'mail', bouche: 'users', passage: 'store', partenaire: 'building', autre: 'briefcase' };
 const UNITES = ['u', 'h', 'forfait', 'm', 'ml', 'm²', 'j'];
@@ -15,20 +15,20 @@ let affaires = [], qA = '', showClosed = false, chantiers = [], filtreC = 'actif
 
 /* ================= Affaires ================= */
 async function loadAffaires() { const { data, error } = await sb.from('affaires').select('*').order('updated_at', { ascending: false }).limit(1000); if (error) return toast('Erreur : ' + error.message); affaires = data || []; badgeA(); }
-function badgeA() { const c = $('#ca'); if (!c) return; const t = iso(new Date()); c.textContent = affaires.filter(a => a.statut === 'a_chiffrer' || (a.statut === 'envoye' && a.relance_le && a.relance_le <= t)).length || ''; }
+function badgeA() { const c = $('#ca'); if (!c) return; const t = iso(new Date()); c.textContent = affaires.filter(a => a.statut === 'a_placer' || a.statut === 'a_chiffrer' || (a.statut === 'envoye' && a.relance_le && a.relance_le <= t)).length || ''; }
 function listAffaires() {
   if (view !== 'affaires') return;
   const today = iso(new Date());
   const match = a => !qA || [a.ref, a.client, a.objet, a.ville, a.contact, a.tel, a.isanet_devis].join(' ').toLowerCase().includes(qA);
-  const cols = showClosed ? Object.keys(ST_A) : ['a_chiffrer', 'visite', 'envoye', 'accepte'];
+  const cols = showClosed ? Object.keys(ST_A) : ['a_placer', 'a_chiffrer', 'visite', 'envoye', 'accepte'];
   const sum = s => affaires.filter(a => a.statut === s);
   const attente = sum('envoye'), afact = sum('accepte'), relances = attente.filter(a => a.relance_le && a.relance_le <= today);
   const kpi = (l, arr, extra) => `<div class="kpi"><small>${l}</small><b>${eur(arr.reduce((s, a) => s + +a.montant_ht, 0))}</b><span>${arr.length} affaire${arr.length > 1 ? 's' : ''} · HT${extra || ''}</span></div>`;
   $('#main').innerHTML = `<div class="head"><h1>Affaires</h1><span class="live"><i></i>En direct</span>
     <input class="search" id="qa" type="search" placeholder="Rechercher (client, ville, n°…)" value="${E(qA)}">
-    <label class="tgl"><input type="checkbox" id="sc" ${showClosed ? 'checked' : ''}> Refusées / facturées</label>
+    <label class="tgl"><input type="checkbox" id="sc" ${showClosed ? 'checked' : ''}> Refusées / terminées</label>
     <button class="btn btn-line" id="exp" title="Fichier pour Isanet Fact">${ic('download')} Prêt à facturer</button><button class="btn btn-grad" id="na">+ Nouvelle affaire</button></div>
-  <div class="kpis">${kpi('En attente de réponse', attente)}${kpi('Accepté · à facturer dans Isanet', afact)}<div class="kpi ${relances.length ? 'warn' : ''}"><small>Relances à faire</small><b>${relances.length}</b><span>${relances.length ? 'devis à relancer aujourd’hui' : 'rien à relancer'}</span></div></div>
+  <div class="kpis">${kpi('En attente de réponse', attente)}${kpi('À facturer dans Isanet', afact)}<div class="kpi ${relances.length ? 'warn' : ''}"><small>Relances à faire</small><b>${relances.length}</b><span>${relances.length ? 'devis à relancer aujourd’hui' : 'rien à relancer'}</span></div></div>
   <div class="kb">${cols.map(s => { const it = affaires.filter(a => a.statut === s && match(a)); return `<section class="kc" data-col="${s}"><h3><i style="background:${ST_A[s][1]}"></i>${ST_A[s][0]}<span>${it.length}</span></h3>
     ${it.length ? '' : '<p class="kv0">Glissez une affaire ici</p>'}${it.map(a => `<button class="ka" draggable="true" data-a="${a.id}" style="--c:${ST_A[a.statut][1]}">
       <small>${E(a.ref || '')} · <span title="${E(SRC[a.source] || '')}">${ic(SRC_I[a.source] || 'briefcase')}</span>${a.demande_id ? ' ' + ic('camera') : ''}</small><b>${E(a.client)}</b><span class="o">${E(a.objet)}</span>
@@ -62,7 +62,7 @@ function lignesHTML(l) {
 }
 async function affaireForm(a, opts) {
   opts = opts || {}; const isNew = !a;
-  a = a || { source: 'telephone', client: '', contact: '', tel: '', email: '', adresse: '', cp: '', ville: 'Istres', objet: '', description: '', lignes: [], tva: 10, statut: 'a_chiffrer', visite_le: null, envoye_le: null, relance_le: null, isanet_devis: '', isanet_facture: '', notes: '', demande_id: null, ...(opts.pre || {}) };
+  a = a || { source: 'telephone', client: '', contact: '', occupant: '', complement: '', tel: '', email: '', adresse: '', cp: '', ville: 'Istres', objet: '', description: '', lignes: [], tva: 10, statut: 'a_placer', visite_le: null, envoye_le: null, relance_le: null, isanet_devis: '', isanet_facture: '', notes: '', demande_id: null, ...(opts.pre || {}) };
   let lignes = (a.lignes || []).map(x => ({ ...x })); const hasL = lignes.some(x => String(x.d || '').trim() || num(x.pu)); if (!lignes.length) lignes.push({ d: '', q: 1, u: 'u', pu: '' });
   let fich = [...(a.fichiers || [])], rmF = []; const addF = { tech: [], bur: [] };
   const zone = (k, t, h) => `<div class="full upl ${k === 'bur' ? 'priv' : ''}"><div class="ut">${t} <span>${h}</span></div><div class="ph" id="afz-${k}"></div><div class="dz"><label class="btn btn-line">+ Ajouter des fichiers<input type="file" id="afi-${k}" multiple accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx" class="sr"></label><span>ou glissez-les ici</span></div></div>`;
@@ -73,10 +73,12 @@ async function affaireForm(a, opts) {
   <form class="body" id="af"><div class="form">
     <label>Client *<input name="client" value="${E(a.client)}" required placeholder="Nom, agence, syndic…"></label>
     <label>Source<select name="source">${Object.entries(SRC).map(([k, v]) => `<option value="${k}" ${k === a.source ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
-    <label>Contact sur place<input name="contact" value="${E(a.contact)}"></label>
+    <label>Occupant<input name="occupant" value="${E(a.occupant || '')}" placeholder="Personne sur place"></label>
+    <label>Contact (agence, syndic…)<input name="contact" value="${E(a.contact)}"></label>
     <label>Téléphone<input name="tel" type="tel" value="${E(a.tel)}"></label>
     <label class="full">E-mail<input name="email" type="email" value="${E(a.email)}"></label>
-    <label class="full">Adresse du chantier<input name="adresse" value="${E(a.adresse)}"></label>
+    <label class="full">Adresse<input name="adresse" value="${E(a.adresse)}" autocomplete="off" placeholder="Tapez le début de l’adresse, puis choisissez dans la liste"></label>
+    <label class="full">Complément d’adresse <small style="font-weight:600;color:var(--mute)">(facultatif)</small><input name="complement" value="${E(a.complement || '')}" placeholder="Résidence, bâtiment, étage, n° d’appartement, code…"></label>
     <label>Code postal<input name="cp" value="${E(a.cp)}" maxlength="5" inputmode="numeric"></label>
     <label>Ville<input name="ville" value="${E(a.ville)}" list="villes2"></label>
     <label class="full">Objet *<input name="objet" value="${E(a.objet)}" required placeholder="Ex. : Remplacement ballon d’eau chaude"></label>
@@ -100,7 +102,7 @@ async function affaireForm(a, opts) {
   <footer><button class="btn btn-grad" type="button" id="arv">${ic('calendar')} ${isNew ? 'Créer et planifier le rendez-vous' : 'Transformer en rendez-vous'}</button><button class="btn ${isNew ? 'btn-line' : 'btn-line'}" form="af" type="submit" id="asv">${isNew ? 'Créer l’affaire' : 'Enregistrer'}</button>
     ${isNew ? '' : `<button class="btn btn-line" id="acp" title="Copier client + lignes pour les coller dans Isanet">${ic('clipboard')} Copier pour Isanet</button>${a.statut === 'accepte' || a.statut === 'facture' ? `<button class="btn btn-line" id="ach">${ic('helmet')} ${ch.length ? 'Voir le chantier' : 'Créer le chantier'}</button>` : ''}<button class="btn btn-red" id="adl" style="margin-left:auto">Supprimer</button>`}</footer>`);
   $('#panel').classList.add('wide');
-  const f = $('#af'); acAffaire(f, a);
+  const f = $('#af'); acAffaire(f, a); acAdresse(f);
   const recalc = () => { const ht = totalHT(lignes), tv = num(f.tva.value); $('#tht').textContent = eur(ht); $('#ttc').textContent = eur(ht * (1 + tv / 100)); document.querySelectorAll('#lt tr').forEach(tr => { const x = lignes[+tr.dataset.k]; tr.querySelector('.tt').textContent = eur(num(x.q) * num(x.pu)); }); };
   const bindL = () => { document.querySelectorAll('#lt [data-f]').forEach(el => el.oninput = el.onchange = () => { lignes[+el.closest('tr').dataset.k][el.dataset.f] = el.value; recalc(); });
     document.querySelectorAll('#lt [data-rm]').forEach(b => b.onclick = () => { lignes.splice(+b.dataset.rm, 1); if (!lignes.length) lignes.push({ d: '', q: 1, u: 'u', pu: '' }); $('#lt').innerHTML = lignesHTML(lignes); bindL(); recalc(); });
@@ -109,12 +111,14 @@ async function affaireForm(a, opts) {
   $('#addl').onclick = () => { lignes.push({ d: '', q: 1, u: 'u', pu: '' }); $('#lt').innerHTML = lignesHTML(lignes); bindL(); recalc(); const ins = document.querySelectorAll('#lt [data-f="d"]'); ins[ins.length - 1].focus(); };
   f.statut.onchange = () => { const p = statutPatch({ envoye_le: f.envoye_le.value, relance_le: f.relance_le.value }, f.statut.value); if (p.envoye_le) f.envoye_le.value = p.envoye_le; if (p.relance_le) f.relance_le.value = p.relance_le; };
   const row = () => { const fd = new FormData(f), L = lignes.filter(x => String(x.d).trim() || num(x.pu)).map(x => ({ d: String(x.d).trim(), q: num(x.q), u: x.u || 'u', pu: num(x.pu) }));
-    const o = {}; ['client', 'source', 'contact', 'tel', 'email', 'adresse', 'cp', 'ville', 'objet', 'description', 'statut', 'isanet_devis', 'isanet_facture', 'notes'].forEach(k => o[k] = String(fd.get(k) || '').trim());
+    const o = {}; ['client', 'source', 'contact', 'occupant', 'complement', 'tel', 'email', 'adresse', 'cp', 'ville', 'objet', 'description', 'statut', 'isanet_devis', 'isanet_facture', 'notes'].forEach(k => o[k] = String(fd.get(k) || '').trim());
     ['visite_le', 'envoye_le', 'relance_le'].forEach(k => o[k] = fd.get(k) || null);
     o.materiel = String(fd.get('materiel') || '').split('\n').map(x => x.trim()).filter(Boolean);
     return { ...o, tva: num(fd.get('tva')), lignes: L, montant_ht: totalHT(L), demande_id: a.demande_id || null, client_id: a.client_id || null }; };
   const save = async () => {
     const r = row(); let res;
+    /* le statut peut avoir changé tout seul entre-temps (rendez-vous placé, intervention clôturée) : on ne l'écrase que s'il a été modifié ici */
+    if (!isNew && r.statut === a.statut) delete r.statut;
     if (isNew) res = await sb.from('affaires').insert({ ...r, created_by: me.id }).select().single(); else res = await sb.from('affaires').update(r).eq('id', a.id).select().single();
     if (res.error) throw res.error;
     const id = res.data.id; let k = 0;
@@ -149,7 +153,7 @@ async function affaireForm(a, opts) {
     const r = row(), files = [];
     for (const x of fich) { try { const { data, error } = await sb.storage.from('bureau').download(x.path); if (!error && data) files.push({ prive: !!x.prive, file: new File([data], x.nom, { type: data.type || (x.type === 'photo' ? 'image/jpeg' : 'application/octet-stream') }) }); } catch (e) { } }
     await loadAffaires(); if (view === 'affaires') listAffaires();
-    form(null, { ctx: 'Affaire ' + a.ref, files, pre: { client: r.client, occupant: r.contact, tel: r.tel, adresse: r.adresse, cp: r.cp, ville: r.ville || 'Istres', travaux: [r.objet, r.description].filter(Boolean).join('\n'), materiel: r.materiel, affaire_id: a.id, demande_id: a.demande_id || null } });
+    form(null, { ctx: 'Affaire ' + a.ref, files, pre: { client: r.client, occupant: r.occupant || r.contact, tel: r.tel, adresse: r.adresse, complement: r.complement, cp: r.cp, ville: r.ville || 'Istres', travaux: [r.objet, r.description].filter(Boolean).join('\n'), materiel: r.materiel, affaire_id: a.id, demande_id: a.demande_id || null } });
     toast('Choisissez la date et les techniciens, puis « Planifier »'); };
   if (isNew) return;
   $('#acp').onclick = async () => { const r = row(); const tv = r.tva, ht = r.montant_ht;

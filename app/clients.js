@@ -80,7 +80,7 @@ function acAdresse(f) {
 function acAffaire(f, a) {
   attachAC(f.client, q => searchClients(q, 8), clientLine, c => {
     f.client.value = c.nom; f.contact.value = c.contact || ''; f.tel.value = c.tel || ''; f.email.value = c.email || '';
-    f.adresse.value = [c.adresse, c.complement].filter(Boolean).join(', '); f.cp.value = c.cp || ''; f.ville.value = c.ville || '';
+    if (f.complement) { f.adresse.value = c.adresse || ''; f.complement.value = c.complement || ''; } else f.adresse.value = [c.adresse, c.complement].filter(Boolean).join(', '); f.cp.value = c.cp || ''; f.ville.value = c.ville || '';
     a.client_id = c.id; markLinked(f.client, true); toast('Fiche client reprise : ' + c.nom); });
   f.client.addEventListener('input', () => { a.client_id = null; markLinked(f.client, false); });
   markLinked(f.client, !!a.client_id);
