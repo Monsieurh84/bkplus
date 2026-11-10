@@ -168,6 +168,7 @@ function lane(d, t, px, withHead) {
   return `<div class="ln ${ab ? 'abs' : ''}" data-date="${d}" data-tech="${t.id}" style="--c:${t.couleur}">${withHead ? '' : `<span class="lh" style="background:${t.couleur}" title="${E(t.nom)}"></span>`}${layout(items).map(([i, c, n]) => ev(i, t.id, px, c, n)).join('')}</div>`;
 }
 const isMob = () => innerWidth <= 760;
+const WH = { lock: false, acc: 0, t: 0, by: '' };
 function planning() {
   if (view !== 'planning') return;
   if (isMob()) return planningMob();
@@ -202,13 +203,15 @@ function planning() {
   const nav = async n => { if (mode === 'semaine') week = addDays(week, 7 * n); else { let x = addDays(new Date(day + 'T12:00'), n); if (!showWE) while ([0, 6].includes(x.getDay())) x = addDays(x, n); day = iso(x); } await loadPlanning(); planning(); };
   $('#prev').onclick = () => nav(-1); $('#next').onclick = () => nav(1);
   /* Glisser deux doigts sur le trackpad (ou flèches ← → du clavier, ou balayage sur iPad) pour changer de semaine */
-  const cal = $('.cal'); let acc = 0, busy = false, tmw;
-  const go1 = async n => { if (busy) return; busy = true; acc = 0; await nav(n); setTimeout(() => { busy = false; }, 450); };
+  /* Un glissement = une seule semaine : après un changement, on ignore le reste du geste (l'élan du trackpad) jusqu'à ce que les doigts s'arrêtent */
+  const cal = $('.cal');
+  const go1 = async n => { if (WH.lock && WH.by !== 'key') return; WH.acc = 0; await nav(n); };
   if (cal) {
     cal.addEventListener('wheel', e => { if (Math.abs(e.deltaX) <= Math.abs(e.deltaY) * 1.2) return;
       const max = cal.scrollWidth - cal.clientWidth; if (max > 2 && ((e.deltaX > 0 && cal.scrollLeft < max - 1) || (e.deltaX < 0 && cal.scrollLeft > 1))) return;
-      e.preventDefault(); acc += e.deltaX; clearTimeout(tmw); tmw = setTimeout(() => { acc = 0; }, 250);
-      if (Math.abs(acc) > 140) go1(acc > 0 ? 1 : -1); }, { passive: false });
+      e.preventDefault(); clearTimeout(WH.t); WH.t = setTimeout(() => { WH.lock = false; WH.acc = 0; }, 350);
+      if (WH.lock) return; WH.acc += e.deltaX;
+      if (Math.abs(WH.acc) > 160) { const n = WH.acc > 0 ? 1 : -1; WH.lock = true; WH.by = 'wheel'; WH.acc = 0; nav(n); } }, { passive: false });
     let tx = null, ty = 0; cal.addEventListener('touchstart', e => { tx = e.touches[0].clientX; ty = e.touches[0].clientY; }, { passive: true });
     cal.addEventListener('touchend', e => { if (tx === null) return; const dx = e.changedTouches[0].clientX - tx, dy = e.changedTouches[0].clientY - ty; tx = null; if (Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy) * 1.5) go1(dx < 0 ? 1 : -1); }); }
   document.onkeydown = e => { if (view !== 'planning' || $('#panel.on, .ctx') || /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) return; if (e.key === 'ArrowRight') go1(1); else if (e.key === 'ArrowLeft') go1(-1); };
