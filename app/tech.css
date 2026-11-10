@@ -400,3 +400,5 @@ html,body,.screen,.scroll{overflow-x:hidden;max-width:100vw}
 /* ===== Solidité de l'affichage (textes très longs) ===== */
 .scroll,.eqcard,.bmsg,.panel,.job,.bnote,.bkdlg-in{overflow-wrap:anywhere;word-break:normal}
 .job .b,.eqcard>*,.ctb{min-width:0}
+.pin .pto{display:flex;align-items:center;gap:6px;width:100%;text-align:left;background:none;border:0;padding:0;font:inherit;color:inherit;font-weight:inherit}
+.pin .pto .i{width:16px;height:16px;flex:none}.pin .pchev{margin-left:auto;color:#9AA8BA;font-size:22px}
