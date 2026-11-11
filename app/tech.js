@@ -340,15 +340,28 @@ async function fiche() {
 }
 function shrink(file) { return new Promise((res, rej) => { const img = new Image(), u = URL.createObjectURL(file); img.onload = () => { const k = Math.min(1, 1600 / Math.max(img.width, img.height)), c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(u); c.toBlob(b => res(b), 'image/jpeg', .75); }; img.onerror = rej; img.src = u; }); }
 let rec = null;
+/* Dicter le commentaire.
+   iPhone/iPad : la reconnaissance vocale du navigateur ne marche pas dans une appli ajoutée à l'écran d'accueil → on ouvre le clavier et on montre où est le micro (dictée iOS, fiable).
+   Android/ordinateur : reconnaissance vocale du navigateur, avec repli sur le clavier si elle échoue. */
+function dicteeAide(ta) {
+  ta.focus(); try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch (e) { }
+  let h = $('#dhint'); if (!h) { h = document.createElement('div'); h.id = 'dhint'; h.className = 'dhint'; ta.closest('.cmt').after(h); }
+  h.innerHTML = `${ICON.mic}<div><b>Touchez le micro 🎤 du clavier</b> (en bas, à côté de la barre d’espace) puis parlez.<small>Pas de micro sur le clavier ? Réglages › Général › Clavier › activer « Dictée ».</small></div>`;
+  clearTimeout(dicteeAide.t); dicteeAide.t = setTimeout(() => { const x = $('#dhint'); if (x) x.remove(); }, 12000);
+}
 function dictate() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition, b = $('#mic'), ta = $('#cmt');
-  if (!SR) { ta.focus(); toast('Touchez le micro du clavier pour dicter'); return; }
+  if (!ta) return;
+  if (iOS || !SR) return dicteeAide(ta);
   if (rec) { rec.stop(); return; }
-  rec = new SR(); rec.lang = 'fr-FR'; rec.interimResults = false; b.classList.add('rec');
-  rec.onresult = e => { const t = [...e.results].map(r => r[0].transcript).join(' '); ta.value = (ta.value.trim() ? ta.value.trim() + ' ' : '') + t.charAt(0).toUpperCase() + t.slice(1); ta.dispatchEvent(new Event('input')); };
-  rec.onend = () => { rec = null; const m = $('#mic'); if (m) m.classList.remove('rec'); };
-  rec.onerror = () => { ta.focus(); toast('Utilisez le micro du clavier'); };
-  try { rec.start(); } catch (e) { rec = null; b.classList.remove('rec'); }
+  let got = false, base = ta.value.trim();
+  rec = new SR(); rec.lang = 'fr-FR'; rec.interimResults = true; rec.continuous = true; b.classList.add('rec'); b.lastChild.textContent = 'Stop';
+  const guard = setTimeout(() => { if (!got && rec) { rec.abort(); dicteeAide(ta); } }, 8000);
+  rec.onresult = e => { got = true; let fin = '', tmp = ''; for (const r of e.results) (r.isFinal ? (fin += r[0].transcript + ' ') : (tmp += r[0].transcript));
+    const t = (fin + tmp).trim(); if (!t) return; ta.value = (base ? base + ' ' : '') + t.charAt(0).toUpperCase() + t.slice(1); ta.dispatchEvent(new Event('input')); };
+  rec.onend = () => { clearTimeout(guard); rec = null; const m = $('#mic'); if (m) { m.classList.remove('rec'); m.lastChild.textContent = 'Dicter'; } };
+  rec.onerror = e => { clearTimeout(guard); if (e.error === 'not-allowed' || e.error === 'service-not-allowed') toast('Micro refusé : autorisez le micro pour cette appli, ou utilisez celui du clavier'); if (e.error !== 'aborted' && e.error !== 'no-speech') dicteeAide(ta); };
+  try { rec.start(); toast('Parlez… touchez « Stop » quand c’est fini'); } catch (e) { clearTimeout(guard); rec = null; b.classList.remove('rec'); dicteeAide(ta); }
 }
 
 /* ---------- GPS : Waze, Plans, Google Maps ---------- */
