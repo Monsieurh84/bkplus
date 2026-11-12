@@ -228,13 +228,14 @@ function list() {
     await enqueue({ kind: 'valider', iid: i.id, commentaire: 'Tâche faite à ' + nowHHMM(), photos: [] }); toast('✓ Tâche faite, le bureau est prévenu'); });
   $('#out').onclick = () => sb.auth.signOut(); $('#mdp').onclick = monMdp;
   bindTop(); bindPreview();
+  { const t0 = iso(new Date()), t2 = iso(addDays(new Date(), 2)); prefetchGeo(items.filter(x => x.date >= t0 && x.date <= t2 && x.statut !== 'cloturee')); }
 }
 
 /* ---------- Fiche intervention ---------- */
 const PHRASES = ['Fuite réparée', 'Pièce remplacée', 'Testé, aucune fuite', 'Pièce à commander', 'Prévoir un retour', 'Occupant absent', 'Devis complémentaire à faire'];
 async function signedMap(bucket, paths) { if (!paths.length || !online) return {}; const { data } = await sb.storage.from(bucket).createSignedUrls(paths, 3600); const o = {}; (data || []).forEach(u => o[u.path] = u.signedUrl); return o; }
 async function fiche() {
-  const i = items.find(x => x.id === openId); if (!i) { openId = null; return list(); }
+  const i = items.find(x => x.id === openId); if (!i) { openId = null; return list(); } prefetchGeo([i]);
   const d = drafts[i.id] = drafts[i.id] || (await DB.get('draft-' + i.id).catch(() => null)) || { photos: [], commentaire: '' };
   const done = ['controle', 'cloturee', 'attente'].includes(i.statut), rep = i.statut === 'reprendre', others = i.techs.filter(x => x !== tech.id), step = { planifiee: 0, enroute: 1, encours: 2, reprendre: 2, controle: 3, attente: 3, cloturee: 3 }[i.statut];
   if (i.note_bureau && !i.note_lue && !preview && online) { i.note_lue = true; sb.rpc('tech_note_lue', { p_id: i.id }).then(() => DB.set('cache', { team, tech, items, at: Date.now() })); }
@@ -366,11 +367,42 @@ function dictate() {
 
 /* ---------- GPS : Waze, Plans, Google Maps ---------- */
 const NAV = { waze: { n: 'Waze', c: '#33CCFF', e: ic('navigation'), u: q => 'https://waze.com/ul?q=' + q + '&navigate=yes' }, plans: { n: 'Plans (Apple)', c: '#34C759', e: ic('map'), u: q => 'https://maps.apple.com/?daddr=' + q }, google: { n: 'Google Maps', c: '#4285F4', e: ic('map-pin'), u: q => 'https://www.google.com/maps/dir/?api=1&destination=' + q } };
+/* Recherche d'adresses : Base Adresse Nationale (IGN), puis ancienne API Adresse, puis OpenStreetMap (Photon) si les deux premières ne répondent pas.
+   Chaque service a 4 s pour répondre ; une panne d'un service ne bloque plus les propositions. */
+const geoFetch = (u, ms) => { const c = new AbortController(), t = setTimeout(() => c.abort(), ms || 4000); return fetch(u, { signal: c.signal }).then(r => { clearTimeout(t); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }); };
+const geoBan = f => ({ ...f.properties, lon: f.geometry?.coordinates?.[0], lat: f.geometry?.coordinates?.[1] });
+const geoPhoton = f => { const p = f.properties || {}, num = p.housenumber, rue = p.street || (p.type === 'street' ? p.name : '');
+  return { name: num && rue ? num + ' ' + rue : rue || p.name || '', label: [num, rue || p.name, p.postcode, p.city].filter(Boolean).join(' '), postcode: p.postcode || '', city: p.city || p.town || p.village || p.locality || '', type: num ? 'housenumber' : (p.type === 'city' ? 'municipality' : 'street'), context: p.county || p.state || '', lon: f.geometry?.coordinates?.[0], lat: f.geometry?.coordinates?.[1] }; };
+let geoFail = 0;
+async function geoSearch(q, limit, auto) {
+  const qs = `q=${encodeURIComponent(q)}&limit=${limit || 6}&lat=43.514&lon=4.988${auto === false ? '' : '&autocomplete=1'}`;
+  const srcs = [['https://data.geopf.fr/geocodage/search?index=address&' + qs, j => (j.features || []).map(geoBan)],
+    ['https://api-adresse.data.gouv.fr/search/?' + qs, j => (j.features || []).map(geoBan)],
+    [`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&lang=fr&limit=${limit || 6}&lat=43.514&lon=4.988&bbox=-5.5,41.2,9.8,51.2`, j => (j.features || []).filter(f => (f.properties?.countrycode || 'FR') === 'FR').map(geoPhoton)]];
+  for (const [u, map] of srcs) { try { const r = map(await geoFetch(u)); if (r.length || u.includes('photon')) return r; } catch (e) { if (++geoFail === 3 && typeof sb !== 'undefined') try { sb.from('journal').insert({ quoi: 'adresse_panne', detail: { service: u.split('/')[2], err: String(e.message || e) } }).then(() => { }, () => { }); } catch (x) { } } }
+  return [];
+}
+/* Itinéraire au point GPS exact (et pas par le texte de l'adresse, que Waze interprète parfois mal : mauvaise ville, rue voisine…) */
+let geoC = {}; try { geoC = JSON.parse(localStorage.getItem('bk-geo') || '{}'); } catch (e) { }
+const geoKey = i => [i.adresse, i.cp, i.ville].map(x => String(x || '').trim().toLowerCase()).join('|');
+async function geoPoint(i) {
+  const k = geoKey(i); if (!i.adresse && !i.ville) return null; if (geoC[k]) return geoC[k];
+  try { const r = await geoSearch([i.adresse, i.cp, i.ville].filter(Boolean).join(' '), 5, false);
+    const ok = r.filter(a => a.lat && a.lon && (!i.cp || !a.postcode || a.postcode === String(i.cp).trim()));
+    const best = ok.find(a => a.type === 'housenumber') || ok[0]; if (!best) return null;
+    geoC[k] = { lat: +(+best.lat).toFixed(6), lon: +(+best.lon).toFixed(6), exact: best.type === 'housenumber' };
+    try { const ks = Object.keys(geoC); if (ks.length > 400) delete geoC[ks[0]]; localStorage.setItem('bk-geo', JSON.stringify(geoC)); } catch (e) { }
+    return geoC[k]; } catch (e) { return null; } }
+const prefetchGeo = list => { (list || []).filter(i => i && (i.adresse || i.ville) && !geoC[geoKey(i)]).slice(0, 12).forEach((i, n) => setTimeout(() => geoPoint(i), n * 300)); };
+const navUrl = (app, i) => { const g = geoC[geoKey(i)], q = encodeURIComponent(fullAddr(i) || i.ville || '');
+  if (!g) return NAV[app].u(q); const ll = g.lat + ',' + g.lon;
+  return app === 'waze' ? `https://waze.com/ul?ll=${ll}&navigate=yes&zoom=17` : app === 'plans' ? `https://maps.apple.com/?daddr=${ll}&q=${q}` : `https://www.google.com/maps/dir/?api=1&destination=${ll}`; };
 function navTo(i) {
-  if (!i) return; const q = encodeURIComponent(fullAddr(i) || i.ville || '');
-  if (navPref && NAV[navPref]) { window.open(NAV[navPref].u(q), '_blank'); return; }
+  if (!i) return; if (!geoC[geoKey(i)]) geoPoint(i);
+  if (navPref && NAV[navPref]) { window.open(navUrl(navPref, i), '_blank'); return; }
   let sh = scr().querySelector('.sheet'); if (!sh) { sh = document.createElement('div'); sh.className = 'sheet'; scr().appendChild(sh); }
-  sh.innerHTML = `<div class="in"><h3>Itinéraire</h3><p>${E(fullAddr(i))}</p><div class="apps">${Object.entries(NAV).map(([k, v]) => `<a href="${v.u(q)}" target="_blank" rel="noopener" data-app="${k}"><i style="background:${v.c}">${v.e}</i>${v.n}</a>`).join('')}</div><label><input type="checkbox" id="rememb" checked> Toujours utiliser cette application</label><button class="cancel">Annuler</button></div>`;
+  sh.innerHTML = `<div class="in"><h3>Itinéraire</h3><p>${E(fullAddr(i))}</p><div class="apps">${Object.entries(NAV).map(([k, v]) => `<a href="${navUrl(k, i)}" target="_blank" rel="noopener" data-app="${k}"><i style="background:${v.c}">${v.e}</i>${v.n}</a>`).join('')}</div><label><input type="checkbox" id="rememb" checked> Toujours utiliser cette application</label><button class="cancel">Annuler</button></div>`;
+  geoPoint(i).then(() => sh.querySelectorAll('[data-app]').forEach(a => { a.href = navUrl(a.dataset.app, i); }));
   sh.classList.add('on'); sh.onclick = e => { if (e.target === sh || e.target.classList.contains('cancel')) sh.classList.remove('on'); };
   sh.querySelectorAll('[data-app]').forEach(a => a.onclick = () => { if ($('#rememb').checked) { navPref = a.dataset.app; try { localStorage.setItem('bk-nav', navPref); } catch (e) { } } sh.classList.remove('on'); });
 }
@@ -507,7 +539,7 @@ function quickNew(date, heure, ex) {
   const f = $('#qf'), box = f.querySelector('.qac'); let tm, seq = 0;
   f.adresse.oninput = () => { clearTimeout(tm); const q = f.adresse.value.trim(); if (q.length < 4) return box.hidden = true;
     tm = setTimeout(async () => { const my = ++seq; let r = [];
-      try { const j = await fetch('https://data.geopf.fr/geocodage/search?index=address&limit=5&lat=43.514&lon=4.988&autocomplete=1&q=' + encodeURIComponent(q)).then(x => x.json()); r = (j.features || []).map(x => x.properties); } catch (e) { }
+      try { r = await geoSearch(q, 5); } catch (e) { }
       if (my !== seq) return; const n = ((q.match(/^\s*(\d+\s*(?:bis|ter|quater|[a-d])?)\b[\s,]*/i) || [])[1] || '').trim(), nm = a => a.type === 'street' && n && !/^\d/.test(a.name || '') ? n + ' ' + a.name : a.name;
       box.innerHTML = r.map((a, k) => `<button type="button" data-k="${k}"><b>${E(nm(a))}</b><small>${E(a.postcode + ' ' + a.city)}</small></button>`).join(''); box.hidden = !r.length;
       box.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { const a = r[+b.dataset.k]; f.adresse.value = a.type === 'municipality' ? '' : nm(a); f.cp.value = a.postcode || ''; f.ville.value = a.city || ''; box.hidden = true; f.complement.focus(); }); }, 250); };
@@ -534,16 +566,35 @@ function eqZoom(html, list, k) { let z = $('#eqz'); if (!z) { z = document.creat
   const close = () => { z.classList.remove('on'); z.innerHTML = ''; };
   if (!list) { z.innerHTML = html + '<button aria-label="Fermer">×</button>'; z.classList.add('on'); z.onclick = close; return; }
   let i = k || 0;
-  const draw = () => { z.innerHTML = `<img class="zimg" src="${list[i].u}" alt="" draggable="false"><button aria-label="Fermer" data-zx>×</button>${list.length > 1 ? `<button class="zar l" data-zp aria-label="Photo précédente">‹</button><button class="zar r" data-zn aria-label="Photo suivante">›</button>` : ''}<div class="znav">${list.length > 1 ? (i + 1) + ' / ' + list.length : ''}${list[i].t ? `<small>${E(list[i].t)}</small>` : ''}<small>${list.length > 1 ? 'Glissez ← → pour changer · ' : ''}tirez vers le bas pour fermer</small></div>`; };
+  const draw = () => { z.innerHTML = `<img class="zimg" src="${list[i].u}" alt="" draggable="false"><button aria-label="Fermer" data-zx>×</button>${list.length > 1 ? `<button class="zar l" data-zp aria-label="Photo précédente">‹</button><button class="zar r" data-zn aria-label="Photo suivante">›</button>` : ''}<div class="znav">${list.length > 1 ? (i + 1) + ' / ' + list.length : ''}${list[i].t ? `<small>${E(list[i].t)}</small>` : ''}<small>${list.length > 1 ? 'Glissez ← → pour changer · ' : ''}tirez vers le bas pour fermer · pincez pour zoomer</small></div>`; };
   const go = n => { if (list.length < 2) return; i = (i + n + list.length) % list.length; draw(); };
   draw(); z.classList.add('on');
   z.onclick = e => { if (e.target.closest('[data-zp]')) return go(-1); if (e.target.closest('[data-zn]')) return go(1); if (e.target.closest('[data-zx]') || e.target === z) close(); };
-  let x0 = null, y0 = 0, dx = 0, dy = 0;
-  z.ontouchstart = e => { if (e.touches.length > 1) { x0 = null; return; } x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = dy = 0; const im = z.querySelector('.zimg'); if (im) im.style.transition = 'none'; };
-  z.ontouchmove = e => { if (x0 === null) return; e.preventDefault(); dx = e.touches[0].clientX - x0; dy = e.touches[0].clientY - y0; const im = z.querySelector('.zimg'); if (!im) return;
-    if (Math.abs(dy) > Math.abs(dx) && dy > 0) { im.style.transform = `translateY(${dy}px) scale(${Math.max(.75, 1 - dy / 900)})`; z.style.background = `rgba(0,0,0,${Math.max(.3, .92 - dy / 500)})`; } else im.style.transform = `translateX(${dx}px)`; };
-  z.ontouchend = () => { if (x0 === null) return; x0 = null; const im = z.querySelector('.zimg'); z.style.background = ''; if (im) { im.style.transition = ''; im.style.transform = ''; }
-    if (dy > 110 && Math.abs(dy) > Math.abs(dx)) return close(); if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy)) go(dx < 0 ? 1 : -1); };
+  /* Gestes : pincer pour zoomer (jusqu'à 5×), double-tap pour zoomer/dézoomer, glisser pour se déplacer dans la photo zoomée.
+     Photo non zoomée : glisser ← → pour changer de photo, tirer vers le bas pour fermer. */
+  let sc = 1, tx = 0, ty = 0, st = null, lastTap = 0;
+  const im = () => z.querySelector('.zimg');
+  const apply = anim => { const m = im(); if (!m) return; m.style.transition = anim ? 'transform .2s ease' : 'none'; m.style.transform = `translate(${tx}px,${ty}px) scale(${sc})`; };
+  const clamp = () => { const m = im(); if (!m) return; if (sc <= 1.02) { sc = 1; tx = ty = 0; return; } const w = m.offsetWidth * sc, h = m.offsetHeight * sc, mx = Math.max(0, (w - innerWidth) / 2 + 20), my = Math.max(0, (h - innerHeight) / 2 + 20); tx = Math.max(-mx, Math.min(mx, tx)); ty = Math.max(-my, Math.min(my, ty)); };
+  const dist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  const reset = () => { sc = 1; tx = ty = 0; };
+  const go0 = go; const goR = n => { reset(); go0(n); };
+  z.onclick = e => { if (e.target.closest('[data-zp]')) return goR(-1); if (e.target.closest('[data-zn]')) return goR(1); if (e.target.closest('[data-zx]') || (e.target === z && sc === 1)) close(); };
+  z.ontouchstart = e => { const t = e.touches;
+    if (t.length === 2) { st = { mode: 'pinch', d: dist(t), sc, tx, ty }; return; }
+    if (t.length !== 1) return; const now = Date.now();
+    if (now - lastTap < 280 && e.target.classList.contains('zimg')) { lastTap = 0; if (sc > 1) reset(); else { const r = im().getBoundingClientRect(); sc = 2.5; tx = (r.left + r.width / 2 - t[0].clientX) * 1.5; ty = (r.top + r.height / 2 - t[0].clientY) * 1.5; clamp(); } apply(true); st = null; return; }
+    lastTap = now; st = { mode: sc > 1 ? 'pan' : 'swipe', x: t[0].clientX, y: t[0].clientY, tx, ty, dx: 0, dy: 0 }; };
+  z.ontouchmove = e => { if (!st) return; e.preventDefault(); const t = e.touches;
+    if (st.mode === 'pinch' && t.length === 2) { sc = Math.max(1, Math.min(5, st.sc * dist(t) / st.d)); tx = st.tx; ty = st.ty; clamp(); apply(); return; }
+    if (t.length !== 1) return; const dx = t[0].clientX - st.x, dy = t[0].clientY - st.y; st.dx = dx; st.dy = dy;
+    if (st.mode === 'pan') { tx = st.tx + dx; ty = st.ty + dy; clamp(); apply(); return; }
+    const m = im(); if (!m) return; m.style.transition = 'none';
+    if (Math.abs(dy) > Math.abs(dx) && dy > 0) { m.style.transform = `translateY(${dy}px) scale(${Math.max(.75, 1 - dy / 900)})`; z.style.background = `rgba(0,0,0,${Math.max(.3, .92 - dy / 500)})`; } else m.style.transform = `translateX(${dx}px)`; };
+  z.ontouchend = e => { if (!st) return; const s0 = st;
+    if (s0.mode === 'pinch') { if (e.touches.length === 0) { st = null; clamp(); apply(true); } return; }
+    st = null; if (s0.mode === 'pan') return; z.style.background = ''; apply(true);
+    if (s0.dy > 110 && Math.abs(s0.dy) > Math.abs(s0.dx)) return close(); if (Math.abs(s0.dx) > 60 && Math.abs(s0.dx) > Math.abs(s0.dy)) goR(s0.dx < 0 ? 1 : -1); };
 }
 /* Tirer la fiche vers le bas (quand on est tout en haut) pour la fermer, comme Instagram */
 function pullClose(lb) { if (lb.dataset.pull) return; lb.dataset.pull = 1; let y0 = null, dy = 0, card = null;

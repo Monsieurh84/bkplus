@@ -59,13 +59,22 @@ function acIntervention(f, i) {
   markLinked(f.client, !!i.client_id);
 }
 /* Adresse : suggestions de la Base Adresse Nationale (comme Apple Plans), remplit CP et ville */
-async function searchAdresse(q) {
-  const qs = `q=${encodeURIComponent(q)}&limit=6&lat=43.514&lon=4.988&autocomplete=1`;
-  for (const u of ['https://data.geopf.fr/geocodage/search?index=address&', 'https://api-adresse.data.gouv.fr/search/?']) {
-    try { const r = await fetch(u + qs); if (!r.ok) continue; const j = await r.json(); return { data: (j.features || []).map(x => x.properties) }; } catch (e) { }
-  }
-  return { data: [] };
+/* Recherche d'adresses : Base Adresse Nationale (IGN), puis ancienne API Adresse, puis OpenStreetMap (Photon) si les deux premières ne répondent pas.
+   Chaque service a 4 s pour répondre ; une panne d'un service ne bloque plus les propositions. */
+const geoFetch = (u, ms) => { const c = new AbortController(), t = setTimeout(() => c.abort(), ms || 4000); return fetch(u, { signal: c.signal }).then(r => { clearTimeout(t); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }); };
+const geoBan = f => ({ ...f.properties, lon: f.geometry?.coordinates?.[0], lat: f.geometry?.coordinates?.[1] });
+const geoPhoton = f => { const p = f.properties || {}, num = p.housenumber, rue = p.street || (p.type === 'street' ? p.name : '');
+  return { name: num && rue ? num + ' ' + rue : rue || p.name || '', label: [num, rue || p.name, p.postcode, p.city].filter(Boolean).join(' '), postcode: p.postcode || '', city: p.city || p.town || p.village || p.locality || '', type: num ? 'housenumber' : (p.type === 'city' ? 'municipality' : 'street'), context: p.county || p.state || '', lon: f.geometry?.coordinates?.[0], lat: f.geometry?.coordinates?.[1] }; };
+let geoFail = 0;
+async function geoSearch(q, limit, auto) {
+  const qs = `q=${encodeURIComponent(q)}&limit=${limit || 6}&lat=43.514&lon=4.988${auto === false ? '' : '&autocomplete=1'}`;
+  const srcs = [['https://data.geopf.fr/geocodage/search?index=address&' + qs, j => (j.features || []).map(geoBan)],
+    ['https://api-adresse.data.gouv.fr/search/?' + qs, j => (j.features || []).map(geoBan)],
+    [`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&lang=fr&limit=${limit || 6}&lat=43.514&lon=4.988&bbox=-5.5,41.2,9.8,51.2`, j => (j.features || []).filter(f => (f.properties?.countrycode || 'FR') === 'FR').map(geoPhoton)]];
+  for (const [u, map] of srcs) { try { const r = map(await geoFetch(u)); if (r.length || u.includes('photon')) return r; } catch (e) { if (++geoFail === 3 && typeof sb !== 'undefined') try { sb.from('journal').insert({ quoi: 'adresse_panne', detail: { service: u.split('/')[2], err: String(e.message || e) } }).then(() => { }, () => { }); } catch (x) { } } }
+  return [];
 }
+async function searchAdresse(q) { return { data: await geoSearch(q, 6) }; }
 /* Numéro tapé par l'utilisateur, gardé quand la base ne connaît que la rue (ex. « 15, boulevard Pasteur ») */
 const numTape = q => ((String(q || '').match(/^\s*(\d+\s*(?:bis|ter|quater|[a-d])?)\b[\s,]*/i) || [])[1] || '').replace(/\s+/g, ' ').trim();
 const adrNom = (a, q) => { const n = numTape(q); return a.type === 'street' && n && !/^\d/.test(a.name || '') ? n + ' ' + a.name : (a.name || ''); };
