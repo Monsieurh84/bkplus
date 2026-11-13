@@ -176,7 +176,7 @@ function syncHtml() {
   if (!online) return `<button class="sync off" id="sync" aria-label="Hors connexion"><i></i>Hors ligne${pending ? ' · ' + pending : ''}</button>`;
   if (blocked) return `<button class="sync err" id="sync"><i></i>${blocked} envoi${blocked > 1 ? 's' : ''} bloqué${blocked > 1 ? 's' : ''}</button>`;
   if (pending) return `<button class="sync busy" id="sync"><i></i>Envoi…</button>`;
-  return `<button class="sync" id="sync" aria-label="Synchronisé"><i></i>Synchronisé</button>`;
+  return `<button class="sync" id="sync" aria-label="Synchronisé"><i></i>À jour</button>`;
 }
 function topBar(title, sub, back) { return `<div class="top">${back ? '<button class="back" id="back" aria-label="Retour">‹</button>' : ''}<div class="ttl"><h1>${title}</h1><small>${sub}</small></div><button class="sun" id="sun" aria-label="Mode plein soleil">${sun ? ic('contrast') : ic('sun')}</button>${syncHtml()}</div>`; }
 function bindTop() {
@@ -184,7 +184,7 @@ function bindTop() {
   $('#sun').onclick = () => { sun = !sun; try { localStorage.setItem('bk-sun', sun ? '1' : '0'); } catch (e) { } scr().classList.toggle('sunmode', sun); $('#sun').innerHTML = sun ? ic('contrast') : ic('sun'); };
   const b = $('#back'); if (b) b.onclick = () => { openId = null; render(); };
 }
-function previewBar() { return preview ? `<div class="preview">${ic('eye')} Accès bureau · planning de <select id="pv">${team.map(t => `<option value="${t.id}" ${t.id === tech.id ? 'selected' : ''}>${E(t.nom)}</option>`).join('')}</select><a class="pvb" href="index.html">${ic('briefcase')} Bureau complet</a></div>` : ''; }
+function previewBar() { return preview ? `<div class="preview">${ic('eye')} Planning de <select id="pv">${team.map(t => `<option value="${t.id}" ${t.id === tech.id ? 'selected' : ''}>${E(t.nom)}</option>`).join('')}</select><a class="pvb" href="index.html">${ic('briefcase')} Bureau</a></div>` : ''; }
 function bindPreview() { const s = $('#pv'); if (s) s.onchange = async () => { tech = team.find(t => t.id === s.value); try { sessionStorage.setItem('bk-preview', tech.id); } catch (e) { } openId = null; await load(); subscribe(); render(); }; }
 
 /* ---------- Liste ---------- */
@@ -247,7 +247,7 @@ async function fiche() {
       ${i.note_reponse ? `<div class="brep"><small>Votre réponse${i.note_rep_at ? ' · ' + new Date(i.note_rep_at).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}</small>${E(i.note_reponse)}</div>` : ''}
       <div class="brf"><textarea id="brt" rows="2" placeholder="Répondre au bureau…"></textarea><button id="brs" type="button">${ic('message')} ${i.note_reponse ? 'Renvoyer' : 'Répondre'}</button></div></div>` : ''}
     ${rep && !i.note_bureau ? '<div class="bmsg rep"><small>↺ À reprendre</small><p>Le bureau vous demande de reprendre cette intervention.</p></div>' : ''}
-    ${i.devis && !done ? '<div class="bmsg dv"><small>📝 Visite pour devis</small><p>Prenez des photos et notez les mesures / le matériel : le bureau fera le devis à partir de votre retour.</p></div>' : ''}
+    <div class="nat ${i.devis ? 'dv' : i.type}">${i.devis ? '📝 Devis' : i.type === 'intervention' ? '🔧 Intervention' : i.type === 'interne' ? '📅 Rendez-vous' : '📌 Tâche'}${i.devis && !done ? '<small>photos + mesures pour le devis</small>' : ''}</div>
     ${done ? `<div class="done-box">${i.statut === 'attente' ? '⏸ En attente côté bureau' : '✓ Terminée et envoyée au bureau'}</div>` : ''}
     ${isJob ? `<div class="step"><div class="${step >= 0 ? 'on' : ''}">Prévue</div><div class="${step >= 1 ? 'on' : ''}">En route</div><div class="${step >= 2 ? 'on' : ''}">Sur place</div><div class="${step >= 3 ? 'on' : ''}">Terminée</div></div>` : ''}
     ${isJob && who(i) ? `<div class="who2">${i.client ? `<div><small>Client</small><b>${E(i.client)}</b></div>` : ''}${i.occupant ? `<div><small>Occupant</small><b>${E(i.occupant)}</b></div>` : ''}</div>` : ''}
