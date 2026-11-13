@@ -91,7 +91,8 @@ async function load() {
   (ex || []).forEach(x => { if (!data.some(y => y.id === x.id)) data.push(x); });
   const ids = (data || []).map(i => i.id);
   const { data: it } = ids.length ? await sb.from('intervention_techs').select('*').in('intervention_id', ids) : { data: [] };
-  items = (data || []).map(i => ({ ...i, techs: (it || []).filter(x => x.intervention_id === i.id).map(x => x.tech_id) }));
+  items = (data || []).map(i => { const rows = (it || []).filter(x => x.intervention_id === i.id), o = rows.find(x => x.tech_id === tech.id && x.heure);
+    return { ...i, techs: rows.map(x => x.tech_id), ...(o && !i.epingle && i.heure ? { heure: o.heure, duree: o.duree, heure_eq: i.heure, duree_eq: i.duree } : {}) }; });
   await DB.set('cache', { team, tech, items, at: Date.now() });
   return alertNew();
 }
@@ -479,14 +480,15 @@ async function equipe() {
   const m0 = addDays(monday(new Date()), 7 * wkE), a = iso(m0), b = iso(addDays(m0, 6)), key = a;
   const H0 = 7, H1 = 20, today = iso(new Date());
   if (eqKey !== key || !eqData) { scr().innerHTML = topBar('Planning équipe', 'Semaine du ' + lbl(a), false) + previewBar() + '<div class="scroll"><div class="panel"><p>Chargement…</p></div></div>'; bindTop(); bindPreview();
-    const { data, error } = await sb.from('interventions').select('id,date,heure,duree,epingle,type,client,occupant,tel,adresse,complement,cp,ville,travaux,statut,devis,devis_fait,commentaire,photos,valide_par,fin_at,intervention_techs(tech_id),pieces(nom,type,path,prive)').gte('date', a).lte('date', b);
+    let { data, error } = await sb.from('interventions').select('id,date,heure,duree,epingle,type,client,occupant,tel,adresse,complement,cp,ville,travaux,statut,devis,devis_fait,commentaire,photos,valide_par,fin_at,intervention_techs(tech_id,heure,duree),pieces(nom,type,path,prive)').gte('date', a).lte('date', b);
+    if (error && navigator.onLine) ({ data, error } = await sb.from('interventions').select('id,date,heure,duree,epingle,type,client,occupant,tel,adresse,complement,cp,ville,travaux,statut,devis,devis_fait,commentaire,photos,valide_par,fin_at,intervention_techs(tech_id),pieces(nom,type,path,prive)').gte('date', a).lte('date', b));
     if (error) { toast('Pas de réseau : vue équipe indisponible'); tab = 'jour'; return list(); }
-    eqData = (data || []).map(i => ({ ...i, techs: i.intervention_techs.map(x => x.tech_id) })); eqKey = key; }
+    eqData = (data || []).map(i => ({ ...i, techs: i.intervention_techs.map(x => x.tech_id), hx: Object.fromEntries(i.intervention_techs.filter(x => x.heure).map(x => [x.tech_id, x])) })); eqKey = key; }
   const all = eqData, days = [...Array(7)].map((_, k) => iso(addDays(m0, k))).filter((d, k) => k < 5 || all.some(i => i.date === d));
   const lanes = d => team.filter(t => all.some(i => i.date === d && !i.epingle && i.heure && i.techs.includes(t.id)));
   const top0 = 210, px = Math.max(34, Math.floor((window.innerHeight - top0) / (H1 - H0)));
   const mm = t => { const [h, m] = String(t).split(':').map(Number); return h * 60 + (m || 0); };
-  const col = d => { const ls = lanes(d); return `<div class="eqd ${d === today ? 'td' : ''}" data-day="${d}" style="height:${(H1 - H0) * px}px;background-image:repeating-linear-gradient(to bottom,#E6E8EF 0 1px,transparent 1px ${px}px)">${ls.map((t, k) => all.filter(i => i.date === d && !i.epingle && i.heure && i.techs.includes(t.id)).map(i => {
+  const col = d => { const ls = lanes(d); return `<div class="eqd ${d === today ? 'td' : ''}" data-day="${d}" style="height:${(H1 - H0) * px}px;background-image:repeating-linear-gradient(to bottom,#E6E8EF 0 1px,transparent 1px ${px}px)">${ls.map((t, k) => all.filter(i => i.date === d && !i.epingle && i.heure && i.techs.includes(t.id)).map(i => i.hx && i.hx[t.id] ? { ...i, heure: i.hx[t.id].heure, duree: i.hx[t.id].duree } : i).map(i => {
       const s0 = Math.max(mm(i.heure), H0 * 60), s1 = Math.min(mm(i.heure) + Math.round((+i.duree || 1) * 60), H1 * 60); if (s1 <= H0 * 60) return '';
       return `<button class="eqe ${i.statut}" data-eq="${i.id}" style="top:${(s0 - H0 * 60) / 60 * px}px;height:${Math.max(14, (s1 - s0) / 60 * px - 2)}px;left:${k / ls.length * 100}%;width:calc(${100 / ls.length}% - 2px);--c:${t.couleur}">${ls.length <= 2 ? E((i.client || i.occupant || i.travaux || '').slice(0, 18)) : ''}</button>`; }).join('')).join('')}</div>`; };
   const pins = d => all.filter(i => i.date === d && (i.epingle || !i.heure)).length;

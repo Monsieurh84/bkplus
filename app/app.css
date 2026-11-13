@@ -373,3 +373,5 @@ body.rzbody,body.rzbody *{cursor:ns-resize!important;user-select:none}
 .panel .form,.panel form.form{grid-template-columns:repeat(2,minmax(0,1fr))}
 @media (max-width:760px){.panel .form,.panel form.form{grid-template-columns:minmax(0,1fr)!important}.panel .btn{white-space:normal;text-align:center}}
 .lbt{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.lbt small{font-weight:600;color:var(--mute)}.lbt .i{width:15px;height:15px}details.box>summary{cursor:pointer;list-style:revert}
+.bkdlg-alt{background:#E8ECFB;color:#2239A9}
+.ev .hp{font-style:normal;margin-right:2px}

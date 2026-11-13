@@ -4,12 +4,12 @@ const $ = s => document.querySelector(s), root = $('#root');
 /* Fenêtres de confirmation de l'application (remplacent celles du navigateur, qui affichaient l'adresse du site) */
 function dlgBox(msg, o) { o = o || {}; return new Promise(res => {
   const d = document.createElement('div'); d.className = 'bkdlg';
-  d.innerHTML = `<div class="bkdlg-in" role="dialog" aria-modal="true"><p></p>${o.input ? `<${o.multi ? 'textarea rows="3"' : 'input'} class="bkdlg-f" ${o.password ? 'type="password"' : ''} autocomplete="off">${o.multi ? '</textarea>' : ''}` : ''}<div class="bkdlg-b"><button type="button" class="bkdlg-no">${o.cancel || 'Annuler'}</button><button type="button" class="bkdlg-ok ${o.danger ? 'red' : ''}">${o.ok || 'OK'}</button></div></div>`;
+  d.innerHTML = `<div class="bkdlg-in" role="dialog" aria-modal="true"><p></p>${o.input ? `<${o.multi ? 'textarea rows="3"' : 'input'} class="bkdlg-f" ${o.password ? 'type="password"' : ''} autocomplete="off">${o.multi ? '</textarea>' : ''}` : ''}<div class="bkdlg-b"><button type="button" class="bkdlg-no">${o.cancel || 'Annuler'}</button>${o.alt ? `<button type="button" class="bkdlg-alt">${o.alt}</button>` : ''}<button type="button" class="bkdlg-ok ${o.danger ? 'red' : ''}">${o.ok || 'OK'}</button></div></div>`;
   d.querySelector('p').textContent = msg; const f = d.querySelector('.bkdlg-f'); if (f && o.value) f.value = o.value; if (f && o.placeholder) f.placeholder = o.placeholder;
   const end = v => { d.remove(); document.removeEventListener('keydown', key, true); res(v); };
   const ok = () => end(o.input ? f.value : true), no = () => end(o.input ? null : false);
   const key = e => { if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); no(); } else if (e.key === 'Enter' && !(o.multi && e.shiftKey) && !(e.target.tagName === 'BUTTON')) { e.preventDefault(); e.stopImmediatePropagation(); ok(); } };
-  d.querySelector('.bkdlg-ok').onclick = ok; d.querySelector('.bkdlg-no').onclick = no; d.onclick = e => { if (e.target === d) no(); };
+  d.querySelector('.bkdlg-ok').onclick = ok; d.querySelector('.bkdlg-no').onclick = no; if (o.alt) d.querySelector('.bkdlg-alt').onclick = () => end('alt'); d.onclick = e => { if (e.target === d) no(); };
   document.addEventListener('keydown', key, true); document.body.appendChild(d); setTimeout(() => (f || d.querySelector('.bkdlg-ok')).focus(), 30); }); }
 const ask = (msg, o) => dlgBox(msg, { danger: /supprim|retirer/i.test(msg), ...(o || {}) });
 const askText = (msg, value, o) => dlgBox(msg, { input: true, value: value || '', ...(o || {}) });
@@ -117,11 +117,12 @@ const isWE = d => [0, 6].includes(new Date(d + 'T12:00').getDay());
 const weOn = () => showWE || inter.some(i => { const g = new Date(i.date + 'T12:00').getDay(); return g === 0 || g === 6; });
 async function loadPlanning() {
   const [a, b] = range();
-  const [r1, r2] = await Promise.all([
-    sb.from('interventions').select('*, intervention_techs(tech_id), pieces(id)').gte('date', a).lte('date', b),
+  let [r1, r2] = await Promise.all([
+    sb.from('interventions').select(window.__noHx ? '*, intervention_techs(tech_id), pieces(id)' : '*, intervention_techs(tech_id,heure,duree), pieces(id)').gte('date', a).lte('date', b),
     sb.from('absences').select('*').gte('date', a).lte('date', b)]);
+  if (r1.error && !window.__noHx) { window.__noHx = true; r1 = await sb.from('interventions').select('*, intervention_techs(tech_id), pieces(id)').gte('date', a).lte('date', b); }
   if (r1.error) return toast('Erreur : ' + r1.error.message);
-  inter = (r1.data || []).map(i => ({ ...i, techs: i.intervention_techs.map(x => x.tech_id), nbPieces: i.pieces.length }));
+  inter = (r1.data || []).map(i => ({ ...i, techs: i.intervention_techs.map(x => x.tech_id), hx: Object.fromEntries(i.intervention_techs.filter(x => x.heure).map(x => [x.tech_id, x])), nbPieces: i.pieces.length }));
   absences = r2.data || [];
 }
 /* Jours fériés (France métropolitaine) */
@@ -139,6 +140,8 @@ const mins = t => { const [h, m] = String(t || '00:00').split(':').map(Number); 
 const hm = m => pad(Math.floor(m / 60)) + ':' + pad(m % 60);
 const tint = (hex, a) => { const h = (hex || '#8B8FA3').replace('#', ''); const n = parseInt(h.length === 3 ? h.split('').map(x => x + x).join('') : h, 16); return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`; };
 const icoOf = i => (i.demande_id ? ic('camera') : '') + (i.nbPieces ? ic('paperclip') : '') + (i.materiel.length ? ic('package') : '') + (i.recurrent ? '↻' : '') + (i.chantier_id ? ic('helmet') : '');
+/* Horaire propre à un technicien dans une intervention d'équipe (ex. il part plus tôt) */
+const forT = (i, t) => { const o = i && i.hx && i.hx[t]; return o && o.heure && !isAllDay(i) ? { ...i, heure: o.heure, duree: o.duree, perso: true } : i; };
 const visTechs = () => techs.filter(t => !hidden.has(t.id));
 const isBureau = t => /bureau/i.test(t.fonction || '');
 
@@ -149,7 +152,7 @@ function ev(i, t, px, col, cols) {
   const short = h < 40, title = i.type === 'intervention' ? (i.client || i.occupant || i.ville || 'Intervention') : i.travaux;
   return `<div class="ev ${i.statut === 'cloturee' ? 'cl' : ''} ${short ? 'sh' : ''}" draggable="true" data-id="${i.id}" data-tech="${t}" title="${E(hh(i.heure) + '–' + fin(i.heure, i.duree) + ' · ' + title + (i.adresse ? ' · ' + i.adresse : ''))}"
     style="top:${top}px;height:${h - 2}px;left:calc(${col / cols * 100}% + 1px);width:calc(${100 / cols}% - 2px);--c:${c};--bg:${tint(c, .16)};--sc:${SC[i.statut]}">
-    <b><i class="sd"></i>${i.devis ? '<em class="dvt">DEVIS</em>' : ''}${E(title)}</b>${short ? '' : `<span>${hh(i.heure)}–${fin(i.heure, i.duree)}${i.type === 'intervention' && i.ville ? ' · ' + E(i.ville) : ''}</span>`}
+    <b><i class="sd"></i>${i.devis ? '<em class="dvt">DEVIS</em>' : ''}${E(title)}</b>${short ? '' : `<span>${i.perso ? '<em class="hp" title="Horaire propre à ce technicien">⏱</em>' : ''}${hh(i.heure)}–${fin(i.heure, i.duree)}${i.type === 'intervention' && i.ville ? ' · ' + E(i.ville) : ''}</span>`}
     ${h > 64 && i.type === 'intervention' ? `<span class="tr">${E(i.travaux || '')}</span>` : ''}${i.techs.length > 1 && h > 52 ? `<span class="avs">${avatars(i.techs)}</span>` : ''}<span class="ic2">${icoOf(i)}</span>${i.note_reponse && !i.note_rep_lue ? '<span class="nb rp" title="Nouvelle réponse du technicien">✉</span>' : i.note_bureau && !i.note_lue ? '<span class="nb" title="Message pas encore lu par le technicien">✉</span>' : ''}<i class="rzt" title="Glisser pour changer l’heure de début"></i><i class="rz" title="Glisser pour changer l’heure de fin"></i></div>`;
 }
 /* Répartit les interventions qui se chevauchent dans une même colonne */
@@ -164,7 +167,7 @@ function layout(list) {
 }
 function lane(d, t, px, withHead) {
   const ab = absences.find(a => a.tech_id === t.id && a.date === d);
-  const items = inter.filter(i => i.date === d && i.techs.includes(t.id) && !isAllDay(i));
+  const items = inter.filter(i => i.date === d && i.techs.includes(t.id) && !isAllDay(i)).map(i => forT(i, t.id));
   return `<div class="ln ${ab ? 'abs' : ''}" data-date="${d}" data-tech="${t.id}" style="--c:${t.couleur}">${withHead ? '' : `<span class="lh" style="background:${t.couleur}" title="${E(t.nom)}"></span>`}${layout(items).map(([i, c, n]) => ev(i, t.id, px, c, n)).join('')}</div>`;
 }
 const isMob = () => innerWidth <= 760;
@@ -266,7 +269,7 @@ function allDay(d, who, single) {
 /* Agrandir / rétrécir une intervention à la souris (poignée du haut ou du bas), par pas de 15 minutes */
 let rzEnd = 0, clk = 0;
 function resizeEv(e, c, px, top) {
-  e.preventDefault(); e.stopPropagation(); const i = inter.find(x => x.id === c.dataset.id); if (!i) return;
+  e.preventDefault(); e.stopPropagation(); const i0 = inter.find(x => x.id === c.dataset.id); if (!i0) return; const tid = c.dataset.tech, i = forT(i0, tid);
   const y0 = e.clientY, s0 = mins(i.heure), d0 = Math.round((+i.duree || 1) * 60), e0 = s0 + d0, top0 = c.offsetTop; let s = s0, d = d0;
   c.draggable = false; c.classList.add('rzing'); document.body.classList.add('rzbody');
   const tip = document.createElement('div'); tip.className = 'rztip' + (top ? ' up' : ''); c.appendChild(tip);
@@ -276,9 +279,15 @@ function resizeEv(e, c, px, top) {
     else d = Math.max(15, Math.min(H1 * 60 - s, d0 + k));
     c.style.height = Math.max(18, d / 60 * px - 2) + 'px'; show(); };
   const up = async () => { document.removeEventListener('mousemove', mv); document.removeEventListener('mouseup', up); rzEnd = Date.now(); c.classList.remove('rzing'); document.body.classList.remove('rzbody'); tip.remove(); c.draggable = true;
-    if (d === d0 && s === s0) return; const row = { duree: Math.round(d / 60 * 10000) / 10000 }; if (s !== s0) row.heure = hm(s); Object.assign(i, row);
-    const { error } = await sb.from('interventions').update(row).eq('id', i.id); if (error) { toast('Erreur : ' + error.message); }
-    else toast((i.client || i.occupant || i.travaux || 'Intervention') + ' : ' + hh(hm(s)) + '–' + hh(hm(s + d)));
+    if (d === d0 && s === s0) return; const row = { duree: Math.round(d / 60 * 10000) / 10000 }; if (s !== s0) row.heure = hm(s);
+    const nom = (T(tid) || {}).nom || 'ce technicien', lib = (i.client || i.occupant || i.travaux || 'Intervention') + ' : ' + hh(hm(s)) + '–' + hh(hm(s + d));
+    let seul = i.perso;
+    if (!seul && i0.techs.length > 1) { const r = await ask(`Cette intervention est faite à ${i0.techs.length} (${names(i0.techs)}). Nouvel horaire ${hh(hm(s))}–${hh(hm(s + d))} pour :`, { ok: 'Seulement ' + nom, alt: 'Toute l’équipe', cancel: 'Annuler' });
+      if (!r) { await loadPlanning(); return planning(); } seul = r === true; }
+    let error;
+    if (seul) ({ error } = await sb.from('intervention_techs').update({ heure: hm(s), duree: row.duree }).match({ intervention_id: i0.id, tech_id: tid }));
+    else ({ error } = await sb.from('interventions').update({ heure: hm(s), duree: row.duree }).eq('id', i0.id));
+    if (error) toast('Erreur : ' + error.message); else toast(lib + (seul && i0.techs.length > 1 ? ' · seulement ' + nom : ''));
     await loadPlanning(); planning(); };
   show(); document.addEventListener('mousemove', mv); document.addEventListener('mouseup', up);
 }
@@ -288,7 +297,7 @@ function bindDnD(px) {
     c.onclick = e => { e.stopPropagation(); if (Date.now() - rzEnd < 400 || e.detail > 1) return; clearTimeout(clk); clk = setTimeout(() => { const i = inter.find(x => x.id === c.dataset.id); if (i) detail(i.id); }, 240); };
     c.ondblclick = e => { e.stopPropagation(); clearTimeout(clk); const i = inter.find(x => x.id === c.dataset.id); if (i) form(i); };
     const rz = c.querySelector('.rz'); if (rz) rz.onmousedown = e => resizeEv(e, c, px); const rt = c.querySelector('.rzt'); if (rt) rt.onmousedown = e => resizeEv(e, c, px, true);
-    c.oncontextmenu = e => { e.preventDefault(); ctxMenu(e, inter.find(x => x.id === c.dataset.id)); };
+    c.oncontextmenu = e => { e.preventDefault(); ctxMenu(e, inter.find(x => x.id === c.dataset.id), c.dataset.tech); };
     c.ondragstart = e => { if (c.classList.contains('rzing')) return e.preventDefault(); grab = e.offsetY || 0; c.classList.add('dragging'); e.dataTransfer.setData('text/plain', c.dataset.id + '|' + c.dataset.tech); };
     c.ondragend = () => c.classList.remove('dragging');
   });
@@ -303,7 +312,11 @@ function bindDnD(px) {
       if (absences.find(a => a.tech_id === to && a.date === d)) return toast(T(to).nom + ' est absent ce jour-là');
       const patch = { date: d };
       if (z.classList.contains('dc') && !i.epingle) { const r = z.getBoundingClientRect(); let m = H0 * 60 + Math.round(((e.clientY - r.top - grab) / px * 60) / 15) * 15; m = Math.max(H0 * 60, Math.min(m, H1 * 60 - 15)); patch.heure = hm(m); }
+      const own = i.hx && i.hx[from];
+      if (own && from === to && d === i.date && patch.heure) { const { error } = await sb.from('intervention_techs').update({ heure: patch.heure }).match({ intervention_id: id, tech_id: from }); if (error) return toast('Erreur : ' + error.message); await loadPlanning(); planning(); return toast(T(from).nom + ' : ' + hh(patch.heure) + ' (seulement lui)'); }
+      if (own && patch.heure) patch.heure = hm(Math.max(H0 * 60, mins(i.heure) + mins(patch.heure) - mins(own.heure)));
       const ops = [sb.from('interventions').update(patch).eq('id', id)];
+      if (patch.heure && i.hx) Object.values(i.hx).forEach(o => ops.push(sb.from('intervention_techs').update({ heure: hm(Math.max(H0 * 60, Math.min(H1 * 60 - 15, mins(o.heure) + mins(patch.heure) - mins(i.heure)))) }).match({ intervention_id: id, tech_id: o.tech_id })));
       if (from !== to && !i.techs.includes(to)) { ops.push(sb.from('intervention_techs').delete().match({ intervention_id: id, tech_id: from })); ops.push(sb.from('intervention_techs').insert({ intervention_id: id, tech_id: to })); }
       const res = await Promise.all(ops); const er = res.find(r => r.error); if (er) return toast('Erreur : ' + er.error.message);
       await loadPlanning(); planning(); const n = inter.find(x => x.id === id);
@@ -316,17 +329,18 @@ function bindDnD(px) {
     form(null, { pre: { date: z.dataset.date, heure: hm(m), duree: 1, techs: ln && ln.dataset.tech ? [ln.dataset.tech] : [] } });
   });
 }
-function ctxMenu(e, i) {
+function ctxMenu(e, i, tid) {
   if (!i) return; document.querySelectorAll('.ctx').forEach(x => x.remove());
   const m = document.createElement('div'); m.className = 'ctx';
   m.innerHTML = `<b>${E(i.type === 'intervention' ? (i.client || i.ville || 'Intervention') : i.travaux).slice(0, 40)}</b>
-    <button data-a="fi">${ic('eye')} Voir la fiche (photos, retour)</button><button data-a="rep">↺ À reprendre…</button><button data-a="dup">${ic('clipboard')} Dupliquer…</button><button data-a="ed">${ic('pencil')} Modifier</button><button data-a="p7">${ic('repeat')} Même chose la semaine suivante</button><button data-a="del" class="red">Supprimer</button>`;
+    <button data-a="fi">${ic('eye')} Voir la fiche (photos, retour)</button><button data-a="rep">↺ À reprendre…</button><button data-a="dup">${ic('clipboard')} Dupliquer…</button><button data-a="ed">${ic('pencil')} Modifier</button>${tid && i.hx && i.hx[tid] ? `<button data-a="al">↺ Remettre ${E(T(tid).nom)} à l’horaire de l’équipe</button>` : ''}<button data-a="p7">${ic('repeat')} Même chose la semaine suivante</button><button data-a="del" class="red">Supprimer</button>`;
   document.body.appendChild(m); const w = 250; m.style.left = Math.min(e.clientX, innerWidth - w - 8) + 'px'; m.style.top = Math.min(e.clientY, innerHeight - m.offsetHeight - 8) + 'px';
   const close = () => { m.remove(); document.removeEventListener('mousedown', out); }; const out = x => { if (!m.contains(x.target)) close(); }; setTimeout(() => document.addEventListener('mousedown', out), 0);
   m.querySelector('[data-a=fi]').onclick = () => { close(); detail(i.id); };
   m.querySelector('[data-a=rep]').onclick = () => { close(); aReprendre(i); };
   m.querySelector('[data-a=dup]').onclick = () => { close(); duplicate(i); };
   m.querySelector('[data-a=ed]').onclick = () => { close(); form(i); };
+  if (m.querySelector('[data-a=al]')) m.querySelector('[data-a=al]').onclick = async () => { close(); const { error } = await sb.from('intervention_techs').update({ heure: null, duree: null }).match({ intervention_id: i.id, tech_id: tid }); if (error) return toast('Erreur : ' + error.message); await loadPlanning(); planning(); toast(T(tid).nom + ' : horaire de l’équipe'); };
   m.querySelector('[data-a=p7]').onclick = () => { close(); duplicate(i, iso(addDays(new Date(i.date + 'T12:00'), 7))); };
   m.querySelector('[data-a=del]').onclick = async () => { close(); if (!await ask('Supprimer définitivement cette intervention ?')) return; const { error } = await sb.from('interventions').delete().eq('id', i.id); if (error) return toast('Erreur : ' + error.message); await refreshView(); toast('Intervention supprimée'); };
 }
@@ -457,7 +471,7 @@ async function detail(id, given) {
   const d = dem.data;
   openPanel(`<header><div><span class="tag s-${i.statut}" style="margin:0">${STAT_I[i.statut]}</span>${i.devis ? `<span class="tag t-dv">${ic('file')} Devis${i.devis_fait ? ' fait' : ''}</span>` : ''}${i.epingle ? '<span class="tag t-aff">' + ic('pin') + ' Dans la journée</span>' : ''}<h2 style="margin-top:8px">${E(i.type === 'intervention' ? ([i.client, i.occupant].filter(Boolean).join(' · ') || i.adresse || i.ville || 'Intervention') : i.travaux)}</h2>
     ${i.type === 'intervention' && (i.client || i.occupant) ? `<div style="font-weight:700;font-size:14px;margin-top:2px">${E([i.adresse, [i.cp, i.ville].filter(Boolean).join(' ')].filter(Boolean).join(', '))}</div>` : ''}
-    <div style="color:var(--mute);font-size:13.5px">${E(i.client || i.occupant ? '' : (i.ville || '') + ' · ')}${lbl(i.date, true)}${i.epingle ? '' : ' · ' + hh(i.heure) + '–' + fin(i.heure, i.duree)}</div></div><button class="x" aria-label="Fermer">×</button></header>
+    <div style="color:var(--mute);font-size:13.5px">${E(i.client || i.occupant ? '' : (i.ville || '') + ' · ')}${lbl(i.date, true)}${i.epingle ? '' : ' · ' + hh(i.heure) + '–' + fin(i.heure, i.duree)}${!i.epingle && i.hx ? Object.values(i.hx).map(o => ` · <b style="color:${T(o.tech_id).couleur}">${E(T(o.tech_id).nom)} ${hh(o.heure)}–${fin(o.heure, o.duree)}</b>`).join('') : ''}</div></div><button class="x" aria-label="Fermer">×</button></header>
   <div class="body">
     <div class="chips">${i.techs.map(t => `<span><i style="background:${T(t).couleur}"></i>${E(T(t).nom)}</span>`).join('')}${i.recurrent ? '<span>↻ Récurrente</span>' : ''}</div>
     ${i.type === 'intervention' ? `<dl class="kv"><dt>Client</dt><dd>${E(i.client || '—')}</dd><dt>Occupant</dt><dd>${E(i.occupant || '—')}</dd><dt>Téléphone</dt><dd>${i.tel ? `<a href="tel:${E(i.tel.replace(/\s/g, ''))}">${E(i.tel)}</a>` : '—'}</dd><dt>Adresse</dt><dd>${(() => { const ad = [i.adresse, [i.cp, i.ville].filter(Boolean).join(' ')].filter(Boolean).join(', '); return ad ? `<a class="plans" href="maps://?q=${encodeURIComponent(ad + ', France')}" title="Ouvrir dans Plans">${ic('map')} ${E(ad)}</a> <a class="gmaps" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(ad + ', France')}" target="_blank" rel="noopener">Google Maps</a>` : '—'; })()}${i.complement ? `<br><span style="color:var(--mute)">${E(i.complement)}</span>` : ''}</dd></dl>` : ''}
