@@ -347,7 +347,7 @@ function ctxMenu(e, i, tid) {
 function duplicate(i, date) {
   const keep = ['type', 'devis', 'heure', 'duree', 'epingle', 'client', 'client_id', 'occupant', 'tel', 'adresse', 'complement', 'cp', 'ville', 'travaux', 'materiel', 'recurrent', 'demande_id', 'chantier_id', 'affaire_id'];
   const pre = {}; keep.forEach(k => pre[k] = i[k]); pre.materiel = [...(i.materiel || [])]; pre.techs = [...i.techs]; pre.date = date || i.date;
-  form(null, { pre, ctx: 'Copie de l’intervention du ' + lbl(i.date) + ' · changez la date, l’horaire ou le technicien puis enregistrez' });
+  form(null, { pre, src: i, ctx: 'Copie de l’intervention du ' + lbl(i.date) + ' · changez la date, l’horaire ou le technicien puis enregistrez. Pour ajouter quelqu’un le même jour, cochez-le : il sera ajouté à cette intervention, sans doublon.' });
 }
 
 /* ================= Recherche d’interventions ================= */
@@ -610,6 +610,14 @@ async function form(i, opts) {
     try {
       let id = i.id, ids = [];
       const dates = isNew ? occ() : [row.date];
+      /* Copie le même jour : on propose d'ajouter la personne à l'intervention existante plutôt que de créer un doublon */
+      const src = isNew && opts.src && dates.length === 1 && row.date === opts.src.date && !opts.src.epingle === !pin ? opts.src : null;
+      if (src) { const adds = ts.filter(t => !src.techs.includes(t)), autre = !pin && (row.heure !== String(src.heure || '').slice(0, 5) || Math.abs(row.duree - (+src.duree || 0)) > 0.01);
+        const r = adds.length ? await ask(`${names(src.techs)} ${src.techs.length > 1 ? 'ont' : 'a'} déjà cette intervention (${lbl(src.date)}). Ajouter ${names(adds)} à cette même intervention (une seule fiche, pas de doublon) ?`, { ok: 'Ajouter ' + names(adds), alt: 'Créer une copie à part', cancel: 'Annuler' })
+          : await ask(`Cette copie serait un doublon exact de l’intervention (${lbl(src.date)}) pour ${names(ts)}. La créer quand même ?`, { ok: 'Créer le doublon', cancel: 'Annuler' }) && 'alt';
+        if (!r) { btn.disabled = false; btn.textContent = 'Planifier'; return; }
+        if (r === true) { const q = await sb.from('intervention_techs').insert(adds.map(t => ({ intervention_id: src.id, tech_id: t, ...(autre ? { heure: row.heure, duree: row.duree } : {}) }))); if (q.error) throw q.error;
+          closePanel(); await go('planning'); return toast(names(adds) + ' ajouté' + (adds.length > 1 ? 's' : '') + ' à l’intervention' + (autre ? ' (' + hh(row.heure) + '–' + fin(row.heure, row.duree) + ')' : '')); } }
       if (isNew && dates.length > 1 && !await ask(`Créer ${dates.length} interventions, du ${lbl(dates[0])} au ${lbl(dates[dates.length - 1])} ?`)) { btn.disabled = false; btn.textContent = 'Planifier'; return; }
       if (isNew) { const serie = dates.length > 1 ? (crypto.randomUUID ? crypto.randomUUID() : null) : null;
         const r = await sb.from('interventions').insert(dates.map(dt => ({ ...row, date: dt, serie, created_by: me.id, updated_by: me.id }))).select('id,date'); if (r.error) throw r.error;
