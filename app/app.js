@@ -86,7 +86,8 @@ function shell() {
 async function go(v) {
   view = v; history.replaceState(null, '', '#' + v); const nb = document.querySelector(`[data-v="${v}"]`); if ($('#mtit') && nb) $('#mtit').textContent = nb.textContent.replace(/\d+$/, '').trim();
   document.querySelectorAll('[data-v]').forEach(b => b.classList.toggle('on', b.dataset.v === v));
-  if (v === 'planning') { await loadPlanning(); planning(); } else if (v === 'controle' || v === 'devis') await listControle(); else if (v === 'affaires') { await loadAffaires(); listAffaires(); } else if (v === 'chantiers') { await loadChantiers(); listChantiers(); } else if (v === 'recherche') listRecherche(); else if (v === 'clients') listClients(); else if (v === 'articles') listArticles(); else listDemandes();
+  if (v === 'planning') { if (inter && loadPlanning.key === range().join('')) planning(); await loadPlanning(); if (view === 'planning') planning(); }
+  else if (v === 'controle' || v === 'devis') { if (listControle.c && listControle.c[v]) listControle(listControle.c[v]); await listControle(); } else if (v === 'affaires') { await loadAffaires(); listAffaires(); } else if (v === 'chantiers') { await loadChantiers(); listChantiers(); } else if (v === 'recherche') listRecherche(); else if (v === 'clients') listClients(); else if (v === 'articles') listArticles(); else listDemandes();
 }
 function listen() {
   if (chan) sb.removeChannel(chan);
@@ -116,7 +117,7 @@ function range() { return mode === 'semaine' ? [iso(week), iso(addDays(week, 6))
 const isWE = d => [0, 6].includes(new Date(d + 'T12:00').getDay());
 const weOn = () => showWE || inter.some(i => { const g = new Date(i.date + 'T12:00').getDay(); return g === 0 || g === 6; });
 async function loadPlanning() {
-  const [a, b] = range();
+  const [a, b] = range(); loadPlanning.key = a + b;
   let [r1, r2] = await Promise.all([
     sb.from('interventions').select(window.__noHx ? '*, intervention_techs(tech_id), pieces(id)' : '*, intervention_techs(tech_id,heure,duree), pieces(id)').gte('date', a).lte('date', b),
     sb.from('absences').select('*').gte('date', a).lte('date', b)]);
@@ -463,7 +464,12 @@ document.addEventListener('click', e => { const a = e.target.closest('#panel .ph
 /* Une pièce jointe peut être partagée par toutes les dates d'une série : on ne supprime le fichier que s'il n'est plus utilisé */
 async function rmIfAlone(bucket, paths) { paths = [...new Set(paths)]; if (!paths.length) return; const { data } = await sb.from('pieces').select('path').in('path', paths); const used = new Set((data || []).map(x => x.path)); const free = paths.filter(p => !used.has(p)); if (free.length) await sb.storage.from(bucket).remove(free); }
 const kindOf = f => f.type.startsWith('image/') ? 'photo' : f.type.startsWith('video/') ? 'video' : f.type === 'application/pdf' ? 'pdf' : 'autre';
-async function signed(bucket, paths) { if (!paths.length) return {}; const { data } = await sb.storage.from(bucket).createSignedUrls(paths, 3600); const o = {}; (data || []).forEach(u => o[u.path] = u.signedUrl); return o; }
+/* Liens des photos gardés 50 min : même lien = le navigateur réutilise l'image déjà téléchargée au lieu de la recharger à chaque clic */
+const SIG = {};
+async function signed(bucket, paths) { if (!paths.length) return {}; const now = Date.now(), o = {}, miss = [];
+  [...new Set(paths)].forEach(p => { const c = SIG[bucket + '/' + p]; if (c && c.t > now) o[p] = c.u; else miss.push(p); });
+  if (miss.length) { const { data } = await sb.storage.from(bucket).createSignedUrls(miss, 3600); (data || []).forEach(u => { if (u.signedUrl) { o[u.path] = u.signedUrl; SIG[bucket + '/' + u.path] = { u: u.signedUrl, t: now + 50 * 60 * 1000 }; } }); }
+  return o; }
 
 async function detail(id, given) {
   const i = given || inter.find(x => x.id === id); if (!i) return;
@@ -715,23 +721,24 @@ async function cloturer(id, devisFait) {
   closePanel(); toast(devisFait ? '✓ Devis fait · c’est noté' : '✓ Intervention clôturée'); badgeC();
   await refreshView();
 }
-async function listControle() {
-  if (view !== 'controle' && view !== 'devis') return; const dv = view === 'devis';
-  const [{ data, error }, nx] = await Promise.all([sb.from('interventions').select('*, intervention_techs(tech_id), pieces(id)').eq('statut', 'controle').eq('devis', dv).order('fin_at', { ascending: false }),
+async function listControle(cached) {
+  if (view !== 'controle' && view !== 'devis') return; const dv = view === 'devis', v0 = view;
+  const [{ data, error }, nx] = cached || await Promise.all([sb.from('interventions').select('*, intervention_techs(tech_id), pieces(id)').eq('statut', 'controle').eq('devis', dv).order('fin_at', { ascending: false }),
     dv ? sb.from('interventions').select('*, intervention_techs(tech_id)').eq('devis', true).in('statut', ['planifiee', 'enroute', 'encours', 'reprendre']).order('date').limit(60) : Promise.resolve({ data: [] })]);
   if (error) return toast('Erreur : ' + error.message);
+  if (view !== v0) return; (listControle.c = listControle.c || {})[v0] = [{ data, error }, nx];
   ctrl = (data || []).map(i => ({ ...i, techs: i.intervention_techs.map(x => x.tech_id), nbPieces: i.pieces.length }));
   const soon = (nx.data || []).map(i => ({ ...i, techs: i.intervention_techs.map(x => x.tech_id) }));
   $('#main').innerHTML = `<div class="head"><h1>${dv ? 'Devis à faire' : 'À contrôler'}</h1><span class="live"><i></i>En direct</span></div>
    <p style="color:var(--mute);margin:-6px 0 16px">${dv ? 'Visites « Devis » faites par les techniciens (photos + commentaire). Faites le devis, puis cliquez sur « ✓ Devis fait ».' : 'Interventions validées par les techniciens (photos + commentaire). Vérifiez puis clôturez.'}</p>
-   ${ctrl.length ? `<div class="list">${ctrl.map(i => `<button class="d" data-c="${i.id}"><span class="th" data-th="${E((i.photos || [])[0]?.path || '')}">${(i.photos || []).length ? '' : ic('pin')}</span>
+   ${ctrl.length ? `<div class="list">${ctrl.map(i => `<button class="d" data-c="${i.id}"><span class="th" data-th="${E((i.photos || [])[0]?.path || '')}">${(i.photos || []).length ? '<img alt="" loading="lazy" decoding="async">' : ic('pin')}</span>
      <span><h3>${E(i.type === 'intervention' ? ([i.client, i.occupant].filter(Boolean).join(' · ') || i.adresse || i.ville || 'Intervention') : i.travaux)}${i.epingle ? '<span class="tag t-aff">' + ic('pin') + ' Tâche</span>' : ''}</h3>${i.type === 'intervention' && (i.client || i.occupant) && (i.adresse || i.ville) ? `<p class="cad">${E([i.adresse, [i.cp, i.ville].filter(Boolean).join(' ')].filter(Boolean).join(', '))}</p>` : ''}<p>${i.valide_par ? `<b>Validée par ${E(T(i.valide_par).nom)}</b>${i.techs.length > 1 ? ' (équipe : ' + E(names(i.techs)) + ')' : ''}` : i.techs.map(t => `<i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${T(t).couleur};margin-right:4px"></i>${E(T(t).nom)}`).join(' · ')} · ${(i.photos || []).length} photo${(i.photos || []).length > 1 ? 's' : ''}${i.commentaire ? ' · « ' + E(i.commentaire.slice(0, 70)) + (i.commentaire.length > 70 ? '…' : '') + ' »' : ''}</p></span>
      <span class="r" style="color:var(--mute);font-size:13px;font-weight:700">${i.fin_at ? fdate(i.fin_at) : lbl(i.date, true)}${dv ? `<span class="dvok" data-dvok="${i.id}" role="button">✓ Devis fait</span>` : ''}</span></button>`).join('')}</div>` : `<div class="empty">${dv ? 'Aucun devis à faire pour l’instant' : 'Rien à contrôler : tout est à jour'} ${ic('check-circle')}</div>`}
    ${dv && soon.length ? `<h2 class="chh" style="margin-top:22px">${ic('calendar')} Visites devis prévues</h2><div class="list soon">${soon.map(i => `<button class="d" data-c="${i.id}"><span><h3>${E([i.client, i.occupant].filter(Boolean).join(' · ') || i.adresse || 'Visite devis')}</h3><p>${lbl(i.date)}${i.heure && !i.epingle ? ' · ' + hh(i.heure) : ''} · ${E(names(i.techs))}${i.adresse ? ' · ' + E([i.adresse, i.ville].filter(Boolean).join(', ')) : ''}</p></span><span class="tag s-${i.statut}" style="margin:0">${STAT_I[i.statut]}</span></button>`).join('')}</div>` : ''}`;
   document.querySelectorAll('[data-dvok]').forEach(b => b.onclick = async e => { e.stopPropagation(); await cloturer(b.dataset.dvok, true); });
   document.querySelectorAll('[data-c]').forEach(b => b.onclick = () => detail(b.dataset.c, ctrl.find(x => x.id === b.dataset.c) || soon.find(x => x.id === b.dataset.c)));
   const paths = [...document.querySelectorAll('[data-th]')].map(e => e.dataset.th).filter(Boolean);
-  signed('retours', paths).then(u => document.querySelectorAll('[data-th]').forEach(el => { if (u[el.dataset.th]) el.style.backgroundImage = `url('${u[el.dataset.th]}')`; }));
+  signed('retours', paths).then(u => document.querySelectorAll('[data-th]').forEach(el => { const im = el.querySelector('img'); if (u[el.dataset.th] && im) { im.onerror = () => im.remove(); im.src = u[el.dataset.th]; } }));
 }
 
 /* ================= Mots de passe ================= */
