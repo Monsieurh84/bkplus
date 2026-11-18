@@ -827,7 +827,7 @@ async function listFacturer(fromCache) {
 }
 
 /* ================= Mots de passe ================= */
-const APP_URL = 'https://monsieurh84.github.io/bkplus/app/', TECH_URL = APP_URL + 'tech.html';
+const APP_URL = 'https://bkplusplomberie.fr/app/', TECH_URL = APP_URL + 'tech.html';
 const genMdp = () => { const a = 'abcdefghjkmnpqrstuvwxyz', A = 'ABCDEFGHJKLMNPQRSTUVWXYZ', d = '23456789', r = n => crypto.getRandomValues(new Uint32Array(1))[0] % n;
   const p = () => A[r(A.length)] + a[r(a.length)] + a[r(a.length)] + a[r(a.length)]; return p() + '-' + p() + '-' + d[r(8)] + d[r(8)]; };
 function monMdp() {
