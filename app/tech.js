@@ -37,7 +37,7 @@ const DB = { db: null,
 /* ---------- État ---------- */
 let lastLocal = 0, me = null, tech = null, team = [], preview = false, items = [], tab = 'jour', openId = null, online = navigator.onLine !== false, pending = 0, flushing = false, sun = false, reminderOn = false;
 const drafts = {}; const matChk = {}; let navPref = null;
-try { sun = localStorage.getItem('bk-sun') === '1'; navPref = localStorage.getItem('bk-nav'); } catch (e) { }
+try { sun = localStorage.getItem('bk-sun') === '1'; localStorage.removeItem('bk-nav'); } catch (e) { }
 const T = id => team.find(t => t.id === id) || { nom: '?', couleur: '#8B8FA3' };
 const stripe = ids => { const c = ids.map(id => T(id).couleur); if (c.length < 2) return c[0] || '#2239A9'; const s = 100 / c.length; return 'linear-gradient(to bottom,' + c.map((x, k) => `${x} ${k * s}% ${(k + 1) * s}%`).join(',') + ')'; };
 const avatars = ids => ids.map(id => `<span class="av" style="background:${T(id).couleur}">${E(T(id).nom[0])}</span>`).join('');
@@ -252,9 +252,9 @@ async function fiche() {
     ${done ? `<div class="done-box">${i.statut === 'attente' ? '⏸ En attente côté bureau' : '✓ Terminée et envoyée au bureau'}</div>` : ''}
     ${isJob ? `<div class="step"><div class="${step >= 0 ? 'on' : ''}">Prévue</div><div class="${step >= 1 ? 'on' : ''}">En route</div><div class="${step >= 2 ? 'on' : ''}">Sur place</div><div class="${step >= 3 ? 'on' : ''}">Terminée</div></div>` : ''}
     ${isJob && who(i) ? `<div class="who2">${i.client ? `<div><small>Client</small><b>${E(i.client)}</b></div>` : ''}${i.occupant ? `<div><small>Occupant</small><b>${E(i.occupant)}</b></div>` : ''}</div>` : ''}
-    <div class="addr"><div class="a">${E(isJob ? (i.adresse || i.ville) : i.travaux)}</div><div class="v">${E(isJob ? [i.cp, i.ville].filter(Boolean).join(' ') : fullAddr(i))}</div>${isJob && i.complement ? `<div class="v" style="font-weight:700">${E(i.complement)}</div>` : ''}</div>
+    <div class="addr"><div class="a">${E(isJob ? (i.adresse || i.ville) : i.travaux)}</div><div class="v">${E(isJob ? [i.cp, i.ville].filter(Boolean).join(' ') : fullAddr(i))}</div>${isJob && i.complement ? `<div class="v" style="font-weight:700">${E(i.complement)}</div>` : ''}${isJob && (i.adresse || i.ville) ? `<div class="navs3">${['waze', 'plans', 'google'].map(k => `<a data-nv="${k}" href="${navUrl(k, i)}" target="_blank" rel="noopener"><i style="background:${NAV[k].c}">${NAV[k].e}</i>${{ waze: 'Waze', plans: 'Plans', google: 'Google' }[k]}</a>`).join('')}</div>` : ''}</div>
     ${others.length ? `<div class="binome"><span class="avs">${avatars(i.techs)}</span> En équipe avec ${E(others.map(x => T(x).nom).join(', '))}</div>` : ''}
-    ${isJob ? `<div class="big-actions">${i.tel ? `<a class="bigbtn call" href="${telUrl(i.tel)}">${ICON.phone}Appeler</a>` : '<span></span>'}<button class="bigbtn route" data-nav="${i.id}">${ICON.route}Itinéraire</button></div>` : ''}
+    ${isJob ? `<div class="big-actions">${i.tel ? `<a class="bigbtn call" href="${telUrl(i.tel)}">${ICON.phone}Appeler</a>` : '<span></span>'}</div>` : ''}
     ${isJob && i.statut === 'planifiee' ? `<button class="primary-step" id="go">${ic('truck')} Je pars</button>` : ''}
     ${isJob && i.statut === 'enroute' ? `${i.tel ? `<a class="sms" href="sms:${String(i.tel).replace(/\s/g, '')}${iOS ? '&' : '?'}body=${smsBody}">${ic('message')} Prévenir l’occupant par SMS</a>` : ''}<button class="primary-step here" id="here">${ic('map-pin')} Je suis sur place</button>` : ''}
     ${isJob && i.statut === 'encours' && i.debut_at ? `<div class="since">${ic('timer')} Sur place depuis ${new Date(i.debut_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }).replace(':', 'h')}</div>` : ''}
@@ -285,6 +285,7 @@ async function fiche() {
   <div class="lb" id="lb"></div>`;
   bindTop(); bindPreview();
   scr().querySelectorAll('[data-nav]').forEach(b => b.onclick = () => navTo(i));
+  if (scr().querySelector('.navs3')) geoPoint(i).then(g => { if (g) scr().querySelectorAll('.navs3 [data-nv]').forEach(a => a.href = navUrl(a.dataset.nv, i)); });
   const mata = $('#mata'); if (mata) { const addM = async () => { const t = $('#mati').value.trim(); if (!t) return; const its = t.split(/\n|;/).map(x => x.trim()).filter(Boolean);
       i.materiel = [...i.materiel, ...its]; await enqueue({ kind: 'materiel', iid: i.id, items: its }); DB.set('cache', { team, tech, items, at: Date.now() }); const y = scr().querySelector('.scroll').scrollTop; await fiche(); scr().querySelector('.scroll').scrollTop = y; toast('Matériel ajouté · le bureau le voit'); };
     mata.onclick = addM; $('#mati').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); addM(); } }; }
@@ -400,12 +401,11 @@ const navUrl = (app, i) => { const g = geoC[geoKey(i)], q = encodeURIComponent(f
   return app === 'waze' ? `https://waze.com/ul?ll=${ll}&navigate=yes&zoom=17` : app === 'plans' ? `https://maps.apple.com/?daddr=${ll}&q=${q}` : `https://www.google.com/maps/dir/?api=1&destination=${ll}`; };
 function navTo(i) {
   if (!i) return; if (!geoC[geoKey(i)]) geoPoint(i);
-  if (navPref && NAV[navPref]) { window.open(navUrl(navPref, i), '_blank'); return; }
   let sh = scr().querySelector('.sheet'); if (!sh) { sh = document.createElement('div'); sh.className = 'sheet'; scr().appendChild(sh); }
-  sh.innerHTML = `<div class="in"><h3>Itinéraire</h3><p>${E(fullAddr(i))}</p><div class="apps">${Object.entries(NAV).map(([k, v]) => `<a href="${navUrl(k, i)}" target="_blank" rel="noopener" data-app="${k}"><i style="background:${v.c}">${v.e}</i>${v.n}</a>`).join('')}</div><label><input type="checkbox" id="rememb" checked> Toujours utiliser cette application</label><button class="cancel">Annuler</button></div>`;
+  sh.innerHTML = `<div class="in"><h3>Itinéraire</h3><p>${E(fullAddr(i))}</p><div class="apps">${Object.entries(NAV).map(([k, v]) => `<a href="${navUrl(k, i)}" target="_blank" rel="noopener" data-app="${k}"><i style="background:${v.c}">${v.e}</i>${v.n}</a>`).join('')}</div><button class="cancel">Annuler</button></div>`;
   geoPoint(i).then(() => sh.querySelectorAll('[data-app]').forEach(a => { a.href = navUrl(a.dataset.app, i); }));
   sh.classList.add('on'); sh.onclick = e => { if (e.target === sh || e.target.classList.contains('cancel')) sh.classList.remove('on'); };
-  sh.querySelectorAll('[data-app]').forEach(a => a.onclick = () => { if ($('#rememb').checked) { navPref = a.dataset.app; try { localStorage.setItem('bk-nav', navPref); } catch (e) { } } sh.classList.remove('on'); });
+  sh.querySelectorAll('[data-app]').forEach(a => a.onclick = () => { sh.classList.remove('on'); });
 }
 
 /* ---------- Rappel avant la fin de journée (16h30) ---------- */

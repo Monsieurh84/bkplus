@@ -74,7 +74,7 @@ function shell() {
   <button class="nav srch" data-v="recherche">${ic('search')} Rechercher une intervention</button>
   <button class="nav" data-v="planning">${ic('calendar')} Planning</button>
   <button class="nav" data-v="demandes">${ic('inbox')} Demandes du site<span class="c" id="cn"></span></button>
-  <button class="nav" data-v="affaires">${ic('briefcase')} Affaires<span class="c" id="ca"></span></button><button class="nav" data-v="chantiers">${ic('helmet')} Chantiers</button><button class="nav" data-v="clients">${ic('notebook')} Clients</button><button class="nav" data-v="articles">${ic('package')} Articles</button><button class="nav" data-v="controle">${ic('check-circle')} À contrôler<span class="c" id="cc"></span></button><button class="nav" data-v="devis">${ic('file')} Devis à faire<span class="c" id="cdv"></span></button>
+  <button class="nav" data-v="affaires">${ic('briefcase')} Affaires<span class="c" id="ca"></span></button><button class="nav" data-v="chantiers">${ic('helmet')} Chantiers</button><button class="nav" data-v="clients">${ic('notebook')} Clients</button><button class="nav" data-v="articles">${ic('package')} Articles</button><button class="nav" data-v="controle">${ic('check-circle')} À contrôler<span class="c" id="cc"></span></button><button class="nav" data-v="devis">${ic('file')} Devis à faire<span class="c" id="cdv"></span></button><button class="nav" data-v="facturer">${ic('clipboard')} À facturer<span class="c" id="cfa"></span></button>
   <a class="nav" href="tech.html" id="apptech" style="text-decoration:none">${ic('smartphone')} Mon planning<small>app tech.</small></a>
   <button class="nav" id="team">${ic('users')} Équipe & accès</button>
   <div class="who"><b>${E(me.nom)}</b>Accès bureau<br><button id="mdp">Mon mot de passe</button> · <button id="out">Se déconnecter</button></div></aside><main class="main" id="main"><div class="loading">Chargement…</div></main></div>`;
@@ -89,11 +89,11 @@ async function go(v) {
   view = v; history.replaceState(null, '', '#' + v); const nb = document.querySelector(`[data-v="${v}"]`); if ($('#mtit') && nb) $('#mtit').textContent = nb.textContent.replace(/\d+$/, '').trim();
   document.querySelectorAll('[data-v]').forEach(b => b.classList.toggle('on', b.dataset.v === v));
   if (v === 'planning') { if (inter && loadPlanning.key === range().join('')) planning(); await loadPlanning(); if (view === 'planning') planning(); }
-  else if (v === 'controle' || v === 'devis') { if (listControle.c && listControle.c[v]) listControle(listControle.c[v]); await listControle(); } else if (v === 'affaires') { await loadAffaires(); listAffaires(); } else if (v === 'chantiers') { await loadChantiers(); listChantiers(); } else if (v === 'recherche') listRecherche(); else if (v === 'clients') listClients(); else if (v === 'articles') listArticles(); else listDemandes();
+  else if (v === 'controle' || v === 'devis') { if (listControle.c && listControle.c[v]) listControle(listControle.c[v]); await listControle(); } else if (v === 'facturer') { if (aFact.length) listFacturer(true); await listFacturer(); } else if (v === 'affaires') { await loadAffaires(); listAffaires(); } else if (v === 'chantiers') { await loadChantiers(); listChantiers(); } else if (v === 'recherche') listRecherche(); else if (v === 'clients') listClients(); else if (v === 'articles') listArticles(); else listDemandes();
 }
 function listen() {
   if (chan) sb.removeChannel(chan);
-  let tm = null; const refresh = () => { clearTimeout(tm); tm = setTimeout(async () => { badgeC(); if (view === 'planning') { await loadPlanning(); planning(); } else if (view === 'controle' || view === 'devis') await listControle(); else if (view === 'chantiers') { await loadChantiers(); listChantiers(); } }, 400); };
+  let tm = null; const refresh = () => { clearTimeout(tm); tm = setTimeout(async () => { badgeC(); if (view === 'planning') { await loadPlanning(); planning(); } else if (view === 'controle' || view === 'devis') await listControle(); else if (view === 'facturer') await listFacturer(); else if (view === 'chantiers') { await loadChantiers(); listChantiers(); } }, 400); };
   chan = sb.channel('bk').on('postgres_changes', { event: '*', schema: 'public', table: 'demandes' }, p => {
     if (p.eventType === 'INSERT') { demandes.unshift(p.new); toast('Nouvelle demande : ' + p.new.service + ' · ' + p.new.ville); }
     else if (p.eventType === 'UPDATE') { const i = demandes.findIndex(x => x.id === p.new.id); if (i > -1) demandes[i] = p.new; }
@@ -509,7 +509,7 @@ async function detail(id, given) {
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn btn-line" id="nbs" type="button">${ic('message')} Envoyer le message</button><button class="btn btn-line" id="nbr" type="button" style="color:#DC2626;border-color:#FCA5A5">↺ Envoyer et mettre « À reprendre »</button></div></div>
     <label style="font-size:13px;font-weight:800;color:var(--mute)">Statut<select id="st" style="display:block;width:100%;margin-top:6px;border:2px solid var(--line);border-radius:10px;padding:10px">${[...new Set([i.statut, 'attente', 'reprendre', 'cloturee'])].map(k => `<option value="${k}" ${k === i.statut ? 'selected' : ''}>${STAT_I[k]}</option>`).join('')}</select></label>
   </div>
-  <footer>${i.devis && i.devis_fait && !i.devis_suite ? `<button class="btn btn-grad" id="dvprog">${ic('calendar')} Programmer l’intervention</button>` : ''}${['controle', 'attente', 'reprendre'].includes(i.statut) ? `<button class="btn btn-grad" id="clo" style="background:var(--ok,#0E9F6E)">${i.devis && i.statut === 'controle' ? '✓ Devis fait' : '✓ Clôturer'}</button>` : ''}${i.statut === 'controle' ? '<button class="btn btn-line" id="rep" style="color:#DC2626">↺ À reprendre</button><button class="btn btn-line" id="att">En attente</button>' : ''}<button class="btn ${['controle', 'attente', 'reprendre'].includes(i.statut) ? 'btn-line' : 'btn-grad'}" id="ed">Modifier</button><button class="btn btn-line" id="dup">Dupliquer</button><button class="btn btn-line" id="p7">+7 jours</button><button class="btn btn-red" id="del" style="margin-left:auto">Supprimer</button></footer>`);
+  <footer>${i.a_facturer ? `<button class="btn btn-grad" id="fok" style="background:var(--ok,#0E9F6E)">✓ Facturée</button>` : ''}${i.devis && i.devis_fait && !i.devis_suite ? `<button class="btn btn-grad" id="dvprog">${ic('calendar')} Programmer l’intervention</button>` : ''}${['controle', 'attente', 'reprendre'].includes(i.statut) ? `<button class="btn btn-grad" id="clo" style="background:var(--ok,#0E9F6E)">${i.devis && i.statut === 'controle' ? '✓ Devis fait' : '✓ Clôturer'}</button>` : ''}${i.statut === 'controle' ? '<button class="btn btn-line" id="rep" style="color:#DC2626">↺ À reprendre</button><button class="btn btn-line" id="att">En attente</button>' : ''}<button class="btn ${['controle', 'attente', 'reprendre'].includes(i.statut) ? 'btn-line' : 'btn-grad'}" id="ed">Modifier</button><button class="btn btn-line" id="dup">Dupliquer</button><button class="btn btn-line" id="p7">+7 jours</button><button class="btn btn-red" id="del" style="margin-left:auto">Supprimer</button></footer>`);
   if (i.note_reponse && !i.note_rep_lue) { i.note_rep_lue = true; sb.from('interventions').update({ note_rep_lue: true }).eq('id', id).then(() => { const c = document.querySelector(`.ev[data-id="${id}"] .nb`); if (c) c.remove(); }); }
   if (i.adresse || i.ville) geoFix(i, document.querySelector('#panel .kv'));
   const urls = await signed('pieces', (pieces || []).filter(p => !p.prive).map(p => p.path));
@@ -519,6 +519,7 @@ async function detail(id, given) {
   if ((i.photos || []).length) signed('retours', i.photos.map(p => p.path)).then(u3 => { document.querySelectorAll('#rph [data-rp]').forEach(a => { const u = u3[a.dataset.rp]; if (u) { a.href = u; setThumb(a, u, a.dataset.rp); } });
     const b = $('#rpall'); if (b) b.onclick = async () => { b.disabled = true; let k = 0; for (const p of i.photos) { const u = u3[p.path]; if (u) { k++; await dlFile(u, p.path, `${(i.client || i.occupant || 'intervention').replace(/[^\w\- ]+/g, '').trim()}-${i.date}-${k}${(p.tag ? '-' + p.tag : '')}.jpg`); await new Promise(r => setTimeout(r, 350)); } } b.disabled = false; toast(k + ' photo' + (k > 1 ? 's' : '') + ' téléchargée' + (k > 1 ? 's' : '') + ' (dossier Téléchargements)'); }; });
   if ($('#clo')) $('#clo').onclick = () => cloturer(id, i.devis && i.statut === 'controle');
+  if ($('#fok')) $('#fok').onclick = async () => { const { error } = await sb.from('interventions').update({ a_facturer: false, facture_le: new Date().toISOString(), facture_par: me.nom }).eq('id', id); if (error) return toast('Erreur : ' + error.message); i.a_facturer = false; aFact = aFact.filter(x => x.id !== id); closePanel(); toast('✓ Facturée · retirée de « À facturer »'); badgeC(); if (view === 'facturer') listFacturer(true); };
   if ($('#dvprog')) $('#dvprog').onclick = () => { closePanel(); programmerDevis(i); };
   $('#st').onchange = async e => { const v = e.target.value; if (v === 'reprendre') { if (!(await aReprendre(i, $('#nbw').value))) e.target.value = i.statut; return; }
     if (v === 'cloturee') return cloturer(id);
@@ -716,11 +717,11 @@ if (/type=recovery/.test(location.hash)) newPasswordView(); else start();
 
 /* ================= À contrôler (retours terrain) ================= */
 let ctrl = [];
-async function badgeC() { const [a, b] = await Promise.all([sb.from('interventions').select('id', { count: 'exact', head: true }).eq('statut', 'controle').eq('devis', false), sb.from('interventions').select('id', { count: 'exact', head: true }).eq('statut', 'controle').eq('devis', true)]);
-  const c = $('#cc'); if (c) c.textContent = a.count || ''; const d = $('#cdv'); if (d) d.textContent = b.count || ''; }
+async function badgeC() { const [a, b, f] = await Promise.all([sb.from('interventions').select('id', { count: 'exact', head: true }).eq('statut', 'controle').eq('devis', false), sb.from('interventions').select('id', { count: 'exact', head: true }).eq('statut', 'controle').eq('devis', true), sb.from('interventions').select('id', { count: 'exact', head: true }).eq('a_facturer', true)]);
+  const c = $('#cc'); if (c) c.textContent = a.count || ''; const d = $('#cdv'); if (d) d.textContent = b.count || ''; const g = $('#cfa'); if (g) g.textContent = f.count || ''; }
 /* Le bureau se remet à jour tout seul toutes les 15 minutes (en plus du temps réel) */
 setInterval(() => { if (!document.hidden && me && !$('#panel.on') && !$('.bkdlg') && !(document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))) refreshView().catch(() => { }); }, 15 * 60 * 1000);
-async function refreshView() { badgeC(); if (view === 'controle' || view === 'devis') await listControle(); else if (view === 'recherche') await listRecherche(); else { await loadPlanning(); planning(); } }
+async function refreshView() { badgeC(); if (view === 'facturer') return listFacturer(); if (view === 'controle' || view === 'devis') await listControle(); else if (view === 'recherche') await listRecherche(); else { await loadPlanning(); planning(); } }
 /* Message du bureau : le technicien le reçoit en direct sur son application */
 async function noteTech(i, t, extra) {
   const row = { note_bureau: t, note_at: new Date().toISOString(), note_lue: false, note_reponse: null, note_rep_at: null, note_rep_lue: true, ...(extra || {}) };
@@ -803,6 +804,27 @@ async function reprendreDevis(src, newIds, btn) {
       newIds.forEach(x => rows.push({ intervention_id: x, nom, type: 'photo', path, prive: false })); } catch (e) { jlog('devis_photo', { err: String(e.message || e), path: ph[k].path }); } }
   if (rows.length) { const r = await sb.from('pieces').insert(rows); if (r.error) toast('Photos du devis non jointes : ' + r.error.message); }
   await sb.from('interventions').update({ devis_suite: 'programme', devis_suite_id: newIds[0], devis_suite_at: new Date().toISOString() }).eq('id', src.id); }
+
+/* ================= À facturer : interventions clôturées par le bureau ; « Valider » une fois la facture faite ================= */
+let aFact = [];
+async function listFacturer(fromCache) {
+  if (!fromCache) { const { data, error } = await sb.from('interventions').select('*, intervention_techs(tech_id), pieces(id), affaires(ref,isanet_devis)').eq('a_facturer', true).order('date', { ascending: false }).limit(300);
+    if (error) return toast('Erreur : ' + error.message); aFact = (data || []).map(i => ({ ...i, techs: i.intervention_techs.map(x => x.tech_id), nbPieces: i.pieces.length })); }
+  if (view !== 'facturer') return;
+  $('#main').innerHTML = `<div class="head"><h1>À facturer</h1><span class="live"><i></i>En direct</span></div>
+   <p style="color:var(--mute);margin:-6px 0 16px">Interventions clôturées, en attente de facture. Une fois la facture faite, cliquez sur « ✓ Valider » : l’intervention sort de la liste (elle reste dans l’historique).</p>
+   ${aFact.length ? `<div class="list">${aFact.map(i => `<div class="d dvf" data-f="${i.id}" role="button" tabindex="0"><span class="th" data-th="${E((i.photos || [])[0]?.path || '')}">${(i.photos || []).length ? '<img alt="" loading="lazy" decoding="async">' : ic('clipboard')}</span>
+     <span><h3>${E([i.client, i.occupant].filter(Boolean).join(' · ') || i.adresse || 'Intervention')}${i.affaires?.ref ? ` <span class="tag t-aff">${E(i.affaires.ref)}</span>` : ''}</h3><p class="cad">${E([i.adresse, [i.cp, i.ville].filter(Boolean).join(' ')].filter(Boolean).join(', '))}</p><p>${E((i.travaux || '').slice(0, 120))}</p>
+     <small style="color:var(--mute)">${lbl(i.date)} · ${E(names(i.techs))}${i.cloture_le ? ' · clôturée le ' + fdate(i.cloture_le) : ''}${i.cloture_par ? ' par ' + E(i.cloture_par) : ''}${(i.materiel || []).length ? ' · ' + i.materiel.length + ' article' + (i.materiel.length > 1 ? 's' : '') + ' de matériel' : ''}</small></span>
+     <span class="r dvact"><button class="btn btn-grad" data-fok="${i.id}" style="background:var(--ok,#0E9F6E)">✓ Valider · facturée</button></span></div>`).join('')}</div>`
+    : `<div class="empty">Rien à facturer pour l’instant ${ic('check-circle')}</div>`}`;
+  document.querySelectorAll('[data-f]').forEach(b => b.onclick = e => { if (e.target.closest('button')) return; detail(b.dataset.f, aFact.find(x => x.id === b.dataset.f)); });
+  document.querySelectorAll('[data-fok]').forEach(b => b.onclick = async () => { b.disabled = true;
+    const { error } = await sb.from('interventions').update({ a_facturer: false, facture_le: new Date().toISOString(), facture_par: me.nom }).eq('id', b.dataset.fok); if (error) { b.disabled = false; return toast('Erreur : ' + error.message); }
+    aFact = aFact.filter(x => x.id !== b.dataset.fok); toast('✓ Facturée · retirée de la liste'); badgeC(); listFacturer(true); });
+  const paths = [...document.querySelectorAll('[data-th]')].map(e => e.dataset.th).filter(Boolean);
+  signed('retours', paths).then(u => document.querySelectorAll('[data-th]').forEach(el => { const im = el.querySelector('img'); if (u[el.dataset.th] && im) { im.onerror = () => im.remove(); im.src = u[el.dataset.th]; } }));
+}
 
 /* ================= Mots de passe ================= */
 const APP_URL = 'https://monsieurh84.github.io/bkplus/app/', TECH_URL = APP_URL + 'tech.html';
