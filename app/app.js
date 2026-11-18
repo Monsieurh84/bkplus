@@ -75,10 +75,12 @@ function shell() {
   <button class="nav" data-v="planning">${ic('calendar')} Planning</button>
   <button class="nav" data-v="demandes">${ic('inbox')} Demandes du site<span class="c" id="cn"></span></button>
   <button class="nav" data-v="affaires">${ic('briefcase')} Affaires<span class="c" id="ca"></span></button><button class="nav" data-v="chantiers">${ic('helmet')} Chantiers</button><button class="nav" data-v="clients">${ic('notebook')} Clients</button><button class="nav" data-v="articles">${ic('package')} Articles</button><button class="nav" data-v="controle">${ic('check-circle')} À contrôler<span class="c" id="cc"></span></button><button class="nav" data-v="devis">${ic('file')} Devis à faire<span class="c" id="cdv"></span></button>
-  <a class="nav" href="tech.html" target="_blank" rel="noopener" style="text-decoration:none">${ic('smartphone')} App technicien<small>aperçu</small></a>
+  <a class="nav" href="tech.html" id="apptech" style="text-decoration:none">${ic('smartphone')} Mon planning<small>app tech.</small></a>
   <button class="nav" id="team">${ic('users')} Équipe & accès</button>
   <div class="who"><b>${E(me.nom)}</b>Accès bureau<br><button id="mdp">Mon mot de passe</button> · <button id="out">Se déconnecter</button></div></aside><main class="main" id="main"><div class="loading">Chargement…</div></main></div>`;
   $('#out').onclick = () => sb.auth.signOut(); $('#mdp').onclick = monMdp; $('#team').onclick = equipe;
+  /* Ordinateur : l'app technicien s'ouvre dans un onglet à côté. Téléphone / app installée : même fenêtre, et le bouton « Bureau » de l'app technicien ramène ici */
+  $('#apptech').onclick = e => { if (!isMob() && !matchMedia('(display-mode: standalone)').matches && !navigator.standalone) { e.preventDefault(); window.open('tech.html', '_blank', 'noopener'); } };
   document.querySelectorAll('[data-v]').forEach(b => b.onclick = () => { document.body.classList.remove('mopen'); go(b.dataset.v); });
   $('#mham').onclick = () => document.body.classList.toggle('mopen'); $('#mscrim').onclick = () => document.body.classList.remove('mopen');
   $('#mnew').onclick = () => form(); $('#team').addEventListener('click', () => document.body.classList.remove('mopen'));
@@ -241,6 +243,7 @@ async function planningMob() {
   const days = [...Array(7)].map((_, k) => iso(addDays(week, k))), vis = visTechs(), vid = new Set(vis.map(t => t.id));
   const its = inter.filter(i => i.date === mDay && i.techs.some(t => vid.has(t))).sort((x, y) => (isAllDay(y) - isAllDay(x)) || String(x.heure || '').localeCompare(String(y.heure || '')));
   const abs = absences.filter(x => x.date === mDay && vid.has(x.tech_id));
+  const cach = inter.filter(i => i.date === mDay && !i.techs.some(t => vid.has(t))), hid = techs.filter(t => hidden.has(t.id));
   const strip = i => i.techs.length > 1 ? `linear-gradient(${i.techs.map((t, k) => `${T(t).couleur} ${k / i.techs.length * 100}% ${(k + 1) / i.techs.length * 100}%`).join(',')})` : T(i.techs[0]).couleur;
   const ttl = i => i.type === 'intervention' ? ([i.client, i.occupant].filter(Boolean).join(' · ') || i.adresse || i.ville || 'Intervention') : (i.travaux || 'Tâche');
   $('#main').innerHTML = `<div class="mp">
@@ -248,6 +251,7 @@ async function planningMob() {
     <div class="mph"><button id="mpp" aria-label="Jour précédent">‹</button><b>${lbl(mDay, true)}${ferie(mDay) ? ` · <span style="color:#B45309">${E(ferie(mDay))}</span>` : ''}</b><button id="mpn" aria-label="Jour suivant">›</button></div>
     <div class="mpb"><button class="btn btn-line" id="mpt">Aujourd’hui</button><button class="btn btn-line" id="mpr">${ic('pin')} Rappel</button><button class="btn btn-grad" id="mpa">+ Planifier</button></div>
     <div class="people mpeo">${techs.map(t => `<button data-who="${t.id}" class="${hidden.has(t.id) ? 'off' : ''}" style="--c:${t.couleur}"><i></i>${E(t.nom)}</button>`).join('')}</div>
+    ${hid.length ? `<button class="mhid" id="mhid">${ic('eye')} ${E(names(hid.map(t => t.id)))} ${hid.length > 1 ? 'masqués' : 'masqué'}${cach.length ? ` · <b>${cach.length} intervention${cach.length > 1 ? 's' : ''} non affichée${cach.length > 1 ? 's' : ''}</b>` : ''} · <u>Tout afficher</u></button>` : ''}
     ${abs.map(x => `<div class="mabs" style="--c:${T(x.tech_id).couleur}">${ic('calendar-x')} ${E(T(x.tech_id).nom)} · ${E(x.motif)}</div>`).join('')}
     ${its.length ? its.map(i => `<button class="mit" data-mi="${i.id}" style="--st:${strip(i)}"><span class="mt">${isAllDay(i) ? ic('pin') : `${hh(i.heure)}<small>${fin(i.heure, i.duree)}</small>`}</span><span class="mb"><b>${i.devis ? '<em class="dvt">DEVIS</em> ' : ''}${E(ttl(i))}</b>${i.type === 'intervention' && (i.adresse || i.ville) ? `<small>${E([i.adresse, i.ville].filter(Boolean).join(', '))}</small>` : i.type !== 'intervention' && (i.client || i.occupant) ? `<small>${E([i.client, i.occupant].filter(Boolean).join(' · '))}</small>` : ''}<span class="mw">${i.techs.map(t => `<i style="background:${T(t).couleur}"></i>${E(T(t).nom)}`).join(' ')}</span></span><span class="tag s-${i.statut}">${STAT_I[i.statut]}</span></button>`).join('') : '<div class="empty">Rien de prévu ce jour-là.</div>'}
     <p class="mhint">Glissez à gauche ou à droite pour changer de jour · touchez une intervention pour la fiche</p></div>`;
@@ -255,6 +259,7 @@ async function planningMob() {
   $('#mpp').onclick = () => goD(-1); $('#mpn').onclick = () => goD(1); $('#mpt').onclick = async () => { mDay = today; await planningMob(); };
   document.querySelectorAll('[data-md]').forEach(x => x.onclick = async () => { mDay = x.dataset.md; await planningMob(); });
   $('#mpa').onclick = () => form(null, { pre: { date: mDay } }); $('#mpr').onclick = () => form(null, { epingle: true, pre: { date: mDay } });
+  if ($('#mhid')) $('#mhid').onclick = () => { hidden.clear(); saveUI(); planningMob(); };
   document.querySelectorAll('.mpeo [data-who]').forEach(x => x.onclick = () => { const id = x.dataset.who; hidden.has(id) ? hidden.delete(id) : hidden.add(id); saveUI(); planningMob(); });
   document.querySelectorAll('[data-mi]').forEach(x => x.onclick = () => detail(x.dataset.mi));
   const m = $('.mp'); let tx = null, ty = 0; m.addEventListener('touchstart', e => { tx = e.touches[0].clientX; ty = e.touches[0].clientY; }, { passive: true });
@@ -471,6 +476,16 @@ async function signed(bucket, paths) { if (!paths.length) return {}; const now =
   if (miss.length) { const { data } = await sb.storage.from(bucket).createSignedUrls(miss, 3600); (data || []).forEach(u => { if (u.signedUrl) { o[u.path] = u.signedUrl; SIG[bucket + '/' + u.path] = { u: u.signedUrl, t: now + 50 * 60 * 1000 }; } }); }
   return o; }
 
+/* Itinéraire : le bureau choisit Waze, Plans (Apple, avec la vue des rues) ou Google Maps ; on vise le point GPS exact quand on l'a */
+const NAVN = { waze: 'Waze', plans: 'Plans', google: 'Google Maps' }, GEO = {};
+const geoK = i => [i.adresse, i.cp, i.ville].map(x => String(x || '').trim().toLowerCase()).join('|');
+function navLink(k, i) { const q = encodeURIComponent([i.adresse, [i.cp, i.ville].filter(Boolean).join(' ')].filter(Boolean).join(', ') + ', France'), g = GEO[geoK(i)], ll = g ? g.lat + ',' + g.lon : '';
+  if (k === 'waze') return ll ? `https://waze.com/ul?ll=${ll}&navigate=yes&zoom=17` : `https://waze.com/ul?q=${q}&navigate=yes`;
+  if (k === 'plans') return ll ? `https://maps.apple.com/?ll=${ll}&q=${q}&z=19` : `https://maps.apple.com/?q=${q}`;
+  return ll ? `https://www.google.com/maps/search/?api=1&query=${ll}` : `https://www.google.com/maps/search/?api=1&query=${q}`; }
+async function geoFix(i, box) { const k = geoK(i); if (!GEO[k] && typeof geoSearch === 'function') try { const r = await geoSearch([i.adresse, i.cp, i.ville].filter(Boolean).join(' '), 5, false);
+    const ok = r.filter(a => a.lat && a.lon && (!i.cp || !a.postcode || a.postcode === String(i.cp).trim())), b = ok.find(a => a.type === 'housenumber') || ok[0]; if (b) GEO[k] = { lat: (+b.lat).toFixed(6), lon: (+b.lon).toFixed(6) }; } catch (e) { }
+  if (GEO[k] && box) box.querySelectorAll('[data-nav]').forEach(a => a.href = navLink(a.dataset.nav, i)); }
 async function detail(id, given) {
   const i = given || inter.find(x => x.id === id); if (!i) return;
   const [{ data: pieces }, dem] = await Promise.all([sb.from('pieces').select('*').eq('intervention_id', id).order('created_at'), i.demande_id ? sb.from('demandes').select('*').eq('id', i.demande_id).maybeSingle() : Promise.resolve({ data: null })]);
@@ -480,7 +495,7 @@ async function detail(id, given) {
     <div style="color:var(--mute);font-size:13.5px">${E(i.client || i.occupant ? '' : (i.ville || '') + ' · ')}${lbl(i.date, true)}${i.epingle ? '' : ' · ' + hh(i.heure) + '–' + fin(i.heure, i.duree)}${!i.epingle && i.hx ? Object.values(i.hx).map(o => ` · <b style="color:${T(o.tech_id).couleur}">${E(T(o.tech_id).nom)} ${hh(o.heure)}–${fin(o.heure, o.duree)}</b>`).join('') : ''}</div></div><button class="x" aria-label="Fermer">×</button></header>
   <div class="body">
     <div class="chips">${i.techs.map(t => `<span><i style="background:${T(t).couleur}"></i>${E(T(t).nom)}</span>`).join('')}${i.recurrent ? '<span>↻ Récurrente</span>' : ''}</div>
-    ${i.type === 'intervention' ? `<dl class="kv"><dt>Client</dt><dd>${E(i.client || '—')}</dd><dt>Occupant</dt><dd>${E(i.occupant || '—')}</dd><dt>Téléphone</dt><dd>${i.tel ? `<a href="tel:${E(i.tel.replace(/\s/g, ''))}">${E(i.tel)}</a>` : '—'}</dd><dt>Adresse</dt><dd>${(() => { const ad = [i.adresse, [i.cp, i.ville].filter(Boolean).join(' ')].filter(Boolean).join(', '); return ad ? `<a class="plans" href="maps://?q=${encodeURIComponent(ad + ', France')}" title="Ouvrir dans Plans">${ic('map')} ${E(ad)}</a> <a class="gmaps" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(ad + ', France')}" target="_blank" rel="noopener">Google Maps</a>` : '—'; })()}${i.complement ? `<br><span style="color:var(--mute)">${E(i.complement)}</span>` : ''}</dd></dl>` : ''}
+    ${i.type === 'intervention' ? `<dl class="kv"><dt>Client</dt><dd>${E(i.client || '—')}</dd><dt>Occupant</dt><dd>${E(i.occupant || '—')}</dd><dt>Téléphone</dt><dd>${i.tel ? `<a href="tel:${E(i.tel.replace(/\s/g, ''))}">${E(i.tel)}</a>` : '—'}</dd><dt>Adresse</dt><dd>${(() => { const ad = [i.adresse, [i.cp, i.ville].filter(Boolean).join(' ')].filter(Boolean).join(', '); return ad ? `<span class="adtx">${E(ad)}</span><span class="navs">${['waze', 'plans', 'google'].map(k => `<a class="nv ${k}" data-nav="${k}" href="${navLink(k, i)}" target="_blank" rel="noopener">${NAVN[k]}</a>`).join('')}</span>` : '—'; })()}${i.complement ? `<br><span style="color:var(--mute)">${E(i.complement)}</span>` : ''}</dd></dl>` : ''}
     <div class="box"><h4>Travaux à effectuer</h4>${E(i.travaux || '—')}</div>
     ${i.materiel.length ? `<div class="box"><h4>${ic('package')} Matériel nécessaire</h4><ul class="mat">${i.materiel.map(m => `<li>${E(m)}</li>`).join('')}</ul></div>` : ''}
     ${(pieces || []).filter(p => p.prive).length ? `<div class="box priv"><h4>${ic('file')} Devis et documents du bureau <small>(non visibles par les techniciens)</small></h4><div class="ph" id="pjb">${pieces.filter(p => p.prive).map(p => `<a target="_blank" rel="noopener" data-pb="${E(p.path)}">${p.type === 'photo' ? '<img alt="">' : `<span class="ic">${ic('file')}</span>`}${E(p.nom)}</a>`).join('')}</div></div>` : ''}
@@ -494,8 +509,9 @@ async function detail(id, given) {
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn btn-line" id="nbs" type="button">${ic('message')} Envoyer le message</button><button class="btn btn-line" id="nbr" type="button" style="color:#DC2626;border-color:#FCA5A5">↺ Envoyer et mettre « À reprendre »</button></div></div>
     <label style="font-size:13px;font-weight:800;color:var(--mute)">Statut<select id="st" style="display:block;width:100%;margin-top:6px;border:2px solid var(--line);border-radius:10px;padding:10px">${[...new Set([i.statut, 'attente', 'reprendre', 'cloturee'])].map(k => `<option value="${k}" ${k === i.statut ? 'selected' : ''}>${STAT_I[k]}</option>`).join('')}</select></label>
   </div>
-  <footer>${['controle', 'attente', 'reprendre'].includes(i.statut) ? `<button class="btn btn-grad" id="clo" style="background:var(--ok,#0E9F6E)">${i.devis && i.statut === 'controle' ? '✓ Devis fait' : '✓ Clôturer'}</button>` : ''}${i.statut === 'controle' ? '<button class="btn btn-line" id="rep" style="color:#DC2626">↺ À reprendre</button><button class="btn btn-line" id="att">En attente</button>' : ''}<button class="btn ${['controle', 'attente', 'reprendre'].includes(i.statut) ? 'btn-line' : 'btn-grad'}" id="ed">Modifier</button><button class="btn btn-line" id="dup">Dupliquer</button><button class="btn btn-line" id="p7">+7 jours</button><button class="btn btn-red" id="del" style="margin-left:auto">Supprimer</button></footer>`);
+  <footer>${i.devis && i.devis_fait && !i.devis_suite ? `<button class="btn btn-grad" id="dvprog">${ic('calendar')} Programmer l’intervention</button>` : ''}${['controle', 'attente', 'reprendre'].includes(i.statut) ? `<button class="btn btn-grad" id="clo" style="background:var(--ok,#0E9F6E)">${i.devis && i.statut === 'controle' ? '✓ Devis fait' : '✓ Clôturer'}</button>` : ''}${i.statut === 'controle' ? '<button class="btn btn-line" id="rep" style="color:#DC2626">↺ À reprendre</button><button class="btn btn-line" id="att">En attente</button>' : ''}<button class="btn ${['controle', 'attente', 'reprendre'].includes(i.statut) ? 'btn-line' : 'btn-grad'}" id="ed">Modifier</button><button class="btn btn-line" id="dup">Dupliquer</button><button class="btn btn-line" id="p7">+7 jours</button><button class="btn btn-red" id="del" style="margin-left:auto">Supprimer</button></footer>`);
   if (i.note_reponse && !i.note_rep_lue) { i.note_rep_lue = true; sb.from('interventions').update({ note_rep_lue: true }).eq('id', id).then(() => { const c = document.querySelector(`.ev[data-id="${id}"] .nb`); if (c) c.remove(); }); }
+  if (i.adresse || i.ville) geoFix(i, document.querySelector('#panel .kv'));
   const urls = await signed('pieces', (pieces || []).filter(p => !p.prive).map(p => p.path));
   signed('bureau', (pieces || []).filter(p => p.prive).map(p => p.path)).then(ub => document.querySelectorAll('#pjb [data-pb]').forEach(a => { const u = ub[a.dataset.pb]; if (u) { a.href = u; setThumb(a, u, a.dataset.pb); } }));
   document.querySelectorAll('#pj [data-p]').forEach(a => { const u = urls[a.dataset.p]; if (u) { a.href = u; setThumb(a, u, a.dataset.p); } });
@@ -503,6 +519,7 @@ async function detail(id, given) {
   if ((i.photos || []).length) signed('retours', i.photos.map(p => p.path)).then(u3 => { document.querySelectorAll('#rph [data-rp]').forEach(a => { const u = u3[a.dataset.rp]; if (u) { a.href = u; setThumb(a, u, a.dataset.rp); } });
     const b = $('#rpall'); if (b) b.onclick = async () => { b.disabled = true; let k = 0; for (const p of i.photos) { const u = u3[p.path]; if (u) { k++; await dlFile(u, p.path, `${(i.client || i.occupant || 'intervention').replace(/[^\w\- ]+/g, '').trim()}-${i.date}-${k}${(p.tag ? '-' + p.tag : '')}.jpg`); await new Promise(r => setTimeout(r, 350)); } } b.disabled = false; toast(k + ' photo' + (k > 1 ? 's' : '') + ' téléchargée' + (k > 1 ? 's' : '') + ' (dossier Téléchargements)'); }; });
   if ($('#clo')) $('#clo').onclick = () => cloturer(id, i.devis && i.statut === 'controle');
+  if ($('#dvprog')) $('#dvprog').onclick = () => { closePanel(); programmerDevis(i); };
   $('#st').onchange = async e => { const v = e.target.value; if (v === 'reprendre') { if (!(await aReprendre(i, $('#nbw').value))) e.target.value = i.statut; return; }
     if (v === 'cloturee') return cloturer(id);
     const row = v === 'attente' ? await attenteRow() : { statut: v }; if (!row) { e.target.value = i.statut; return; }
@@ -531,7 +548,7 @@ async function form(i, opts) {
   const add = { tech: [], bur: [] }; let removed = []; (opts.files || []).forEach(x => add[x.prive ? 'bur' : 'tech'].push(x.file));
   const debut = (i.heure || '09:00').slice(0, 5), finH = hm(Math.min(mins(debut) + Math.round((+i.duree || 1) * 60), 23 * 60 + 45));
   const who = (list, label) => list.length ? `<div class="whog"><small>${label}</small><div class="checks">${list.map(t => `<label><input type="checkbox" name="techs" value="${t.id}" ${i.techs.includes(t.id) ? 'checked' : ''}><i style="width:10px;height:10px;border-radius:50%;background:${t.couleur};display:inline-block"></i>${E(t.nom)}</label>`).join('')}</div></div>` : '';
-  const upl = (k, title, help) => `<div class="full upl ${k === 'bur' ? 'priv' : ''}"><div class="ut">${title} <span>${help}</span></div><div class="ph" id="pj-${k}"></div><div class="dz"><label class="btn btn-line">+ Ajouter des fichiers<input type="file" id="in-${k}" multiple accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx" class="sr"></label><button type="button" class="btn btn-line" data-clip="${k}">${ic('paperclip')} Coller la photo copiée</button><span>ou glissez-les ici</span></div></div>`;
+  const upl = (k, title, help) => `<div class="full upl ${k === 'bur' ? 'priv' : ''}"><div class="ut">${title} <span>${help}</span></div><div class="ph" id="pj-${k}"></div><div class="dz"><label class="btn btn-line">+ Ajouter des fichiers<input type="file" id="in-${k}" multiple accept="image/*,.heic,.heif,video/*,application/pdf,.doc,.docx,.xls,.xlsx" class="sr"></label><button type="button" class="btn btn-line" data-clip="${k}" title="Ou Cmd + V n’importe où dans cette fenêtre">${ic('paperclip')} Coller la photo copiée</button><span>ou glissez-les ici</span></div></div>`;
   openPanel(`<header><h2>${isNew ? (i.epingle ? ic('pin') + ' Rappel dans la journée' : opts.ctx && /^Copie/.test(opts.ctx) ? 'Dupliquer l’intervention' : 'Planifier') : 'Modifier'}</h2>${isNew ? '' : `<button type="button" class="btn btn-line" id="tofi" style="margin-left:auto;margin-right:8px">${ic('eye')} Fiche, photos, retour</button>`}<button class="x" aria-label="Fermer">×</button></header>
   <form class="body" id="f"><div class="form">
     ${opts.ctx ? `<div class="full box" style="background:var(--soft);border:0"><b>${E(opts.ctx)}</b></div>` : ''}
@@ -601,8 +618,9 @@ async function form(i, opts) {
     try { c = await clipImages(); } catch (e) { err = e.name || 'Erreur'; }
     if (c.length) return addReady(k, c);
     toast(err === 'NotAllowedError' ? 'Chrome bloque l’accès au presse-papiers : cliquez sur le cadenas à gauche de l’adresse › Presse-papiers › Autoriser, puis recommencez'
-      : err ? 'Erreur presse-papiers (' + err + ')' : 'Aucune photo dans le presse-papiers : faites d’abord clic droit sur la photo › Copier');
-    jlog('bouton', { err: err || null, n: c.length }); });
+      : err ? 'Erreur presse-papiers (' + err + ')' : 'Fichier copié depuis le Finder : Chrome ne peut pas le lire par ce bouton. Choisissez-le dans la fenêtre qui s’ouvre, ou faites Cmd + V ici.');
+    jlog('bouton', { err: err || null, n: c.length });
+    if (!c.length && err !== 'NotAllowedError') { const inp = $('#in-' + k); if (inp) try { inp.click(); } catch (e) { } } });
   const addReady = (k, ok) => { add[k] = add[k].concat(ok); draw(k); toast(ok.length > 1 ? ok.length + ' photos ajoutées' : 'Photo ajoutée'); };
   $('#cc').onclick = closePanel;
   f.onsubmit = async e => {
@@ -638,6 +656,7 @@ async function form(i, opts) {
         const path = `${id}/${Date.now()}-${k}-${file.name.normalize('NFD').replace(/[^\w.\-]+/g, '_')}`;
         const up = await sb.storage.from(prive ? 'bureau' : 'pieces').upload(path, file, { contentType: file.type || 'application/octet-stream' }); if (up.error) throw new Error('envoi de « ' + file.name + ' » impossible (' + up.error.message + ')');
         const r = await sb.from('pieces').insert((ids.length ? ids : [id]).map(x => ({ intervention_id: x, nom: file.name, type: kindOf(file), path, prive }))); if (r.error) throw r.error; }
+      if (isNew && opts.fromDevis) await reprendreDevis(opts.fromDevis, ids.length ? ids : [id], btn);
       if (opts.demande) await sb.from('demandes').update({ statut: 'planifiee', traitee_par: me.id, traitee_le: new Date().toISOString() }).eq('id', opts.demande.id);
       closePanel(); week = monday(new Date(row.date + 'T12:00')); if (mode === 'jour') day = row.date; await go('planning');
       toast((pin ? 'Rappel ajouté' : (isNew ? (ids.length > 1 ? ids.length + ' dates planifiées' : 'Planifié') : 'Enregistré')) + ' pour ' + names(ts));
@@ -721,25 +740,69 @@ async function cloturer(id, devisFait) {
   closePanel(); toast(devisFait ? '✓ Devis fait · c’est noté' : '✓ Intervention clôturée'); badgeC();
   await refreshView();
 }
+let dvTab = 'afaire';
 async function listControle(cached) {
   if (view !== 'controle' && view !== 'devis') return; const dv = view === 'devis', v0 = view;
+  if (dv && dvTab === 'faits') return listDevisFaits();
   const [{ data, error }, nx] = cached || await Promise.all([sb.from('interventions').select('*, intervention_techs(tech_id), pieces(id)').eq('statut', 'controle').eq('devis', dv).order('fin_at', { ascending: false }),
     dv ? sb.from('interventions').select('*, intervention_techs(tech_id)').eq('devis', true).in('statut', ['planifiee', 'enroute', 'encours', 'reprendre']).order('date').limit(60) : Promise.resolve({ data: [] })]);
   if (error) return toast('Erreur : ' + error.message);
   if (view !== v0) return; (listControle.c = listControle.c || {})[v0] = [{ data, error }, nx];
   ctrl = (data || []).map(i => ({ ...i, techs: i.intervention_techs.map(x => x.tech_id), nbPieces: i.pieces.length }));
   const soon = (nx.data || []).map(i => ({ ...i, techs: i.intervention_techs.map(x => x.tech_id) }));
-  $('#main').innerHTML = `<div class="head"><h1>${dv ? 'Devis à faire' : 'À contrôler'}</h1><span class="live"><i></i>En direct</span></div>
+  $('#main').innerHTML = `<div class="head"><h1>${dv ? 'Devis à faire' : 'À contrôler'}</h1><span class="live"><i></i>En direct</span></div>${dv ? dvTabs() : ''}
    <p style="color:var(--mute);margin:-6px 0 16px">${dv ? 'Visites « Devis » faites par les techniciens (photos + commentaire). Faites le devis, puis cliquez sur « ✓ Devis fait ».' : 'Interventions validées par les techniciens (photos + commentaire). Vérifiez puis clôturez.'}</p>
    ${ctrl.length ? `<div class="list">${ctrl.map(i => `<button class="d" data-c="${i.id}"><span class="th" data-th="${E((i.photos || [])[0]?.path || '')}">${(i.photos || []).length ? '<img alt="" loading="lazy" decoding="async">' : ic('pin')}</span>
      <span><h3>${E(i.type === 'intervention' ? ([i.client, i.occupant].filter(Boolean).join(' · ') || i.adresse || i.ville || 'Intervention') : i.travaux)}${i.epingle ? '<span class="tag t-aff">' + ic('pin') + ' Tâche</span>' : ''}</h3>${i.type === 'intervention' && (i.client || i.occupant) && (i.adresse || i.ville) ? `<p class="cad">${E([i.adresse, [i.cp, i.ville].filter(Boolean).join(' ')].filter(Boolean).join(', '))}</p>` : ''}<p>${i.valide_par ? `<b>Validée par ${E(T(i.valide_par).nom)}</b>${i.techs.length > 1 ? ' (équipe : ' + E(names(i.techs)) + ')' : ''}` : i.techs.map(t => `<i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${T(t).couleur};margin-right:4px"></i>${E(T(t).nom)}`).join(' · ')} · ${(i.photos || []).length} photo${(i.photos || []).length > 1 ? 's' : ''}${i.commentaire ? ' · « ' + E(i.commentaire.slice(0, 70)) + (i.commentaire.length > 70 ? '…' : '') + ' »' : ''}</p></span>
      <span class="r" style="color:var(--mute);font-size:13px;font-weight:700">${i.fin_at ? fdate(i.fin_at) : lbl(i.date, true)}${dv ? `<span class="dvok" data-dvok="${i.id}" role="button">✓ Devis fait</span>` : ''}</span></button>`).join('')}</div>` : `<div class="empty">${dv ? 'Aucun devis à faire pour l’instant' : 'Rien à contrôler : tout est à jour'} ${ic('check-circle')}</div>`}
    ${dv && soon.length ? `<h2 class="chh" style="margin-top:22px">${ic('calendar')} Visites devis prévues</h2><div class="list soon">${soon.map(i => `<button class="d" data-c="${i.id}"><span><h3>${E([i.client, i.occupant].filter(Boolean).join(' · ') || i.adresse || 'Visite devis')}</h3><p>${lbl(i.date)}${i.heure && !i.epingle ? ' · ' + hh(i.heure) : ''} · ${E(names(i.techs))}${i.adresse ? ' · ' + E([i.adresse, i.ville].filter(Boolean).join(', ')) : ''}</p></span><span class="tag s-${i.statut}" style="margin:0">${STAT_I[i.statut]}</span></button>`).join('')}</div>` : ''}`;
   document.querySelectorAll('[data-dvok]').forEach(b => b.onclick = async e => { e.stopPropagation(); await cloturer(b.dataset.dvok, true); });
+  bindDvTabs();
   document.querySelectorAll('[data-c]').forEach(b => b.onclick = () => detail(b.dataset.c, ctrl.find(x => x.id === b.dataset.c) || soon.find(x => x.id === b.dataset.c)));
   const paths = [...document.querySelectorAll('[data-th]')].map(e => e.dataset.th).filter(Boolean);
   signed('retours', paths).then(u => document.querySelectorAll('[data-th]').forEach(el => { const im = el.querySelector('img'); if (u[el.dataset.th] && im) { im.onerror = () => im.remove(); im.src = u[el.dataset.th]; } }));
 }
+
+/* ================= Devis faits : en attente de la réponse du client, puis « Programmer l'intervention » (tout est repris, photos comprises) ================= */
+const dvTabs = () => `<div class="seg dvseg"><button data-dvt="afaire" class="${dvTab === 'afaire' ? 'on' : ''}">Devis à faire</button><button data-dvt="faits" class="${dvTab === 'faits' ? 'on' : ''}">Devis faits · en attente du client</button></div>`;
+const bindDvTabs = () => document.querySelectorAll('[data-dvt]').forEach(b => b.onclick = () => { dvTab = b.dataset.dvt; listControle(); });
+let dvFaits = [];
+async function listDevisFaits() {
+  const { data, error } = await sb.from('interventions').select('*, intervention_techs(tech_id), pieces(id)').eq('devis', true).eq('devis_fait', true).is('devis_suite', null).order('devis_fait_at', { ascending: false, nullsFirst: false }).limit(150);
+  if (error) return toast('Erreur : ' + error.message); if (view !== 'devis' || dvTab !== 'faits') return;
+  dvFaits = (data || []).map(i => ({ ...i, techs: i.intervention_techs.map(x => x.tech_id), nbPieces: i.pieces.length }));
+  $('#main').innerHTML = `<div class="head"><h1>Devis à faire</h1><span class="live"><i></i>En direct</span></div>${dvTabs()}
+   <p style="color:var(--mute);margin:-6px 0 16px">Devis envoyés, en attente de la réponse du client. Quand il accepte : « Programmer l’intervention » reprend tout (client, adresse, travaux, photos de la visite, documents) : il ne reste qu’à choisir la date et le technicien.</p>
+   ${dvFaits.length ? `<div class="list">${dvFaits.map(i => `<div class="d dvf" data-c="${i.id}" role="button" tabindex="0"><span class="th" data-th="${E((i.photos || [])[0]?.path || '')}">${(i.photos || []).length ? '<img alt="" loading="lazy" decoding="async">' : ic('file')}</span>
+     <span><h3>${E([i.client, i.occupant].filter(Boolean).join(' · ') || i.adresse || 'Devis')}</h3><p class="cad">${E([i.adresse, [i.cp, i.ville].filter(Boolean).join(' ')].filter(Boolean).join(', '))}</p><p>${E((i.travaux || '').slice(0, 110))}</p>
+     <small style="color:var(--mute)">Visite du ${lbl(i.date)} · ${E(names(i.techs))}${i.devis_fait_at ? ' · devis fait le ' + fdate(i.devis_fait_at) : ''}${i.devis_fait_par ? ' par ' + E(i.devis_fait_par) : ''}${(i.photos || []).length ? ' · ' + i.photos.length + ' photo' + (i.photos.length > 1 ? 's' : '') : ''}</small></span>
+     <span class="r dvact"><button class="btn btn-grad" data-prog="${i.id}">${ic('calendar')} Programmer l’intervention</button><button class="btn btn-line" data-refus="${i.id}">Refusé · classer</button></span></div>`).join('')}</div>`
+    : `<div class="empty">Aucun devis en attente de réponse ${ic('check-circle')}</div>`}`;
+  bindDvTabs();
+  document.querySelectorAll('.dvf[data-c]').forEach(b => b.onclick = e => { if (e.target.closest('button')) return; detail(b.dataset.c, dvFaits.find(x => x.id === b.dataset.c)); });
+  document.querySelectorAll('[data-prog]').forEach(b => b.onclick = () => programmerDevis(dvFaits.find(x => x.id === b.dataset.prog)));
+  document.querySelectorAll('[data-refus]').forEach(b => b.onclick = async () => { const i = dvFaits.find(x => x.id === b.dataset.refus);
+    if (!await ask(`Classer le devis de ${[i.client, i.occupant].filter(Boolean).join(' · ') || 'ce client'} comme refusé ? Il sortira de cette liste (rien n’est supprimé).`, { ok: 'Classer' })) return;
+    const { error } = await sb.from('interventions').update({ devis_suite: 'refuse', devis_suite_at: new Date().toISOString() }).eq('id', i.id); if (error) return toast('Erreur : ' + error.message); toast('Devis classé'); listDevisFaits(); });
+  const paths = [...document.querySelectorAll('[data-th]')].map(e => e.dataset.th).filter(Boolean);
+  signed('retours', paths).then(u => document.querySelectorAll('[data-th]').forEach(el => { const im = el.querySelector('img'); if (u[el.dataset.th] && im) { im.onerror = () => im.remove(); im.src = u[el.dataset.th]; } }));
+}
+function programmerDevis(i) { if (!i) return;
+  const keep = ['client', 'client_id', 'occupant', 'tel', 'adresse', 'complement', 'cp', 'ville', 'travaux', 'materiel', 'chantier_id', 'affaire_id'];
+  const pre = { type: 'intervention', devis: false, epingle: false, date: iso(new Date()), heure: '08:00', duree: 1, techs: [...i.techs] }; keep.forEach(k => pre[k] = i[k]); pre.materiel = [...(i.materiel || [])];
+  form(null, { pre, fromDevis: i, ctx: `Intervention suite au devis (visite du ${lbl(i.date)}) : les ${(i.photos || []).length ? (i.photos.length + ' photo' + (i.photos.length > 1 ? 's' : '') + ' de la visite et les ') : ''}documents seront joints automatiquement. Choisissez la date, l’horaire et le technicien.` }); }
+/* Reprend les photos de la visite devis et les documents dans la nouvelle intervention */
+async function reprendreDevis(src, newIds, btn) {
+  const { data: pcs } = await sb.from('pieces').select('nom,type,path,prive').eq('intervention_id', src.id);
+  const rows = []; newIds.forEach(x => (pcs || []).forEach(p => rows.push({ ...p, intervention_id: x })));
+  const ph = src.photos || [];
+  for (let k = 0; k < ph.length; k++) { if (btn) btn.textContent = `Photos du devis ${k + 1}/${ph.length}…`;
+    try { const dl = await sb.storage.from('retours').download(ph[k].path); if (dl.error) throw dl.error;
+      const nom = 'visite-devis-' + (k + 1) + '.' + ((ph[k].path.split('.').pop() || 'jpg').toLowerCase()), path = `${newIds[0]}/${Date.now()}-d${k}-${nom}`;
+      const up = await sb.storage.from('pieces').upload(path, dl.data, { contentType: dl.data.type || 'image/jpeg' }); if (up.error) throw up.error;
+      newIds.forEach(x => rows.push({ intervention_id: x, nom, type: 'photo', path, prive: false })); } catch (e) { jlog('devis_photo', { err: String(e.message || e), path: ph[k].path }); } }
+  if (rows.length) { const r = await sb.from('pieces').insert(rows); if (r.error) toast('Photos du devis non jointes : ' + r.error.message); }
+  await sb.from('interventions').update({ devis_suite: 'programme', devis_suite_id: newIds[0], devis_suite_at: new Date().toISOString() }).eq('id', src.id); }
 
 /* ================= Mots de passe ================= */
 const APP_URL = 'https://monsieurh84.github.io/bkplus/app/', TECH_URL = APP_URL + 'tech.html';
