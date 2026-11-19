@@ -80,7 +80,18 @@ const numTape = q => ((String(q || '').match(/^\s*(\d+\s*(?:bis|ter|quater|[a-d]
 const adrNom = (a, q) => { const n = numTape(q); return a.type === 'street' && n && !/^\d/.test(a.name || '') ? n + ' ' + a.name : (a.name || ''); };
 let adrQ = '';
 const adrLine = a => `<b>${E(adrNom(a, adrQ) || a.label)}</b><small>${E([a.postcode, a.city].filter(Boolean).join(' '))}${a.context ? ' · ' + E(String(a.context).split(',').slice(-2).join(',').trim()) : ''}</small>`;
+/* Villes : suggestions des communes (par nom ou par code postal) ; le code postal tapé remplit la ville tout seul */
+async function geoCommunes(q) { q = String(q || '').trim(); if (q.length < 2) return [];
+  const cp = /^\d{5}$/.test(q), qs = cp ? `q=${q}&type=municipality&limit=8` : `q=${encodeURIComponent(q)}&type=municipality&autocomplete=1&limit=8&lat=43.514&lon=4.988`;
+  for (const u of ['https://data.geopf.fr/geocodage/search?index=address&' + qs, 'https://api-adresse.data.gouv.fr/search/?' + qs, 'https://geo.api.gouv.fr/communes?' + (cp ? 'codePostal=' + q : 'nom=' + encodeURIComponent(q) + '&boost=population') + '&fields=nom,codesPostaux&limit=8']) {
+    try { const j = await geoFetch(u); const r = Array.isArray(j) ? j.flatMap(c => (cp ? [q] : (c.codesPostaux || []).slice(0, 1)).map(p => ({ city: c.nom, postcode: p }))) : (j.features || []).map(geoBan).map(a => ({ city: a.city || a.name, postcode: a.postcode }));
+      const seen = new Set(), out = r.filter(a => a.city && !seen.has(a.city + a.postcode) && seen.add(a.city + a.postcode)); if (out.length || u.includes('geo.api')) return out; } catch (e) { } }
+  return []; }
+function acVille(f) { if (!f.ville || f.ville.dataset.ac) return; f.ville.removeAttribute('list');
+  attachAC(f.ville, async q => ({ data: await geoCommunes(q) }), a => `<b>${E(a.city)}</b><small>${E(a.postcode || '')}</small>`, a => { f.ville.value = a.city; if (f.cp && a.postcode) f.cp.value = a.postcode; });
+  if (f.cp) f.cp.addEventListener('input', async () => { const v = f.cp.value.trim(); if (!/^\d{5}$/.test(v) || f.ville.value.trim()) return; const r = await geoCommunes(v); if (r.length && f.cp.value.trim() === v && !f.ville.value.trim()) { f.ville.value = r[0].city; if (r.length > 1) toast('Ville : ' + r[0].city + ' (vérifiez, plusieurs communes pour ce code postal)'); } }); }
 function acAdresse(f) {
+  acVille(f);
   attachAC(f.adresse, q => { adrQ = q; return q.length < 4 ? Promise.resolve({ data: [] }) : searchAdresse(q); }, adrLine, a => {
     f.adresse.value = a.type === 'municipality' ? '' : adrNom(a, adrQ); f.cp.value = a.postcode || ''; f.ville.value = a.city || '';
     (a.type === 'municipality' ? f.adresse : f.complement || f.adresse).focus(); });
@@ -153,7 +164,7 @@ async function clientForm(c, pre) {
   </div></form>
   <footer><button class="btn btn-grad" form="cf" type="submit" id="csv">${isNew ? 'Créer le client' : 'Enregistrer'}</button>
     ${isNew ? '' : `<button class="btn btn-line" id="cpl">${ic('calendar')} Planifier</button><button class="btn btn-line" id="caf">${ic('briefcase')} Nouvelle affaire</button>`}</footer>`);
-  const f = $('#cf');
+  const f = $('#cf'); acAdresse(f);
   const row = () => { const fd = new FormData(f), o = { id: c.id }; ['type', 'nom', 'contact', 'tel', 'email', 'adresse', 'complement', 'cp', 'ville', 'siret', 'notes'].forEach(k => o[k] = String(fd.get(k) || '').trim()); return o; };
   const save = async () => { const r = row(); const res = isNew ? await sb.from('clients').insert(r).select().single() : await sb.from('clients').update(r).eq('id', c.id).select().single(); if (res.error) throw res.error; return res.data; };
   f.onsubmit = async e => { e.preventDefault(); const b = $('#csv'); b.disabled = true;

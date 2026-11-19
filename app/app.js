@@ -521,7 +521,7 @@ async function detail(id, given) {
   if ($('#clo')) $('#clo').onclick = () => cloturer(id, i.devis && i.statut === 'controle');
   if ($('#fok')) $('#fok').onclick = async () => { const { error } = await sb.from('interventions').update({ a_facturer: false, facture_le: new Date().toISOString(), facture_par: me.nom }).eq('id', id); if (error) return toast('Erreur : ' + error.message); i.a_facturer = false; aFact = aFact.filter(x => x.id !== id); closePanel(); toast('✓ Facturée · retirée de « À facturer »'); badgeC(); if (view === 'facturer') listFacturer(true); };
   if ($('#dvprog')) $('#dvprog').onclick = () => { closePanel(); programmerDevis(i); };
-  $('#st').onchange = async e => { const v = e.target.value; if (v === 'reprendre') { if (!(await aReprendre(i, $('#nbw').value))) e.target.value = i.statut; return; }
+  if ($('#st')) $('#st').onchange = async e => { const v = e.target.value; if (v === 'reprendre') { if (!(await aReprendre(i, $('#nbw').value))) e.target.value = i.statut; return; }
     if (v === 'cloturee') return cloturer(id);
     const row = v === 'attente' ? await attenteRow() : { statut: v }; if (!row) { e.target.value = i.statut; return; }
     const { error } = await sb.from('interventions').update(row).eq('id', id); if (error) return toast('Erreur : ' + error.message); i.statut = v; await refreshView(); detail(id); toast(v === 'attente' ? 'En attente · visible dans Chantiers & suivi' : 'Statut : ' + STAT_I[v]); };
