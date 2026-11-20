@@ -388,3 +388,7 @@ body.rzbody,body.rzbody *{cursor:ns-resize!important;user-select:none}
 .d.dvf .dvact{display:flex;flex-direction:column;gap:6px;align-items:stretch}
 .d.dvf .dvact .btn{white-space:nowrap;font-size:13px;padding:8px 12px}
 @media (max-width:900px){.d.dvf{grid-template-columns:56px 1fr}.d.dvf>.r.dvact{display:flex;grid-column:1/-1;flex-direction:row;flex-wrap:wrap}}
+/* Pastille rouge : interventions à contrôler (dont les reprises renvoyées par les techniciens) */
+.nav[data-v="controle"] .c{background:#DC2626}
+.list .d .crep{margin:4px 0 0;font-size:13px;font-weight:700;color:#B91C1C;display:flex;align-items:center;gap:6px}
+.list .d .crep i{width:8px;height:8px;border-radius:50%;background:#DC2626;flex:none}
