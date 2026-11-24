@@ -259,7 +259,7 @@ async function fiche() {
     ${isJob && i.statut === 'enroute' ? `${i.tel ? `<a class="sms" href="sms:${String(i.tel).replace(/\s/g, '')}${iOS ? '&' : '?'}body=${smsBody}">${ic('message')} Prévenir l’occupant par SMS</a>` : ''}<button class="primary-step here" id="here">${ic('map-pin')} Je suis sur place</button>` : ''}
     ${isJob && i.statut === 'encours' && i.debut_at ? `<div class="since">${ic('timer')} Sur place depuis ${new Date(i.debut_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }).replace(':', 'h')}</div>` : ''}
     ${isJob ? `<div class="panel"><dl class="facts">${i.occupant ? `<dt>Occupant</dt><dd>${E(i.occupant)}</dd>` : ''}${i.tel ? `<dt>Téléphone</dt><dd><a href="${telUrl(i.tel)}">${E(i.tel)}</a></dd>` : ''}${i.client ? `<dt>Client</dt><dd>${E(i.client)}</dd>` : ''}<dt>Horaires</dt><dd>${hh(i.heure)} – ${fin(i.heure, i.duree)}</dd></dl></div>` : ''}
-    ${isJob ? `<div class="panel"><h3>${ic('wrench')} Travaux à faire</h3><p>${E(i.travaux)}</p></div>` : ''}
+    ${isJob ? `<div class="panel"><h3>${ic('wrench')} Travaux à faire</h3>${fmtTrav(i.travaux)}</div>` : ''}
     ${i.materiel.length || (isJob && i.statut !== 'cloturee') ? `<div class="panel"><h3>${ic('package')} Matériel</h3>${i.materiel.length ? `<ul class="mat">${i.materiel.map((m, k) => `<li><label><input type="checkbox" data-mat="${k}" ${(matChk[i.id] || {})[k] ? 'checked' : ''}>${E(m)}</label></li>`).join('')}</ul>` : '<p style="color:var(--mute);margin:0 0 8px">Aucun matériel noté.</p>'}
       ${i.statut !== 'cloturee' ? `<div class="madd"><input id="mati" placeholder="Ajouter du matériel (ex. : 2 raccords 20/27)" autocomplete="off"><button id="mata" type="button">+ Ajouter</button></div>` : ''}</div>` : ''}
     ${docs.length ? `<div class="panel"><h3>${ic('paperclip')} Documents${i.demande ? ' · photos du client' : ''}</h3><div class="docs">${docs.map((p, k) => `<button data-doc="${k}"><div class="m ${p.kind === 'video' ? 'v' : ''}" data-dm="${k}">${p.kind === 'pdf' ? ic('file') : p.kind === 'video' ? '' : ''}</div><span>${E(p.name)}</span></button>`).join('')}</div>${i.demande?.message ? `<p style="font-size:16px;margin-top:10px;color:var(--mute)">« ${E(i.demande.message)} »</p>` : ''}</div>` : ''}
@@ -396,6 +396,13 @@ async function geoPoint(i) {
     try { const ks = Object.keys(geoC); if (ks.length > 400) delete geoC[ks[0]]; localStorage.setItem('bk-geo', JSON.stringify(geoC)); } catch (e) { }
     return geoC[k]; } catch (e) { return null; } }
 const prefetchGeo = list => { (list || []).filter(i => i && (i.adresse || i.ville) && !geoC[geoKey(i)]).slice(0, 12).forEach((i, n) => setTimeout(() => geoPoint(i), n * 300)); };
+/* Travaux à effectuer : texte collé d'un devis (« FORFAIT … - étape - étape … NOTE: … ») remis en blocs lisibles avec une liste à puces */
+function fmtTrav(t) { t = String(t || '').trim(); if (!t) return '—';
+  const blocks = t.replace(/\r/g, '').replace(/\s+(?=FORFAIT\b|NOTE\s*:|NB\s*:|OPTION\s*:|ATTENTION\s*:)/g, '\n').split(/\n+/).map(s => s.trim()).filter(Boolean);
+  return '<div class="trv">' + blocks.map(b => { const parts = b.replace(/^[-•]\s*/, '').split(/\s+[-–•]\s+/).map(s => s.trim()).filter(Boolean);
+    if (/^NOTE\s*:|^NB\s*:|^ATTENTION\s*:/i.test(b)) return `<p class="tnote">${E(b)}</p>`;
+    if (parts.length < 2) return `<p>${E(b)}</p>`;
+    return `<p class="ttl">${E(parts[0])}</p><ul>${parts.slice(1).map(x => `<li>${E(x)}</li>`).join('')}</ul>`; }).join('') + '</div>'; }
 const navUrl = (app, i) => { const g = geoC[geoKey(i)], q = encodeURIComponent(fullAddr(i) || i.ville || '');
   if (!g) return NAV[app].u(q); const ll = g.lat + ',' + g.lon;
   return app === 'waze' ? `https://waze.com/ul?ll=${ll}&navigate=yes&zoom=17` : app === 'plans' ? `https://maps.apple.com/?daddr=${ll}&q=${q}` : `https://www.google.com/maps/dir/?api=1&destination=${ll}`; };
@@ -605,8 +612,8 @@ function pullClose(lb) { if (lb.dataset.pull) return; lb.dataset.pull = 1; let y
   lb.addEventListener('touchend', () => { if (y0 === null || !card) return; y0 = null; card.style.transition = ''; if (dy > 120) { card.style.transform = 'translateY(100vh)'; setTimeout(() => { lb.classList.remove('on'); card.style.transform = ''; }, 180); } else card.style.transform = ''; }); }
 function eqCard(i, lb) {
   lb.innerHTML = `<div class="eqcard"><button data-x aria-label="Fermer">×</button>${['controle', 'attente', 'reprendre', 'cloturee'].includes(i.statut) ? `<span class="st ${i.statut}" style="display:inline-block;font-size:13px;padding:4px 10px;margin-bottom:6px">${{ controle: 'À contrôler', attente: 'En attente', reprendre: 'À reprendre', cloturee: 'Clôturée' }[i.statut]}</span><br>` : ''}<small>${lbl(i.date)}${i.epingle || !i.heure ? ' · dans la journée' : ' · ' + hh(i.heure) + ' – ' + fin(i.heure, i.duree)}</small>
-    <h3>${E([i.client, i.occupant].filter(Boolean).join(' · ') || i.travaux || 'Intervention')}</h3>${i.adresse || i.ville ? `<a class="eqmap" href="https://maps.apple.com/?q=${encodeURIComponent(fullAddr(i) + ', France')}">${ICON.route}<span>${E([[i.adresse, i.complement].filter(Boolean).join(', '), [i.cp, i.ville].filter(Boolean).join(' ')].filter(Boolean).join(' · '))}<small>Voir dans Plans · accès, stationnement</small></span></a>` : ''}
-    ${i.travaux ? `<p style="color:var(--mute)">${E(i.travaux.slice(0, 300))}</p>` : ''}<div class="eqw">${i.techs.map(t => `<span><i style="background:${T(t).couleur}"></i>${E(T(t).nom)}</span>`).join('')}</div>
+    <h3>${E([i.client, i.occupant].filter(Boolean).join(' · ') || i.travaux || 'Intervention')}</h3>${i.adresse || i.ville ? `<div class="eqmap">${ICON.route}<span>${E([[i.adresse, i.complement].filter(Boolean).join(', '), [i.cp, i.ville].filter(Boolean).join(' ')].filter(Boolean).join(' · '))}</span></div><div class="navs3">${['waze', 'plans', 'google'].map(k => `<a data-nv="${k}" href="${navUrl(k, i)}" target="_blank" rel="noopener"><i style="background:${NAV[k].c}">${NAV[k].e}</i>${{ waze: 'Waze', plans: 'Plans', google: 'Google' }[k]}</a>`).join('')}</div>` : ''}
+    ${i.travaux ? fmtTrav(i.travaux) : ''}<div class="eqw">${i.techs.map(t => `<span><i style="background:${T(t).couleur}"></i>${E(T(t).nom)}</span>`).join('')}</div>
     ${telLink(i.tel)}
     ${i.commentaire || (i.photos || []).length ? `<div class="eqret"><h4>${ic('check-circle')} Retour ${i.valide_par ? 'de ' + E(T(i.valide_par).nom) : 'du technicien'}</h4>${i.commentaire ? `<p style="white-space:pre-line">${E(i.commentaire)}</p>` : ''}
       <div class="eqph">${(i.photos || []).map(p => `<img alt="${E(p.tag || 'Photo')}" data-b="retours" data-ph="${E(p.path)}">`).join('')}</div></div>` : ''}
@@ -614,6 +621,7 @@ function eqCard(i, lb) {
     ${preview && ['controle', 'attente', 'reprendre'].includes(i.statut) ? `<div class="eqact"><button class="primary-step" id="eqclo" style="background:var(--ok)">${i.devis && i.statut === 'controle' ? '✓ Devis fait' : '✓ Clôturer'}</button><div class="r2"><button class="eqback" id="eqrep" style="color:#DC2626">↺ À reprendre</button>${i.statut !== 'attente' ? '<button class="eqback" id="eqatt">En attente</button>' : ''}</div></div>` : ''}
     <button class="primary-step" id="eqed" style="margin-top:14px;${['controle', 'attente', 'reprendre'].includes(i.statut) ? 'background:#fff;color:#0E1630;border:2px solid var(--line)' : ''}">Modifier</button><button type="button" class="eqback" data-x>‹ Retour</button></div>`;
   lb.classList.add('on'); lb.scrollTop = 0; pullClose(lb);
+  if (lb.querySelector('.navs3')) geoPoint(i).then(g => { if (g) lb.querySelectorAll('.navs3 [data-nv]').forEach(x => x.href = navUrl(x.dataset.nv, i)); });
   if ($('#eqclo')) { $('#eqclo').onclick = () => bureauStatut(i, i.devis && i.statut === 'controle' ? 'devisfait' : 'cloturee', lb); $('#eqrep').onclick = () => bureauStatut(i, 'reprendre', lb); if ($('#eqatt')) $('#eqatt').onclick = () => bureauStatut(i, 'attente', lb); } $('#eqed').onclick = () => quickNew(i.date, String(i.heure || '08:00').slice(0, 5), i);
   const els = [...lb.querySelectorAll('[data-ph],[data-doc2]')], byB = {}; els.forEach(x => (byB[x.dataset.b] = byB[x.dataset.b] || []).push(x.dataset.ph || x.dataset.doc2));
   (async () => { const urls = {}; for (const bk in byB) Object.assign(urls, await signedMap(bk, byB[bk]));

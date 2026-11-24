@@ -486,6 +486,13 @@ function navLink(k, i) { const q = encodeURIComponent([i.adresse, [i.cp, i.ville
 async function geoFix(i, box) { const k = geoK(i); if (!GEO[k] && typeof geoSearch === 'function') try { const r = await geoSearch([i.adresse, i.cp, i.ville].filter(Boolean).join(' '), 5, false);
     const ok = r.filter(a => a.lat && a.lon && (!i.cp || !a.postcode || a.postcode === String(i.cp).trim())), b = ok.find(a => a.type === 'housenumber') || ok[0]; if (b) GEO[k] = { lat: (+b.lat).toFixed(6), lon: (+b.lon).toFixed(6) }; } catch (e) { }
   if (GEO[k] && box) box.querySelectorAll('[data-nav]').forEach(a => a.href = navLink(a.dataset.nav, i)); }
+/* Travaux à effectuer : texte collé d'un devis (« FORFAIT … - étape - étape … NOTE: … ») remis en blocs lisibles avec une liste à puces */
+function fmtTrav(t) { t = String(t || '').trim(); if (!t) return '—';
+  const blocks = t.replace(/\r/g, '').replace(/\s+(?=FORFAIT\b|NOTE\s*:|NB\s*:|OPTION\s*:|ATTENTION\s*:)/g, '\n').split(/\n+/).map(s => s.trim()).filter(Boolean);
+  return '<div class="trv">' + blocks.map(b => { const parts = b.replace(/^[-•]\s*/, '').split(/\s+[-–•]\s+/).map(s => s.trim()).filter(Boolean);
+    if (/^NOTE\s*:|^NB\s*:|^ATTENTION\s*:/i.test(b)) return `<p class="tnote">${E(b)}</p>`;
+    if (parts.length < 2) return `<p>${E(b)}</p>`;
+    return `<p class="ttl">${E(parts[0])}</p><ul>${parts.slice(1).map(x => `<li>${E(x)}</li>`).join('')}</ul>`; }).join('') + '</div>'; }
 async function detail(id, given) {
   const i = given || inter.find(x => x.id === id); if (!i) return;
   const [{ data: pieces }, dem] = await Promise.all([sb.from('pieces').select('*').eq('intervention_id', id).order('created_at'), i.demande_id ? sb.from('demandes').select('*').eq('id', i.demande_id).maybeSingle() : Promise.resolve({ data: null })]);
@@ -496,7 +503,7 @@ async function detail(id, given) {
   <div class="body">
     <div class="chips">${i.techs.map(t => `<span><i style="background:${T(t).couleur}"></i>${E(T(t).nom)}</span>`).join('')}${i.recurrent ? '<span>↻ Récurrente</span>' : ''}</div>
     ${i.type === 'intervention' ? `<dl class="kv"><dt>Client</dt><dd>${E(i.client || '—')}</dd><dt>Occupant</dt><dd>${E(i.occupant || '—')}</dd><dt>Téléphone</dt><dd>${i.tel ? `<a href="tel:${E(i.tel.replace(/\s/g, ''))}">${E(i.tel)}</a>` : '—'}</dd><dt>Adresse</dt><dd>${(() => { const ad = [i.adresse, [i.cp, i.ville].filter(Boolean).join(' ')].filter(Boolean).join(', '); return ad ? `<span class="adtx">${E(ad)}</span><span class="navs">${['waze', 'plans', 'google'].map(k => `<a class="nv ${k}" data-nav="${k}" href="${navLink(k, i)}" target="_blank" rel="noopener">${NAVN[k]}</a>`).join('')}</span>` : '—'; })()}${i.complement ? `<br><span style="color:var(--mute)">${E(i.complement)}</span>` : ''}</dd></dl>` : ''}
-    <div class="box"><h4>Travaux à effectuer</h4>${E(i.travaux || '—')}</div>
+    <div class="box"><h4>Travaux à effectuer</h4>${fmtTrav(i.travaux)}</div>
     ${i.materiel.length ? `<div class="box"><h4>${ic('package')} Matériel nécessaire</h4><ul class="mat">${i.materiel.map(m => `<li>${E(m)}</li>`).join('')}</ul></div>` : ''}
     ${(pieces || []).filter(p => p.prive).length ? `<div class="box priv"><h4>${ic('file')} Devis et documents du bureau <small>(non visibles par les techniciens)</small></h4><div class="ph" id="pjb">${pieces.filter(p => p.prive).map(p => `<a target="_blank" rel="noopener" data-pb="${E(p.path)}">${p.type === 'photo' ? '<img alt="">' : `<span class="ic">${ic('file')}</span>`}${E(p.nom)}</a>`).join('')}</div></div>` : ''}
     ${(pieces || []).filter(p => !p.prive).length ? `<div class="box"><h4>${ic('paperclip')} Pièces jointes pour le technicien</h4><div class="ph" id="pj">${pieces.filter(p => !p.prive).map(p => `<a target="_blank" rel="noopener" data-p="${E(p.path)}">${p.type === 'photo' ? '<img alt="">' : `<span class="ic">${p.type === 'video' ? ic('film') : ic('file')}</span>`}${E(p.nom)}</a>`).join('')}</div></div>` : ''}
@@ -505,7 +512,7 @@ async function detail(id, given) {
     <div class="box note ${i.note_bureau ? (i.note_lue ? 'lu' : 'nonlu') : ''}"><h4>${ic('message')} Message pour ${i.techs.length > 1 ? 'les techniciens' : 'le technicien'} <small>(reçu directement sur son application)</small></h4>
       ${i.note_bureau ? `<div class="nlast"><div style="white-space:pre-line">${E(i.note_bureau)}</div><small>Envoyé ${i.note_at ? fdate(i.note_at) : ''} · ${i.note_lue ? '✓ Lu par le technicien' : 'Pas encore lu'}</small></div>` : ''}
       ${i.note_reponse ? `<div class="nrep ${i.note_rep_lue ? '' : 'new'}"><small>${i.note_rep_lue ? '' : '● '}Réponse de ${E(i.note_rep_par ? T(i.note_rep_par).nom : 'technicien')}${i.note_rep_at ? ' · ' + fdate(i.note_rep_at) : ''}</small><div style="white-space:pre-line">${E(i.note_reponse)}</div></div>` : ''}
-      <textarea id="nbw" rows="3" placeholder="Ex. : Merci de repasser chez l’occupant pour resserrer le raccord, il reste une goutte."></textarea>
+      <textarea id="nbw" rows="3" placeholder="Votre message pour ${i.techs.length > 1 ? 'les techniciens' : 'le technicien'}…"></textarea>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn btn-line" id="nbs" type="button">${ic('message')} Envoyer le message</button><button class="btn btn-line" id="nbr" type="button" style="color:#DC2626;border-color:#FCA5A5">↺ Envoyer et mettre « À reprendre »</button></div></div>
     <label style="font-size:13px;font-weight:800;color:var(--mute)">Statut<select id="st" style="display:block;width:100%;margin-top:6px;border:2px solid var(--line);border-radius:10px;padding:10px">${[...new Set([i.statut, 'attente', 'reprendre', 'cloturee'])].map(k => `<option value="${k}" ${k === i.statut ? 'selected' : ''}>${STAT_I[k]}</option>`).join('')}</select></label>
   </div>
@@ -608,6 +615,8 @@ async function form(i, opts) {
   const addFiles = async (k, list) => { const all = (await Promise.all([...list].map(fixFile))).filter(Boolean), big = all.filter(x => x.size > 50 * 1024 * 1024); if (big.length) toast('Fichier trop lourd (50 Mo max) : ' + big[0].name); const ok = all.filter(x => x.size <= 50 * 1024 * 1024); add[k] = add[k].concat(ok); draw(k); if (ok.length) toast(ok.length > 1 ? ok.length + ' fichiers ajoutés' : 'Fichier ajouté : ' + ok[0].name); };
   const exU = {}; ['pieces', 'bureau'].forEach(bk => { const ps = existing.filter(p => !!p.prive === (bk === 'bureau')).map(p => p.path); if (ps.length) signed(bk, ps).then(u => { Object.assign(exU, u); draw(bk === 'bureau' ? 'bur' : 'tech'); }); });
   ['tech', 'bur'].forEach(k => { draw(k); $('#in-' + k).onchange = e => { addFiles(k, e.target.files); e.target.value = ''; };
+    /* Bouton « Ajouter des fichiers » : ouverture explicite de la fenêtre de choix (plus fiable que le seul clic sur l'étiquette) */
+    const lb = $('#in-' + k).closest('label'); if (lb) lb.onclick = e => { if (e.target.tagName === 'INPUT') return; e.preventDefault(); const inp = $('#in-' + k); inp.value = ''; try { inp.showPicker ? inp.showPicker() : inp.click(); } catch (x) { inp.click(); } };
     const z = $('#pj-' + k).closest('.upl'); let dc = 0;
     z.addEventListener('dragenter', e => { e.preventDefault(); dc++; z.classList.add('drop'); });
     z.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });

@@ -392,3 +392,7 @@ body.rzbody,body.rzbody *{cursor:ns-resize!important;user-select:none}
 .nav[data-v="controle"] .c{background:#DC2626}
 .list .d .crep{margin:4px 0 0;font-size:13px;font-weight:700;color:#B91C1C;display:flex;align-items:center;gap:6px}
 .list .d .crep i{width:8px;height:8px;border-radius:50%;background:#DC2626;flex:none}
+/* Travaux à effectuer : blocs + puces */
+.trv p{margin:0 0 4px;line-height:1.45}.trv p.ttl{font-weight:800;margin-top:8px}.trv p.ttl:first-child{margin-top:0}
+.trv ul{margin:2px 0 6px;padding-left:20px}.trv li{margin:2px 0;line-height:1.4}
+.trv p.tnote{margin-top:8px;padding:8px 10px;border-radius:10px;background:#FFF7E6;color:#92400E;font-weight:600}
