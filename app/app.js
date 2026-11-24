@@ -1,6 +1,7 @@
 /* BK+ — application bureau (Supabase) */
 const C = window.BK_CONFIG, sb = supabase.createClient(C.url, C.key, { auth: { persistSession: true, autoRefreshToken: true } });
 const $ = s => document.querySelector(s), root = $('#root');
+Object.assign(ICP, { settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>', key: '<circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6M15.5 7.5l3 3L22 7l-3-3"/>', 'user-plus': '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/>', 'user-x': '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m17 8 5 5M22 8l-5 5"/>' });
 /* Fenêtres de confirmation de l'application (remplacent celles du navigateur, qui affichaient l'adresse du site) */
 function dlgBox(msg, o) { o = o || {}; return new Promise(res => {
   const d = document.createElement('div'); d.className = 'bkdlg';
@@ -66,7 +67,7 @@ async function start() {
   if (!p || p.role !== 'bureau' || !p.actif) { started = false; root.innerHTML = `<div class="login"><form><img src="../logo-bk.png" alt=""><h1>Accès non activé</h1><p>Votre compte (${E(session.user.email)}) n’a pas encore d’accès bureau.</p><button class="btn btn-line" type="button" id="out">Se déconnecter</button></form></div>`; $('#out').onclick = () => sb.auth.signOut(); return; }
   me = p; shell();
   const r = await sb.from('techniciens').select('*').eq('actif', true).order('ordre'); techs = r.data || [];
-  await Promise.all([loadDemandes(), loadAffaires()]); const h = location.hash.slice(1); view = ['planning', 'recherche', 'demandes', 'controle', 'devis', 'affaires', 'chantiers', 'clients', 'articles'].includes(h) ? h : 'planning';
+  await Promise.all([loadDemandes(), loadAffaires()]); const h = location.hash.slice(1); view = ['planning', 'recherche', 'demandes', 'controle', 'devis', 'affaires', 'chantiers', 'clients', 'articles', 'parametres'].includes(h) ? h : 'planning';
   await go(view); listen(); badgeC();
 }
 function shell() {
@@ -76,20 +77,20 @@ function shell() {
   <button class="nav" data-v="demandes">${ic('inbox')} Demandes du site<span class="c" id="cn"></span></button>
   <button class="nav" data-v="affaires">${ic('briefcase')} Affaires<span class="c" id="ca"></span></button><button class="nav" data-v="chantiers">${ic('helmet')} Chantiers</button><button class="nav" data-v="clients">${ic('notebook')} Clients</button><button class="nav" data-v="articles">${ic('package')} Articles</button><button class="nav" data-v="controle">${ic('check-circle')} À contrôler<span class="c" id="cc"></span></button><button class="nav" data-v="devis">${ic('file')} Devis à faire<span class="c" id="cdv"></span></button><button class="nav" data-v="facturer">${ic('clipboard')} À facturer<span class="c" id="cfa"></span></button>
   <a class="nav" href="tech.html" id="apptech" style="text-decoration:none">${ic('smartphone')} Mon planning<small>app tech.</small></a>
-  <button class="nav" id="team">${ic('users')} Équipe & accès</button>
+  <button class="nav" data-v="parametres">${ic('settings')} Paramètres</button>
   <div class="who"><b>${E(me.nom)}</b>Accès bureau<br><button id="mdp">Mon mot de passe</button> · <button id="out">Se déconnecter</button></div></aside><main class="main" id="main"><div class="loading">Chargement…</div></main></div>`;
-  $('#out').onclick = () => sb.auth.signOut(); $('#mdp').onclick = monMdp; $('#team').onclick = equipe;
+  $('#out').onclick = () => sb.auth.signOut(); $('#mdp').onclick = monMdp;
   /* Ordinateur : l'app technicien s'ouvre dans un onglet à côté. Téléphone / app installée : même fenêtre, et le bouton « Bureau » de l'app technicien ramène ici */
   $('#apptech').onclick = e => { if (!isMob() && !matchMedia('(display-mode: standalone)').matches && !navigator.standalone) { e.preventDefault(); window.open('tech.html', '_blank', 'noopener'); } };
   document.querySelectorAll('[data-v]').forEach(b => b.onclick = () => { document.body.classList.remove('mopen'); go(b.dataset.v); });
   $('#mham').onclick = () => document.body.classList.toggle('mopen'); $('#mscrim').onclick = () => document.body.classList.remove('mopen');
-  $('#mnew').onclick = () => form(); $('#team').addEventListener('click', () => document.body.classList.remove('mopen'));
+  $('#mnew').onclick = () => form();
 }
 async function go(v) {
   view = v; history.replaceState(null, '', '#' + v); const nb = document.querySelector(`[data-v="${v}"]`); if ($('#mtit') && nb) $('#mtit').textContent = nb.textContent.replace(/\d+$/, '').trim();
   document.querySelectorAll('[data-v]').forEach(b => b.classList.toggle('on', b.dataset.v === v));
   if (v === 'planning') { if (inter && loadPlanning.key === range().join('')) planning(); await loadPlanning(); if (view === 'planning') planning(); }
-  else if (v === 'controle' || v === 'devis') { if (listControle.c && listControle.c[v]) listControle(listControle.c[v]); await listControle(); } else if (v === 'facturer') { if (aFact.length) listFacturer(true); await listFacturer(); } else if (v === 'affaires') { await loadAffaires(); listAffaires(); } else if (v === 'chantiers') { await loadChantiers(); listChantiers(); } else if (v === 'recherche') listRecherche(); else if (v === 'clients') listClients(); else if (v === 'articles') listArticles(); else listDemandes();
+  else if (v === 'controle' || v === 'devis') { if (listControle.c && listControle.c[v]) listControle(listControle.c[v]); await listControle(); } else if (v === 'facturer') { if (aFact.length) listFacturer(true); await listFacturer(); } else if (v === 'affaires') { await loadAffaires(); listAffaires(); } else if (v === 'chantiers') { await loadChantiers(); listChantiers(); } else if (v === 'recherche') listRecherche(); else if (v === 'clients') listClients(); else if (v === 'articles') listArticles(); else if (v === 'parametres') { if (eqData.length) listParametres(true); await listParametres(); } else listDemandes();
 }
 function listen() {
   if (chan) sb.removeChannel(chan);
@@ -847,22 +848,78 @@ function monMdp() {
   $('#mf').onsubmit = async e => { e.preventDefault(); const f = e.target; if (f.a.value !== f.b.value) return toast('Les deux mots de passe ne correspondent pas');
     const { error } = await sb.auth.updateUser({ password: f.a.value }); if (error) return toast('Erreur : ' + error.message); closePanel(); toast('Mot de passe modifié'); };
 }
-async function equipe() {
-  const { data, error } = await sb.rpc('bureau_comptes'); if (error) return toast('Erreur : ' + error.message);
-  const rl = { bureau: 'Bureau', technicien: 'Technicien' };
-  openPanel(`<header><div><h2>Équipe & accès</h2><div style="color:var(--mute);font-size:13px">Créez un nouveau mot de passe pour un membre de l’équipe, puis envoyez-lui le message par SMS.</div></div><button class="x" aria-label="Fermer">×</button></header>
-  <div class="body">${data.map(u => `<div class="acc"><div><b>${E(u.nom)}</b><span class="tag ${u.role === 'bureau' ? 't-new' : 't-pla'}">${rl[u.role] || u.role}</span><small>${E(u.email)} · ${u.derniere_connexion ? 'dernière connexion ' + fdate(u.derniere_connexion) : 'jamais connecté'}</small></div>
-    <button class="btn btn-line" data-u="${u.id}">Nouveau mot de passe</button><div class="nm" id="nm-${u.id}"></div></div>`).join('')}</div>`);
-  document.querySelectorAll('[data-u]').forEach(b => b.onclick = async () => {
-    const u = data.find(x => x.id === b.dataset.u), mdp = genMdp();
-    if (!await ask('Créer un nouveau mot de passe pour ' + u.nom + ' ? L’ancien ne fonctionnera plus.')) return;
-    b.disabled = true; const { error } = await sb.rpc('bureau_mdp', { p_user: u.id, p_mdp: mdp }); b.disabled = false;
-    if (error) return toast('Erreur : ' + error.message);
-    const lien = u.role === 'bureau' ? APP_URL : TECH_URL;
-    const msg = `Bonjour ${u.nom.split(' ')[0]}, voici ton accès à l’application BK+ :\n${lien}\nIdentifiant : ${u.email}\nMot de passe : ${mdp}\nTu pourras le changer dans l’application (« Mon mot de passe »).`;
-    $('#nm-' + u.id).innerHTML = `<div class="newpw"><span>Nouveau mot de passe : <b>${E(mdp)}</b></span><button class="btn btn-grad" type="button">${ic('clipboard')} Copier le message à envoyer</button></div>`;
-    $('#nm-' + u.id).querySelector('button').onclick = async () => { try { await navigator.clipboard.writeText(msg); toast('Message copié : collez-le dans un SMS ou WhatsApp'); } catch (e) { askText('Copiez ce message :', msg, { multi: true }); } };
-  });
+/* ================= Paramètres : équipe & accès ================= */
+let eqData = [];
+const ROLE = { bureau: 'Bureau', technicien: 'Technicien' };
+const COULEURS = ['#2239A9', '#0E9F6E', '#C2410C', '#6D28D9', '#DB2777', '#0891B2', '#B45309', '#DC2626', '#4D7C0F', '#64748B'];
+const reloadTechs = async () => { const r = await sb.from('techniciens').select('*').eq('actif', true).order('ordre'); if (!r.error) techs = r.data || []; };
+const msgAcces = (t, email, mdp, role) => `Bonjour ${String(t.nom).split(' ')[0]}, voici ton accès à l’application BK+ :\n${role === 'bureau' ? APP_URL : TECH_URL}\nIdentifiant : ${email}\nMot de passe : ${mdp}\nTu pourras le changer dans l’application (« Mon mot de passe »).`;
+function showMdp(box, mdp, msg) {
+  box.innerHTML = `<div class="newpw"><span>Mot de passe : <b>${E(mdp)}</b></span><button class="btn btn-grad" type="button">${ic('clipboard')} Copier le message à envoyer</button></div>`;
+  box.querySelector('button').onclick = async () => { try { await navigator.clipboard.writeText(msg); toast('Message copié : collez-le dans un SMS ou WhatsApp'); } catch (e) { askText('Copiez ce message :', msg, { multi: true }); } };
+}
+async function listParametres(fromCache) {
+  if (!fromCache) { const { data, error } = await sb.rpc('bureau_equipe'); if (error) return toast('Erreur : ' + error.message); eqData = data || []; }
+  if (view !== 'parametres') return;
+  const act = eqData.filter(t => t.actif), old = eqData.filter(t => !t.actif);
+  const row = t => { const moi = t.profil_id === me.id, acc = !!t.profil_id;
+    return `<div class="eq${t.actif ? '' : ' off'}" data-eq="${t.id}"><i class="eqc" style="background:${E(t.couleur || '#64748B')}"></i>
+    <span class="eqi"><b>${E(t.nom)}</b>${moi ? ' <span class="tag t-aff">Vous</span>' : ''}${t.fonction ? ` <em>${E(t.fonction)}</em>` : ''}
+      <small>${acc ? `<span class="tag ${t.role === 'bureau' ? 't-new' : 't-pla'}">${ROLE[t.role] || t.role}</span> ${E(t.email || '')} · ${t.derniere_connexion ? 'dernière connexion ' + fdate(t.derniere_connexion) : 'jamais connecté'}` : `<span class="tag t-arc">Sans accès</span> apparaît dans le planning mais ne peut pas se connecter`}</small></span>
+    <span class="eqa">${t.actif ? `<button class="btn btn-line" data-ed="${t.id}">${ic('pencil')} Modifier</button>${acc ? `<button class="btn btn-line" data-pw="${t.id}">${ic('key')} Nouveau mot de passe</button>` : `<button class="btn btn-grad" data-cr="${t.id}">${ic('user-plus')} Créer l’accès</button>`}${moi ? '' : `<button class="btn btn-line eqoff" data-off="${t.id}">${ic('user-x')} Désactiver</button>`}`
+      : `<button class="btn btn-line" data-on="${t.id}">Réactiver</button>`}</span><div class="nm" id="nm-${t.id}"></div></div>`; };
+  $('#main').innerHTML = `<div class="head"><h1>Paramètres</h1><button class="btn btn-line" id="pmdp">${ic('key')} Mon mot de passe</button><button class="btn btn-grad" id="eqadd">+ Ajouter un membre</button></div>
+   <h2 class="psec">Équipe & accès</h2>
+   <p style="color:var(--mute);margin:-4px 0 14px">Les membres actifs apparaissent dans le planning. Un membre désactivé ne peut plus se connecter et disparaît du planning ; son historique est conservé.</p>
+   <div class="eqlist">${act.map(row).join('') || '<div class="empty">Aucun membre actif</div>'}</div>
+   ${old.length ? `<details class="eqold"><summary>Anciens membres désactivés (${old.length})</summary><div class="eqlist">${old.map(row).join('')}</div></details>` : ''}`;
+  $('#pmdp').onclick = monMdp; $('#eqadd').onclick = () => eqForm();
+  const T1 = id => eqData.find(x => x.id === id);
+  document.querySelectorAll('[data-ed]').forEach(b => b.onclick = () => eqForm(T1(b.dataset.ed)));
+  document.querySelectorAll('[data-cr]').forEach(b => b.onclick = () => eqAcces(T1(b.dataset.cr)));
+  document.querySelectorAll('[data-pw]').forEach(b => b.onclick = async () => { const t = T1(b.dataset.pw), mdp = genMdp();
+    if (!await ask('Créer un nouveau mot de passe pour ' + t.nom + ' ? L’ancien ne fonctionnera plus.')) return;
+    b.disabled = true; const { error } = await sb.rpc('bureau_mdp', { p_user: t.profil_id, p_mdp: mdp }); b.disabled = false;
+    if (error) return toast('Erreur : ' + error.message); showMdp($('#nm-' + t.id), mdp, msgAcces(t, t.email, mdp, t.role)); });
+  document.querySelectorAll('[data-off]').forEach(b => b.onclick = async () => { const t = T1(b.dataset.off);
+    const { count } = await sb.from('intervention_techs').select('intervention_id, interventions!inner(date)', { count: 'exact', head: true }).eq('tech_id', t.id).gte('interventions.date', iso(new Date()));
+    if (!await ask(`Désactiver ${t.nom} ?\n\nIl ne pourra plus se connecter (déconnexion immédiate de ses appareils) et n’apparaîtra plus dans le planning. Son historique est conservé et vous pourrez le réactiver.${count ? `\n\n⚠ ${count} intervention${count > 1 ? 's' : ''} à venir lui ${count > 1 ? 'sont' : 'est'} encore attribuée${count > 1 ? 's' : ''} : pensez à les réaffecter.` : ''}`, { danger: true, ok: 'Désactiver' })) return;
+    b.disabled = true; const { error } = await sb.rpc('bureau_acces', { p_tech: t.id, p_actif: false });
+    if (error) { b.disabled = false; return toast('Erreur : ' + error.message); } toast(t.nom + ' désactivé'); await reloadTechs(); await listParametres(); });
+  document.querySelectorAll('[data-on]').forEach(b => b.onclick = async () => { const t = T1(b.dataset.on);
+    if (!await ask(`Réactiver ${t.nom} ? Il réapparaîtra dans le planning${t.profil_id ? ' et pourra de nouveau se connecter avec son mot de passe' : ''}.`, { ok: 'Réactiver' })) return;
+    b.disabled = true; const { error } = await sb.rpc('bureau_acces', { p_tech: t.id, p_actif: true });
+    if (error) { b.disabled = false; return toast('Erreur : ' + error.message); } toast(t.nom + ' réactivé'); await reloadTechs(); await listParametres(); });
+}
+function eqForm(t) {
+  const n = !t; t = t || { nom: '', fonction: '', couleur: COULEURS.find(c => !eqData.some(x => x.actif && x.couleur === c)) || COULEURS[0], role: 'technicien' };
+  const moi = t.profil_id && t.profil_id === me.id;
+  openPanel(`<header><h2>${n ? 'Nouveau membre' : 'Modifier ' + E(t.nom)}</h2><button class="x" aria-label="Fermer">×</button></header>
+  <form class="body" id="eqf"><div class="form"><label class="full">Nom affiché dans le planning<input name="nom" required maxlength="40" value="${E(t.nom)}" placeholder="Prénom Nom"></label>
+  <label class="full">Fonction <small style="color:var(--mute)">(facultatif)</small><input name="fonction" maxlength="40" value="${E(t.fonction || '')}" placeholder="Plombier, chauffagiste, sous-traitant…"></label>
+  <label class="full">Rôle<select name="role" ${moi ? 'disabled' : ''}><option value="technicien">Technicien · application terrain</option><option value="bureau">Bureau · planning et gestion</option></select>${moi ? '<small style="color:var(--mute)">Vous ne pouvez pas modifier votre propre rôle.</small>' : n ? '<small style="color:var(--mute)">L’accès (e-mail + mot de passe) se crée juste après.</small>' : ''}</label>
+  <div class="full"><span class="flab">Couleur dans le planning</span><div class="sw">${COULEURS.map(c => `<button type="button" data-c="${c}" style="background:${c}" aria-label="${c}"></button>`).join('')}<input type="color" name="couleur" value="${E(t.couleur || '#64748B')}" title="Autre couleur"></div></div></div></form>
+  <footer><button class="btn btn-grad" form="eqf" type="submit">${n ? 'Ajouter' : 'Enregistrer'}</button></footer>`);
+  const f = $('#eqf'); f.role.value = t.role || 'technicien';
+  const mark = () => f.querySelectorAll('[data-c]').forEach(b => b.classList.toggle('on', b.dataset.c.toLowerCase() === f.couleur.value.toLowerCase())); mark();
+  f.querySelectorAll('[data-c]').forEach(b => b.onclick = () => { f.couleur.value = b.dataset.c; mark(); }); f.couleur.oninput = mark;
+  f.onsubmit = async e => { e.preventDefault(); const bt = document.querySelector('[form="eqf"]'); bt.disabled = true;
+    const { data: id, error } = await sb.rpc('bureau_tech_save', { p_id: n ? null : t.id, p_nom: f.nom.value, p_fonction: f.fonction.value, p_couleur: f.couleur.value, p_role: moi ? 'bureau' : f.role.value });
+    bt.disabled = false; if (error) return toast('Erreur : ' + error.message);
+    closePanel(); await reloadTechs(); await listParametres(); toast(n ? 'Membre ajouté' : 'Modifications enregistrées');
+    if (n) { const nt = eqData.find(x => x.id === id); if (nt && await ask(`Créer maintenant l’accès de ${nt.nom} à l’application ?`, { ok: 'Créer l’accès', cancel: 'Plus tard' })) eqAcces(nt, f.role.value); } };
+}
+function eqAcces(t, role) {
+  openPanel(`<header><div><h2>Accès de ${E(t.nom)}</h2><div style="color:var(--mute);font-size:13px">Un mot de passe est généré automatiquement. Envoyez ensuite le message par SMS ou WhatsApp.</div></div><button class="x" aria-label="Fermer">×</button></header>
+  <form class="body" id="acf"><div class="form"><label class="full">Adresse e-mail (identifiant de connexion)<input type="email" name="email" required autocomplete="off" placeholder="prenom@exemple.fr"></label>
+  <label class="full">Rôle<select name="role"><option value="technicien">Technicien · application terrain</option><option value="bureau">Bureau · planning et gestion</option></select></label></div><div class="nm" id="acres" style="margin-top:14px"></div></form>
+  <footer><button class="btn btn-grad" form="acf" type="submit">${ic('user-plus')} Créer l’accès</button></footer>`);
+  const f = $('#acf'); f.role.value = role || t.role || 'technicien';
+  f.onsubmit = async e => { e.preventDefault(); const bt = document.querySelector('[form="acf"]'), mdp = genMdp(), email = f.email.value.trim().toLowerCase(); bt.disabled = true;
+    const { error } = await sb.rpc('bureau_creer_acces', { p_tech: t.id, p_email: email, p_mdp: mdp, p_role: f.role.value });
+    if (error) { bt.disabled = false; return toast('Erreur : ' + error.message.replace(/^.*?:\s*/, '')); }
+    f.email.disabled = f.role.disabled = true; bt.textContent = 'Terminé'; bt.disabled = false; bt.type = 'button'; bt.onclick = closePanel;
+    showMdp($('#acres'), mdp, msgAcces(t, email, mdp, f.role.value)); toast('Accès créé'); listParametres(); };
 }
 
 /* Sauvegarde complète du planning dans un fichier Excel (en plus des sauvegardes automatiques de la base) */
