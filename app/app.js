@@ -67,7 +67,7 @@ async function start() {
   if (!p || p.role !== 'bureau' || !p.actif) { started = false; root.innerHTML = `<div class="login"><form><img src="../logo-bk.png" alt=""><h1>Accès non activé</h1><p>Votre compte (${E(session.user.email)}) n’a pas encore d’accès bureau.</p><button class="btn btn-line" type="button" id="out">Se déconnecter</button></form></div>`; $('#out').onclick = () => sb.auth.signOut(); return; }
   me = p; shell();
   const r = await sb.from('techniciens').select('*').eq('actif', true).order('ordre'); techs = r.data || [];
-  await Promise.all([loadDemandes(), loadAffaires()]); const h = location.hash.slice(1); view = ['planning', 'recherche', 'demandes', 'controle', 'devis', 'affaires', 'chantiers', 'clients', 'articles', 'parametres'].includes(h) ? h : 'planning';
+  await Promise.all([loadDemandes(), loadAffaires()]); const h = location.hash.slice(1); view = ['planning', 'recherche', 'demandes', 'controle', 'devis', 'affaires', 'chantiers', 'clients', 'articles', 'parametres', 'facturer'].includes(h) ? h : 'planning';
   await go(view); listen(); badgeC();
 }
 function shell() {
@@ -375,7 +375,7 @@ async function listRecherche() {
     const list = (data || []).map(i => ({ ...i, techs: i.intervention_techs.map(x => x.tech_id), nbPieces: i.pieces.length }));
     $('#rs').innerHTML = `<p class="cnt">${list.length} intervention${list.length > 1 ? 's' : ''}${list.length === 150 ? ' (les 150 plus récentes)' : ''}</p>` + (list.length ? `<div class="dt"><table><thead><tr><th>Date</th><th>Client / occupant</th><th>Adresse</th><th>Travaux</th><th>Équipe</th><th>Statut</th></tr></thead><tbody>
       ${list.map(i => `<tr data-ri="${i.id}"><td><b>${lbl(i.date)}</b><br><small>${i.epingle ? 'dans la journée' : hh(i.heure) + '–' + fin(i.heure, i.duree)}</small></td><td><b>${E(i.client || '')}</b>${i.occupant ? '<br><small>' + E(i.occupant) + '</small>' : ''}${i.affaires ? `<br><small>${E(i.affaires.ref || '')}${i.affaires.isanet_devis ? ' · devis ' + E(i.affaires.isanet_devis) : ''}</small>` : ''}</td>
-        <td>${E([i.adresse, [i.cp, i.ville].filter(Boolean).join(' ')].filter(Boolean).join(', '))}</td><td>${E((i.travaux || '').slice(0, 90))}</td><td><span class="avs">${avatars(i.techs)}</span></td><td><span class="tag s-${i.statut}" style="margin:0">${STAT_I[i.statut]}</span></td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">Aucune intervention trouvée.</div>');
+        <td>${E([i.adresse, [i.cp, i.ville].filter(Boolean).join(' ')].filter(Boolean).join(', '))}</td><td>${E((i.travaux || '').slice(0, 90))}</td><td><span class="avs">${avatars(i.techs)}</span></td><td>${factTag(i)}<span class="tag s-${i.statut}" style="margin:0">${STAT_I[i.statut]}</span></td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">Aucune intervention trouvée.</div>');
     document.querySelectorAll('[data-ri]').forEach(tr => tr.onclick = () => { const i = list.find(x => x.id === tr.dataset.ri); inter = inter.filter(x => x.id !== i.id).concat([i]); detail(i.id, i); });
   };
   let tm; $('#qs').oninput = e => { qS = e.target.value.trim(); clearTimeout(tm); tm = setTimeout(run, 250); };
@@ -452,16 +452,44 @@ let vGal = null;
 function viewer(url, path, name, gal) {
   vGal = gal || null;
   let v = $('#viewer'); if (!v) { v = document.createElement('div'); v.id = 'viewer'; document.body.appendChild(v); v.onclick = e => { if (e.target.closest('[data-vp]')) return vStep(-1); if (e.target.closest('[data-vn]')) return vStep(1); if (e.target === v || e.target.classList.contains('vbody') || e.target.classList.contains('vload') || e.target.closest('[data-vx]')) { v.classList.remove('on'); const m = v.querySelector('video'); if (m) m.pause(); } };
-    document.addEventListener('keydown', e => { if (!v.classList.contains('on')) return; if (e.key === 'Escape') { e.stopImmediatePropagation(); v.classList.remove('on'); } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); e.stopImmediatePropagation(); vStep(e.key === 'ArrowRight' ? 1 : -1); } }, true);
-    let acc = 0, tw; v.addEventListener('wheel', e => { if (!vGal || Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return; e.preventDefault(); acc += e.deltaX; clearTimeout(tw); tw = setTimeout(() => { acc = 0; }, 220); if (Math.abs(acc) > 90) { vStep(acc > 0 ? 1 : -1); acc = 0; } }, { passive: false }); }
+    document.addEventListener('keydown', e => { if (!v.classList.contains('on')) return; if (e.key === 'Escape') { e.stopImmediatePropagation(); v.classList.remove('on'); } else if (vZ.img && /^[+=\-0]$/.test(e.key)) { e.preventDefault(); const r = v.querySelector('.vbody').getBoundingClientRect(); e.key === '0' ? vZoomReset(true) : vZoomAt(e.key === '-' ? 1 / 1.5 : 1.5, r.left + r.width / 2, r.top + r.height / 2, true); } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); e.stopImmediatePropagation(); vStep(e.key === 'ArrowRight' ? 1 : -1); } }, true);
+    let acc = 0, tw; v.addEventListener('wheel', e => { if (vZ.img && e.target.closest('.vbody')) { const h = Math.abs(e.deltaX) > Math.abs(e.deltaY);
+        if (e.ctrlKey) { e.preventDefault(); return vZoomAt(Math.exp(-e.deltaY * 0.012), e.clientX, e.clientY); }
+        if (h && vZ.s > 1.001) { e.preventDefault(); return vPan(-e.deltaX, 0); }
+        if (!h) { e.preventDefault(); return vZoomAt(Math.exp(-Math.max(-120, Math.min(120, e.deltaY)) * 0.0022), e.clientX, e.clientY); } }
+      if (!vGal || Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return; e.preventDefault(); acc += e.deltaX; clearTimeout(tw); tw = setTimeout(() => { acc = 0; }, 220); if (Math.abs(acc) > 90) { vStep(acc > 0 ? 1 : -1); acc = 0; } }, { passive: false }); }
   const ext = String(path || name || '').split('?')[0].split('.').pop().toLowerCase(), img = /^(jpe?g|png|webp|gif|heic|heif)$/.test(ext), vid = /^(mp4|mov|m4v|webm)$/.test(ext), pdf = ext === 'pdf';
-  v.innerHTML = `<div class="vbar"><b>${E(name || '')}</b>${img ? `<button class="btn btn-line" data-vc>${ic('clipboard')} Copier la photo</button>` : ''}<button class="btn btn-line" data-vd>${ic('download')} Télécharger</button><button class="btn btn-line" data-vx>Fermer ×</button></div><div class="vbody">${img ? '<p class="vload">Chargement…</p>' : vid ? `<video src="${url}" controls autoplay playsinline></video>` : pdf ? `<iframe src="${url}#toolbar=1" title="${E(name || '')}"></iframe>` : `<p class="vload">Aperçu indisponible pour ce type de fichier. Utilisez « Télécharger ».</p>`}</div>`;
-  if (vGal && vGal.list.length > 1) { v.insertAdjacentHTML('beforeend', `<button class="varr l" data-vp aria-label="Photo précédente">‹</button><button class="varr r" data-vn aria-label="Photo suivante">›</button><div class="vcount">${vGal.k + 1} / ${vGal.list.length} · flèches ← → ou glisser deux doigts</div>`); }
+  vZ.img = null; v.innerHTML = `<div class="vbar"><b>${E(name || '')}</b>${img ? `<span class="vz" title="Zoom : molette de la souris, pincer le pavé tactile ou cliquer sur la photo"><button type="button" data-zo aria-label="Dézoomer">−</button><button type="button" data-z1 aria-label="Taille normale">100 %</button><button type="button" data-zi aria-label="Zoomer">+</button></span>` : ''}${img ? `<button class="btn btn-line" data-vc>${ic('clipboard')} Copier la photo</button>` : ''}<button class="btn btn-line" data-vd>${ic('download')} Télécharger</button><button class="btn btn-line" data-vx>Fermer ×</button></div><div class="vbody">${img ? '<p class="vload">Chargement…</p>' : vid ? `<video src="${url}" controls autoplay playsinline></video>` : pdf ? `<iframe src="${url}#toolbar=1" title="${E(name || '')}"></iframe>` : `<p class="vload">Aperçu indisponible pour ce type de fichier. Utilisez « Télécharger ».</p>`}</div>`;
+  if (vGal && vGal.list.length > 1) { v.insertAdjacentHTML('beforeend', `<button class="varr l" data-vp aria-label="Photo précédente">‹</button><button class="varr r" data-vn aria-label="Photo suivante">›</button><div class="vcount">${vGal.k + 1} / ${vGal.list.length} · flèches ← → · molette ou clic pour zoomer</div>`); }
   v.classList.add('on');
   v.querySelector('[data-vd]').onclick = () => dlFile(url, path, name);
   if (v.querySelector('[data-vc]')) v.querySelector('[data-vc]').onclick = () => copyPhoto(url, path);
-  if (img) viewUrl(url, path).then(x => { const b = v.querySelector('.vbody'); if (b) b.innerHTML = `<img src="${x}" alt="${E(name || '')}">`; }).catch(e => { const b = v.querySelector('.vbody'); if (b) b.innerHTML = '<p class="vload">Impossible d’afficher cette photo (' + E(e.message || e) + '). Utilisez « Télécharger ».</p>'; });
+  if (img) viewUrl(url, path).then(x => { const b = v.querySelector('.vbody'); if (b) { b.innerHTML = `<img src="${x}" alt="${E(name || '')}" draggable="false">`; vZoomInit(b.querySelector('img'), v); } }).catch(e => { const b = v.querySelector('.vbody'); if (b) b.innerHTML = '<p class="vload">Impossible d’afficher cette photo (' + E(e.message || e) + '). Utilisez « Télécharger ».</p>'; });
 }
+/* Zoom des photos : molette / pincer (pavé tactile ou doigts) / clic, puis glisser pour se déplacer dans la photo */
+const vZ = { img: null, s: 1, tx: 0, ty: 0 };
+function vApply(anim) { const im = vZ.img; if (!im) return; im.style.transition = anim ? 'transform .18s ease' : 'none'; im.style.transform = `translate(${vZ.tx}px,${vZ.ty}px) scale(${vZ.s})`;
+  im.classList.toggle('zm', vZ.s > 1.001); const l = document.querySelector('#viewer [data-z1]'); if (l) l.textContent = Math.round(vZ.s * 100) + ' %'; }
+function vClamp() { const im = vZ.img; if (!im) return; if (vZ.s <= 1.001) { vZ.s = 1; vZ.tx = vZ.ty = 0; return; }
+  const c = im.parentElement.getBoundingClientRect(), w = im.offsetWidth * vZ.s, h = im.offsetHeight * vZ.s, x0 = im.offsetLeft + im.parentElement.getBoundingClientRect().left, y0 = im.offsetTop + c.top;
+  const fit = (t, size, start, cs, ce) => size <= ce - cs ? (cs + ce) / 2 - size / 2 - start : Math.min(cs - start, Math.max(ce - size - start, t));
+  vZ.tx = fit(vZ.tx, w, x0, c.left, c.right); vZ.ty = fit(vZ.ty, h, y0, c.top, c.bottom); }
+function vZoomAt(f, cx, cy, anim) { const im = vZ.img; if (!im) return; const r = im.getBoundingClientRect(), s2 = Math.max(1, Math.min(8, vZ.s * f)), k = s2 / vZ.s;
+  vZ.tx += (cx - r.left) * (1 - k); vZ.ty += (cy - r.top) * (1 - k); vZ.s = s2; vClamp(); vApply(anim); }
+function vPan(dx, dy) { vZ.tx += dx; vZ.ty += dy; vClamp(); vApply(); }
+function vZoomReset(anim) { vZ.s = 1; vZ.tx = vZ.ty = 0; vApply(anim); }
+function vZoomInit(im, v) { Object.assign(vZ, { img: im, s: 1, tx: 0, ty: 0 }); im.style.transformOrigin = '0 0'; vApply();
+  const mid = () => { const r = v.querySelector('.vbody').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; };
+  v.querySelector('[data-zi]').onclick = () => vZoomAt(1.5, ...mid(), true); v.querySelector('[data-zo]').onclick = () => vZoomAt(1 / 1.5, ...mid(), true); v.querySelector('[data-z1]').onclick = () => vZoomReset(true);
+  const P = new Map(); let moved = false, pinch = 0, start = null;
+  im.addEventListener('pointerdown', e => { if (e.button) return; e.preventDefault(); im.setPointerCapture(e.pointerId); P.set(e.pointerId, [e.clientX, e.clientY]); if (P.size === 1) { moved = false; start = [e.clientX, e.clientY]; } if (P.size === 2) { const [a, b] = [...P.values()]; pinch = Math.hypot(a[0] - b[0], a[1] - b[1]); moved = true; } });
+  im.addEventListener('pointermove', e => { const p = P.get(e.pointerId); if (!p) return; const dx = e.clientX - p[0], dy = e.clientY - p[1]; P.set(e.pointerId, [e.clientX, e.clientY]);
+    if (P.size === 2) { const [a, b] = [...P.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]); if (pinch) vZoomAt(d / pinch, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2); pinch = d; return; }
+    if (start && Math.hypot(e.clientX - start[0], e.clientY - start[1]) > 5) moved = true; if (vZ.s > 1) vPan(dx, dy); });
+  const up = e => { if (!P.has(e.pointerId)) return; P.delete(e.pointerId); if (P.size) return; pinch = 0;
+    if (!moved && e.type === 'pointerup') { vZ.s > 1.001 ? vZoomReset(true) : vZoomAt(2.5, e.clientX, e.clientY, true); }
+    else if (moved && vZ.s <= 1.001 && start && e.type === 'pointerup' && vGal) { const dx = e.clientX - start[0]; if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(e.clientY - start[1])) vStep(dx < 0 ? 1 : -1); } };
+  im.addEventListener('pointerup', up); im.addEventListener('pointercancel', up); im.onclick = e => e.stopPropagation(); }
 const vInfo = a => [a.getAttribute('href'), a.dataset.p || a.dataset.pb || a.dataset.dp || a.dataset.rp || a.getAttribute('href'), (a.textContent || '').trim()];
 function vStep(n) { if (!vGal || vGal.list.length < 2) return; vGal.k = (vGal.k + n + vGal.list.length) % vGal.list.length; const [h, p, nm] = vInfo(vGal.list[vGal.k]); viewer(h, p, nm, vGal); }
 document.addEventListener('click', e => { const a = e.target.closest('#panel .ph a[href]'); if (!a || e.target.closest('.rm') || e.metaKey || e.ctrlKey) return; const h = a.getAttribute('href'); if (!h || h === '#') return; e.preventDefault();
@@ -498,7 +526,7 @@ async function detail(id, given) {
   const i = given || inter.find(x => x.id === id); if (!i) return;
   const [{ data: pieces }, dem] = await Promise.all([sb.from('pieces').select('*').eq('intervention_id', id).order('created_at'), i.demande_id ? sb.from('demandes').select('*').eq('id', i.demande_id).maybeSingle() : Promise.resolve({ data: null })]);
   const d = dem.data;
-  openPanel(`<header><div><span class="tag s-${i.statut}" style="margin:0">${STAT_I[i.statut]}</span>${i.devis ? `<span class="tag t-dv">${ic('file')} Devis${i.devis_fait ? ' fait' : ''}</span>` : ''}${i.epingle ? '<span class="tag t-aff">' + ic('pin') + ' Dans la journée</span>' : ''}<h2 style="margin-top:8px">${E(i.type === 'intervention' ? ([i.client, i.occupant].filter(Boolean).join(' · ') || i.adresse || i.ville || 'Intervention') : i.travaux)}</h2>
+  openPanel(`<header><div><span class="tag s-${i.statut}" style="margin:0">${STAT_I[i.statut]}</span>${factTag(i)}${i.devis ? `<span class="tag t-dv">${ic('file')} Devis${i.devis_fait ? ' fait' : ''}</span>` : ''}${i.epingle ? '<span class="tag t-aff">' + ic('pin') + ' Dans la journée</span>' : ''}<h2 style="margin-top:8px">${E(i.type === 'intervention' ? ([i.client, i.occupant].filter(Boolean).join(' · ') || i.adresse || i.ville || 'Intervention') : i.travaux)}</h2>
     ${i.type === 'intervention' && (i.client || i.occupant) ? `<div style="font-weight:700;font-size:14px;margin-top:2px">${E([i.adresse, [i.cp, i.ville].filter(Boolean).join(' ')].filter(Boolean).join(', '))}</div>` : ''}
     <div style="color:var(--mute);font-size:13.5px">${E(i.client || i.occupant ? '' : (i.ville || '') + ' · ')}${lbl(i.date, true)}${i.epingle ? '' : ' · ' + hh(i.heure) + '–' + fin(i.heure, i.duree)}${!i.epingle && i.hx ? Object.values(i.hx).map(o => ` · <b style="color:${T(o.tech_id).couleur}">${E(T(o.tech_id).nom)} ${hh(o.heure)}–${fin(o.heure, o.duree)}</b>`).join('') : ''}</div></div><button class="x" aria-label="Fermer">×</button></header>
   <div class="body">
@@ -517,7 +545,7 @@ async function detail(id, given) {
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn btn-line" id="nbs" type="button">${ic('message')} Envoyer le message</button><button class="btn btn-line" id="nbr" type="button" style="color:#DC2626;border-color:#FCA5A5">↺ Envoyer et mettre « À reprendre »</button></div></div>
     <label style="font-size:13px;font-weight:800;color:var(--mute)">Statut<select id="st" style="display:block;width:100%;margin-top:6px;border:2px solid var(--line);border-radius:10px;padding:10px">${[...new Set([i.statut, 'attente', 'reprendre', 'cloturee'])].map(k => `<option value="${k}" ${k === i.statut ? 'selected' : ''}>${STAT_I[k]}</option>`).join('')}</select></label>
   </div>
-  <footer>${i.a_facturer ? `<button class="btn btn-grad" id="fok" style="background:var(--ok,#0E9F6E)">✓ Facturée</button>` : ''}${i.devis && i.devis_fait && !i.devis_suite ? `<button class="btn btn-grad" id="dvprog">${ic('calendar')} Programmer l’intervention</button>` : ''}${['controle', 'attente', 'reprendre'].includes(i.statut) ? `<button class="btn btn-grad" id="clo" style="background:var(--ok,#0E9F6E)">${i.devis && i.statut === 'controle' ? '✓ Devis fait' : '✓ Clôturer'}</button>` : ''}${i.statut === 'controle' ? '<button class="btn btn-line" id="rep" style="color:#DC2626">↺ À reprendre</button><button class="btn btn-line" id="att">En attente</button>' : ''}<button class="btn ${['controle', 'attente', 'reprendre'].includes(i.statut) ? 'btn-line' : 'btn-grad'}" id="ed">Modifier</button><button class="btn btn-line" id="dup">Dupliquer</button><button class="btn btn-line" id="p7">+7 jours</button><button class="btn btn-red" id="del" style="margin-left:auto">Supprimer</button></footer>`);
+  <footer>${i.a_facturer ? `<button class="btn btn-grad" id="fok" style="background:var(--ok,#0E9F6E)">✓ Facturée</button><button class="btn btn-line bsav" id="fsav">${ic('wrench')} SAV · non facturé</button>` : ''}${i.devis && i.devis_fait && !i.devis_suite ? `<button class="btn btn-grad" id="dvprog">${ic('calendar')} Programmer l’intervention</button>` : ''}${['controle', 'attente', 'reprendre'].includes(i.statut) ? `<button class="btn btn-grad" id="clo" style="background:var(--ok,#0E9F6E)">${i.devis && i.statut === 'controle' ? '✓ Devis fait' : '✓ Clôturer'}</button>` : ''}${i.statut === 'controle' ? '<button class="btn btn-line" id="rep" style="color:#DC2626">↺ À reprendre</button><button class="btn btn-line" id="att">En attente</button>' : ''}<button class="btn ${['controle', 'attente', 'reprendre'].includes(i.statut) ? 'btn-line' : 'btn-grad'}" id="ed">Modifier</button><button class="btn btn-line" id="dup">Dupliquer</button><button class="btn btn-line" id="p7">+7 jours</button><button class="btn btn-red" id="del" style="margin-left:auto">Supprimer</button></footer>`);
   if (i.note_reponse && !i.note_rep_lue) { i.note_rep_lue = true; sb.from('interventions').update({ note_rep_lue: true }).eq('id', id).then(() => { const c = document.querySelector(`.ev[data-id="${id}"] .nb`); if (c) c.remove(); }); }
   if (i.adresse || i.ville) geoFix(i, document.querySelector('#panel .kv'));
   const urls = await signed('pieces', (pieces || []).filter(p => !p.prive).map(p => p.path));
@@ -527,7 +555,8 @@ async function detail(id, given) {
   if ((i.photos || []).length) signed('retours', i.photos.map(p => p.path)).then(u3 => { document.querySelectorAll('#rph [data-rp]').forEach(a => { const u = u3[a.dataset.rp]; if (u) { a.href = u; setThumb(a, u, a.dataset.rp); } });
     const b = $('#rpall'); if (b) b.onclick = async () => { b.disabled = true; let k = 0; for (const p of i.photos) { const u = u3[p.path]; if (u) { k++; await dlFile(u, p.path, `${(i.client || i.occupant || 'intervention').replace(/[^\w\- ]+/g, '').trim()}-${i.date}-${k}${(p.tag ? '-' + p.tag : '')}.jpg`); await new Promise(r => setTimeout(r, 350)); } } b.disabled = false; toast(k + ' photo' + (k > 1 ? 's' : '') + ' téléchargée' + (k > 1 ? 's' : '') + ' (dossier Téléchargements)'); }; });
   if ($('#clo')) $('#clo').onclick = () => cloturer(id, i.devis && i.statut === 'controle');
-  if ($('#fok')) $('#fok').onclick = async () => { const { error } = await sb.from('interventions').update({ a_facturer: false, facture_le: new Date().toISOString(), facture_par: me.nom }).eq('id', id); if (error) return toast('Erreur : ' + error.message); i.a_facturer = false; aFact = aFact.filter(x => x.id !== id); closePanel(); toast('✓ Facturée · retirée de « À facturer »'); badgeC(); if (view === 'facturer') listFacturer(true); };
+  if ($('#fok')) $('#fok').onclick = async () => { if (await marquer(id, 'facture')) closePanel(); };
+  if ($('#fsav')) $('#fsav').onclick = async () => { if (await marquer(id, 'sav')) closePanel(); };
   if ($('#dvprog')) $('#dvprog').onclick = () => { closePanel(); programmerDevis(i); };
   if ($('#st')) $('#st').onchange = async e => { const v = e.target.value; if (v === 'reprendre') { if (!(await aReprendre(i, $('#nbw').value))) e.target.value = i.statut; return; }
     if (v === 'cloturee') return cloturer(id);
@@ -816,22 +845,46 @@ async function reprendreDevis(src, newIds, btn) {
   await sb.from('interventions').update({ devis_suite: 'programme', devis_suite_id: newIds[0], devis_suite_at: new Date().toISOString() }).eq('id', src.id); }
 
 /* ================= À facturer : interventions clôturées par le bureau ; « Valider » une fois la facture faite ================= */
-let aFact = [];
+let aFact = [], fTab = 'afaire', fHist = { facture: null, sav: null };
+const factTag = i => i.sav ? `<span class="tag t-sav">${ic('wrench')} SAV</span>` : i.facture_le ? '<span class="tag t-fac">✓ Facturée</span>' : '';
+/* Une intervention clôturée sort de « À facturer » soit facturée, soit en SAV (non facturée) : les deux restent dans l'historique, chacun dans son onglet */
+async function marquer(id, k) {
+  const now = new Date().toISOString(), up = k === 'sav' ? { a_facturer: false, sav: true, sav_le: now, sav_par: me.nom } : { a_facturer: false, facture_le: now, facture_par: me.nom };
+  const { error } = await sb.from('interventions').update(up).eq('id', id); if (error) { toast('Erreur : ' + error.message); return false; }
+  aFact = aFact.filter(x => x.id !== id); fHist = { facture: null, sav: null }; toast(k === 'sav' ? 'Classée en SAV · non facturée' : '✓ Facturée · retirée de « À facturer »'); badgeC(); if (view === 'facturer') listFacturer(true); return true;
+}
+async function annulerFact(i) {
+  if (!await ask(`Remettre « ${i.client || i.occupant || i.adresse || 'cette intervention'} » dans « À facturer » ?`, { ok: 'Remettre à facturer' })) return;
+  const { error } = await sb.from('interventions').update({ a_facturer: true, sav: false, sav_le: null, sav_par: null, facture_le: null, facture_par: null }).eq('id', i.id); if (error) return toast('Erreur : ' + error.message);
+  fHist = { facture: null, sav: null }; toast('Remise dans « À facturer »'); badgeC(); await listFacturer();
+}
+const MOIS = d => new Date(d).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
 async function listFacturer(fromCache) {
-  if (!fromCache) { const { data, error } = await sb.from('interventions').select('*, intervention_techs(tech_id), pieces(id), affaires(ref,isanet_devis)').eq('a_facturer', true).order('date', { ascending: false }).limit(300);
+  if (fTab !== 'afaire') {
+    const k = fTab, col = k === 'sav' ? 'sav_le' : 'facture_le';
+    if (!fromCache || !fHist[k]) { let q = sb.from('interventions').select('*, intervention_techs(tech_id), pieces(id), affaires(ref,isanet_devis)').not(col, 'is', null).order(col, { ascending: false }).limit(400); if (k === 'sav') q = q.eq('sav', true);
+      const { data, error } = await q; if (error) return toast('Erreur : ' + error.message); fHist[k] = (data || []).map(i => ({ ...i, techs: i.intervention_techs.map(x => x.tech_id), nbPieces: i.pieces.length })); }
+  } else if (!fromCache) { const { data, error } = await sb.from('interventions').select('*, intervention_techs(tech_id), pieces(id), affaires(ref,isanet_devis)').eq('a_facturer', true).order('date', { ascending: false }).limit(300);
     if (error) return toast('Erreur : ' + error.message); aFact = (data || []).map(i => ({ ...i, techs: i.intervention_techs.map(x => x.tech_id), nbPieces: i.pieces.length })); }
   if (view !== 'facturer') return;
-  $('#main').innerHTML = `<div class="head"><h1>À facturer</h1><span class="live"><i></i>En direct</span></div>
-   <p style="color:var(--mute);margin:-6px 0 16px">Interventions clôturées, en attente de facture. Une fois la facture faite, cliquez sur « ✓ Valider » : l’intervention sort de la liste (elle reste dans l’historique).</p>
-   ${aFact.length ? `<div class="list">${aFact.map(i => `<div class="d dvf" data-f="${i.id}" role="button" tabindex="0"><span class="th" data-th="${E((i.photos || [])[0]?.path || '')}">${(i.photos || []).length ? '<img alt="" loading="lazy" decoding="async">' : ic('clipboard')}</span>
+  const H = fTab === 'afaire' ? null : fHist[fTab], L = H || aFact, sav = fTab === 'sav';
+  const card = i => `<div class="d dvf" data-f="${i.id}" role="button" tabindex="0"><span class="th" data-th="${E((i.photos || [])[0]?.path || '')}">${(i.photos || []).length ? '<img alt="" loading="lazy" decoding="async">' : ic(sav ? 'wrench' : 'clipboard')}</span>
      <span><h3>${E([i.client, i.occupant].filter(Boolean).join(' · ') || i.adresse || 'Intervention')}${i.affaires?.ref ? ` <span class="tag t-aff">${E(i.affaires.ref)}</span>` : ''}</h3><p class="cad">${E([i.adresse, [i.cp, i.ville].filter(Boolean).join(' ')].filter(Boolean).join(', '))}</p><p>${E((i.travaux || '').slice(0, 120))}</p>
-     <small style="color:var(--mute)">${lbl(i.date)} · ${E(names(i.techs))}${i.cloture_le ? ' · clôturée le ' + fdate(i.cloture_le) : ''}${i.cloture_par ? ' par ' + E(i.cloture_par) : ''}${(i.materiel || []).length ? ' · ' + i.materiel.length + ' article' + (i.materiel.length > 1 ? 's' : '') + ' de matériel' : ''}</small></span>
-     <span class="r dvact"><button class="btn btn-grad" data-fok="${i.id}" style="background:var(--ok,#0E9F6E)">✓ Valider · facturée</button></span></div>`).join('')}</div>`
-    : `<div class="empty">Rien à facturer pour l’instant ${ic('check-circle')}</div>`}`;
-  document.querySelectorAll('[data-f]').forEach(b => b.onclick = e => { if (e.target.closest('button')) return; detail(b.dataset.f, aFact.find(x => x.id === b.dataset.f)); });
-  document.querySelectorAll('[data-fok]').forEach(b => b.onclick = async () => { b.disabled = true;
-    const { error } = await sb.from('interventions').update({ a_facturer: false, facture_le: new Date().toISOString(), facture_par: me.nom }).eq('id', b.dataset.fok); if (error) { b.disabled = false; return toast('Erreur : ' + error.message); }
-    aFact = aFact.filter(x => x.id !== b.dataset.fok); toast('✓ Facturée · retirée de la liste'); badgeC(); listFacturer(true); });
+     <small style="color:var(--mute)">${lbl(i.date)} · ${E(names(i.techs))}${H ? (sav ? ` · <b class="hsav">SAV</b> le ${fdate(i.sav_le)}${i.sav_par ? ' par ' + E(i.sav_par) : ''}` : ` · <b class="hfac">facturée</b> le ${fdate(i.facture_le)}${i.facture_par ? ' par ' + E(i.facture_par) : ''}`) : `${i.cloture_le ? ' · clôturée le ' + fdate(i.cloture_le) : ''}${i.cloture_par ? ' par ' + E(i.cloture_par) : ''}${(i.materiel || []).length ? ' · ' + i.materiel.length + ' article' + (i.materiel.length > 1 ? 's' : '') + ' de matériel' : ''}`}</small></span>
+     <span class="r dvact">${H ? `<button class="btn btn-line" data-fun="${i.id}" title="Erreur de classement ? La remettre dans À facturer">↺ Remettre à facturer</button>` : `<button class="btn btn-grad" data-fok="${i.id}" style="background:var(--ok,#0E9F6E)">✓ Facturée</button><button class="btn btn-line bsav" data-fsav="${i.id}">${ic('wrench')} SAV</button>`}</span></div>`;
+  let body;
+  if (!L.length) body = `<div class="empty">${fTab === 'afaire' ? 'Rien à facturer pour l’instant' : sav ? 'Aucune intervention classée en SAV' : 'Aucune intervention facturée'} ${ic('check-circle')}</div>`;
+  else if (H) { const g = {}; H.forEach(i => (g[MOIS(sav ? i.sav_le : i.facture_le)] = g[MOIS(sav ? i.sav_le : i.facture_le)] || []).push(i));
+    body = Object.entries(g).map(([m, l]) => `<h2 class="chh fmo">${m.charAt(0).toUpperCase() + m.slice(1)} <small>${l.length} intervention${l.length > 1 ? 's' : ''}</small></h2><div class="list">${l.map(card).join('')}</div>`).join(''); }
+  else body = `<div class="list">${L.map(card).join('')}</div>`;
+  $('#main').innerHTML = `<div class="head"><h1>À facturer</h1><span class="live"><i></i>En direct</span></div>
+   <div class="seg dvseg"><button data-ft="afaire" class="${fTab === 'afaire' ? 'on' : ''}">À facturer${aFact.length ? ' · ' + aFact.length : ''}</button><button data-ft="facture" class="${fTab === 'facture' ? 'on' : ''}">✓ Facturées</button><button data-ft="sav" class="${sav ? 'on' : ''}">${ic('wrench')} SAV · non facturées</button></div>
+   <p style="color:var(--mute);margin:4px 0 16px">${fTab === 'afaire' ? 'Interventions clôturées, en attente de facture. Facture faite : « ✓ Facturée ». Intervention sous garantie / SAV : « SAV » (elle ne sera pas facturée). Dans les deux cas elle sort de la liste et reste dans l’historique.' : sav ? 'Historique des interventions SAV, non facturées, de la plus récente à la plus ancienne.' : 'Historique des interventions facturées, de la plus récente à la plus ancienne.'}</p>${body}`;
+  document.querySelectorAll('[data-ft]').forEach(b => b.onclick = () => { fTab = b.dataset.ft; listFacturer(true); });
+  document.querySelectorAll('[data-f]').forEach(b => b.onclick = e => { if (e.target.closest('button')) return; detail(b.dataset.f, L.find(x => x.id === b.dataset.f)); });
+  document.querySelectorAll('[data-fok]').forEach(b => b.onclick = async () => { b.disabled = true; if (!await marquer(b.dataset.fok, 'facture')) b.disabled = false; });
+  document.querySelectorAll('[data-fsav]').forEach(b => b.onclick = async () => { b.disabled = true; if (!await marquer(b.dataset.fsav, 'sav')) b.disabled = false; });
+  document.querySelectorAll('[data-fun]').forEach(b => b.onclick = () => annulerFact(L.find(x => x.id === b.dataset.fun)));
   const paths = [...document.querySelectorAll('[data-th]')].map(e => e.dataset.th).filter(Boolean);
   signed('retours', paths).then(u => document.querySelectorAll('[data-th]').forEach(el => { const im = el.querySelector('img'); if (u[el.dataset.th] && im) { im.onerror = () => im.remove(); im.src = u[el.dataset.th]; } }));
 }

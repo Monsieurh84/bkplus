@@ -412,3 +412,17 @@ body.rzbody,body.rzbody *{cursor:ns-resize!important;user-select:none}
 .sw{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.sw button{width:30px;height:30px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 1px var(--line);cursor:pointer;padding:0}
 .sw button.on{box-shadow:0 0 0 2px var(--ink,#0F172A)}.sw input[type=color]{width:38px;height:32px;padding:0;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer}
 @media (max-width:700px){.eq{grid-template-columns:14px minmax(0,1fr)}.eqa{grid-column:1/-1;justify-content:flex-start}}
+/* Facturées / SAV */
+.t-sav{background:#FFF1E6;color:#C2410C}.t-fac{background:#E6F6EF;color:var(--ok)}
+.tag .i{width:12px;height:12px;vertical-align:-2px}
+.btn.bsav{color:#C2410C}
+.hsav{color:#C2410C}.hfac{color:var(--ok)}
+.fmo{margin:18px 0 10px;font-size:16px}.fmo small{color:var(--mute);font-weight:700;font-size:12.5px;margin-left:6px}
+/* Zoom des photos */
+#viewer .vbody{overflow:hidden;position:relative}
+#viewer .vbody img{cursor:zoom-in;touch-action:none;user-select:none;-webkit-user-drag:none;will-change:transform}
+#viewer .vbody img.zm{cursor:grab;border-radius:0}#viewer .vbody img.zm:active{cursor:grabbing}
+#viewer .vz{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+#viewer .vz button{border:0;background:#fff;font-weight:800;font-size:15px;padding:9px 12px;cursor:pointer;min-width:40px}#viewer .vz button:hover{background:var(--soft)}
+#viewer .vz [data-z1]{font-size:13px;min-width:64px;border-left:1px solid var(--line);border-right:1px solid var(--line)}
+@media (max-width:700px){#viewer .vz{display:none}}
