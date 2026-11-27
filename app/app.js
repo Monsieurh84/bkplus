@@ -177,6 +177,7 @@ function lane(d, t, px, withHead) {
 const isMob = () => innerWidth <= 760;
 const WH = { lock: false, acc: 0, t: 0, by: '' };
 function planning() {
+  if (!$('#main')) return;
   if (view !== 'planning') return;
   if (isMob()) return planningMob();
   const today = iso(new Date()), nowM = new Date().getHours() * 60 + new Date().getMinutes();
@@ -845,7 +846,7 @@ async function reprendreDevis(src, newIds, btn) {
   await sb.from('interventions').update({ devis_suite: 'programme', devis_suite_id: newIds[0], devis_suite_at: new Date().toISOString() }).eq('id', src.id); }
 
 /* ================= À facturer : interventions clôturées par le bureau ; « Valider » une fois la facture faite ================= */
-let aFact = [], fTab = 'afaire', fHist = { facture: null, sav: null };
+let aFact = [], fTab = 'afaire', fHist = { facture: null, sav: null }, fQ = '';
 const factTag = i => i.sav ? `<span class="tag t-sav">${ic('wrench')} SAV</span>` : i.facture_le ? '<span class="tag t-fac">✓ Facturée</span>' : '';
 /* Une intervention clôturée sort de « À facturer » soit facturée, soit en SAV (non facturée) : les deux restent dans l'historique, chacun dans son onglet */
 async function marquer(id, k) {
@@ -867,19 +868,22 @@ async function listFacturer(fromCache) {
   } else if (!fromCache) { const { data, error } = await sb.from('interventions').select('*, intervention_techs(tech_id), pieces(id), affaires(ref,isanet_devis)').eq('a_facturer', true).order('date', { ascending: false }).limit(300);
     if (error) return toast('Erreur : ' + error.message); aFact = (data || []).map(i => ({ ...i, techs: i.intervention_techs.map(x => x.tech_id), nbPieces: i.pieces.length })); }
   if (view !== 'facturer') return;
-  const H = fTab === 'afaire' ? null : fHist[fTab], L = H || aFact, sav = fTab === 'sav';
+  const sav = fTab === 'sav', norm = x => String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  let H = fTab === 'afaire' ? null : fHist[fTab]; if (H && fQ.trim()) { const w = norm(fQ).split(/\s+/).filter(Boolean); H = H.filter(i => { const t = norm([i.client, i.occupant, i.adresse, i.cp, i.ville, i.travaux, i.affaires?.ref, names(i.techs)].join(' ')); return w.every(x => t.includes(x)); }); }
+  const L = H || aFact;
   const card = i => `<div class="d dvf" data-f="${i.id}" role="button" tabindex="0"><span class="th" data-th="${E((i.photos || [])[0]?.path || '')}">${(i.photos || []).length ? '<img alt="" loading="lazy" decoding="async">' : ic(sav ? 'wrench' : 'clipboard')}</span>
      <span><h3>${E([i.client, i.occupant].filter(Boolean).join(' · ') || i.adresse || 'Intervention')}${i.affaires?.ref ? ` <span class="tag t-aff">${E(i.affaires.ref)}</span>` : ''}</h3><p class="cad">${E([i.adresse, [i.cp, i.ville].filter(Boolean).join(' ')].filter(Boolean).join(', '))}</p><p>${E((i.travaux || '').slice(0, 120))}</p>
      <small style="color:var(--mute)">${lbl(i.date)} · ${E(names(i.techs))}${H ? (sav ? ` · <b class="hsav">SAV</b> le ${fdate(i.sav_le)}${i.sav_par ? ' par ' + E(i.sav_par) : ''}` : ` · <b class="hfac">facturée</b> le ${fdate(i.facture_le)}${i.facture_par ? ' par ' + E(i.facture_par) : ''}`) : `${i.cloture_le ? ' · clôturée le ' + fdate(i.cloture_le) : ''}${i.cloture_par ? ' par ' + E(i.cloture_par) : ''}${(i.materiel || []).length ? ' · ' + i.materiel.length + ' article' + (i.materiel.length > 1 ? 's' : '') + ' de matériel' : ''}`}</small></span>
      <span class="r dvact">${H ? `<button class="btn btn-line" data-fun="${i.id}" title="Erreur de classement ? La remettre dans À facturer">↺ Remettre à facturer</button>` : `<button class="btn btn-grad" data-fok="${i.id}" style="background:var(--ok,#0E9F6E)">✓ Facturée</button><button class="btn btn-line bsav" data-fsav="${i.id}">${ic('wrench')} SAV</button>`}</span></div>`;
   let body;
-  if (!L.length) body = `<div class="empty">${fTab === 'afaire' ? 'Rien à facturer pour l’instant' : sav ? 'Aucune intervention classée en SAV' : 'Aucune intervention facturée'} ${ic('check-circle')}</div>`;
+  if (!L.length) body = `<div class="empty">${fTab !== 'afaire' && fQ.trim() ? 'Aucun résultat pour « ' + E(fQ) + ' »' : fTab === 'afaire' ? 'Rien à facturer pour l’instant' : sav ? 'Aucune intervention classée en SAV' : 'Aucune intervention facturée'} ${ic('check-circle')}</div>`;
   else if (H) { const g = {}; H.forEach(i => (g[MOIS(sav ? i.sav_le : i.facture_le)] = g[MOIS(sav ? i.sav_le : i.facture_le)] || []).push(i));
     body = Object.entries(g).map(([m, l]) => `<h2 class="chh fmo">${m.charAt(0).toUpperCase() + m.slice(1)} <small>${l.length} intervention${l.length > 1 ? 's' : ''}</small></h2><div class="list">${l.map(card).join('')}</div>`).join(''); }
   else body = `<div class="list">${L.map(card).join('')}</div>`;
   $('#main').innerHTML = `<div class="head"><h1>À facturer</h1><span class="live"><i></i>En direct</span></div>
    <div class="seg dvseg"><button data-ft="afaire" class="${fTab === 'afaire' ? 'on' : ''}">À facturer${aFact.length ? ' · ' + aFact.length : ''}</button><button data-ft="facture" class="${fTab === 'facture' ? 'on' : ''}">✓ Facturées</button><button data-ft="sav" class="${sav ? 'on' : ''}">${ic('wrench')} SAV · non facturées</button></div>
-   <p style="color:var(--mute);margin:4px 0 16px">${fTab === 'afaire' ? 'Interventions clôturées, en attente de facture. Facture faite : « ✓ Facturée ». Intervention sous garantie / SAV : « SAV » (elle ne sera pas facturée). Dans les deux cas elle sort de la liste et reste dans l’historique.' : sav ? 'Historique des interventions SAV, non facturées, de la plus récente à la plus ancienne.' : 'Historique des interventions facturées, de la plus récente à la plus ancienne.'}</p>${body}`;
+   <p style="color:var(--mute);margin:4px 0 16px">${fTab === 'afaire' ? 'Interventions clôturées, en attente de facture. Facture faite : « ✓ Facturée ». Intervention sous garantie / SAV : « SAV » (elle ne sera pas facturée). Dans les deux cas elle sort de la liste et reste dans l’historique.' : sav ? 'Historique des interventions SAV, non facturées, de la plus récente à la plus ancienne.' : 'Historique des interventions facturées, de la plus récente à la plus ancienne.'}</p>${fTab !== 'afaire' ? `<input type="search" id="fq" class="fq" placeholder="Filtrer : client, adresse, ville, technicien…" value="${E(fQ)}" autocomplete="off">` : ''}<div id="fbody">${body}</div>`;
+  if ($('#fq')) { let t; $('#fq').oninput = e => { clearTimeout(t); t = setTimeout(() => { fQ = e.target.value; const p = e.target.selectionStart; listFacturer(true); const f = $('#fq'); if (f) { f.focus(); f.setSelectionRange(p, p); } }, 200); }; }
   document.querySelectorAll('[data-ft]').forEach(b => b.onclick = () => { fTab = b.dataset.ft; listFacturer(true); });
   document.querySelectorAll('[data-f]').forEach(b => b.onclick = e => { if (e.target.closest('button')) return; detail(b.dataset.f, L.find(x => x.id === b.dataset.f)); });
   document.querySelectorAll('[data-fok]').forEach(b => b.onclick = async () => { b.disabled = true; if (!await marquer(b.dataset.fok, 'facture')) b.disabled = false; });
@@ -888,6 +892,12 @@ async function listFacturer(fromCache) {
   const paths = [...document.querySelectorAll('[data-th]')].map(e => e.dataset.th).filter(Boolean);
   signed('retours', paths).then(u => document.querySelectorAll('[data-th]').forEach(el => { const im = el.querySelector('img'); if (u[el.dataset.th] && im) { im.onerror = () => im.remove(); im.src = u[el.dataset.th]; } }));
 }
+
+/* Nouvelle version en ligne : l'application reste souvent ouverte des jours entiers, on propose d'actualiser dès qu'une mise à jour est publiée */
+const MYV = (document.querySelector('script[src*="app.js"]')?.src.match(/v=(\d+)/) || [])[1];
+async function checkMaj() { if (!MYV || document.hidden) return; try { const t = await (await fetch('index.html?u=' + Date.now(), { cache: 'no-store' })).text(), v = (t.match(/app\.js\?v=(\d+)/) || [])[1];
+  if (v && +v > +MYV && !$('#majbar')) { const b = document.createElement('div'); b.id = 'majbar'; b.innerHTML = `<span>✨ Une nouvelle version de l’application est disponible.</span><button class="btn btn-grad" type="button">Actualiser</button>`; b.querySelector('button').onclick = () => location.reload(); document.body.appendChild(b); } } catch (e) { } }
+document.addEventListener('visibilitychange', checkMaj); setInterval(checkMaj, 10 * 60 * 1000); setTimeout(checkMaj, 20000);
 
 /* ================= Mots de passe ================= */
 const APP_URL = 'https://bkplusplomberie.fr/app/', TECH_URL = APP_URL + 'tech.html';

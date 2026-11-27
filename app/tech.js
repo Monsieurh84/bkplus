@@ -152,11 +152,14 @@ async function flush(force) {
     for (const j of jobs) {
       if ((j.tries || 0) >= 3 && !force) { blocked++; continue; }
       try { await runJob(j); await DB.qDel(j.id); }
-      catch (e) { if (isNet(e)) throw e; j.tries = (j.tries || 0) + 1; j.err = String(e?.message || e).slice(0, 200); await DB.qAdd(j);
+      catch (e) { if (isNet(e)) { j.net = (j.net || 0) + 1; j.err = String(e?.message || e).slice(0, 200); await DB.qAdd(j); if (j.net === 6 || j.net % 60 === 0) tlog('envoi_reseau', { kind: j.kind, iid: j.iid, err: j.err, net: j.net, photos: (j.photos || []).length, age_min: Math.round((Date.now() - j.at) / 60000) }); throw e; } j.tries = (j.tries || 0) + 1; j.err = String(e?.message || e).slice(0, 200); await DB.qAdd(j);
         tlog('envoi_echec', { kind: j.kind, iid: j.iid, err: j.err, tries: j.tries }); if (j.tries >= 3) blocked++; }
     }
   } catch (e) { console.warn('envoi reporté', e); }
   flushing = false; const before = pending; await refreshPending();
+  /* Des envois en attente depuis longtemps : on le signale au bureau (au plus 1 fois par heure) pour pouvoir aider à distance */
+  if (pending) { try { const js = await DB.qAll(), old = js.filter(x => Date.now() - x.at > 30 * 60000); const t = +(localStorage.getItem('bk-qlog') || 0);
+    if (old.length && Date.now() - t > 3600000) { localStorage.setItem('bk-qlog', String(Date.now())); tlog('file_attente', { n: js.length, vieux: old.length, jobs: js.slice(0, 8).map(x => ({ kind: x.kind, iid: x.iid, tries: x.tries || 0, net: x.net || 0, err: x.err || '', age_min: Math.round((Date.now() - x.at) / 60000), photos: (x.photos || []).length })) }); } } catch (e) { } }
   if (before && !pending) { toast('✓ Tout est envoyé au bureau'); try { await load(); } catch (e) { } }
   if (!openId) render(); else { const s = $('#sync'); if (s) s.outerHTML = syncHtml(); bindTop(); }
 }
